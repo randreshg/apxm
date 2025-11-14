@@ -1,0 +1,15 @@
+version = 1
+SPDX-PackageName = "APXM Repository"
+SPDX-PackageDownloadLocation = "https://github.com/miguelcsx/apxm"
+
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Copyright 2025, Miguel Cárdenas"
+SPDX-License-Identifier = "LicenseRef-Proprietary"
+
+[[annotations]]
+path = "**/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Copyright 2025, Miguel Cárdenas"
+SPDX-License-Identifier = "LicenseRef-Proprietary"

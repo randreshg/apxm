@@ -1,0 +1,6 @@
+#
+# Commit title: [product]([type]): title
+#
+# product: all | cli | compiler | core | runtime | docs
+# type: feat | fix | chore | docs | refactor | style | test
+#
