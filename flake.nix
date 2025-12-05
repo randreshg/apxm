@@ -43,21 +43,43 @@
         { pkgs, system }:
         {
           # Run `nix develop` to activate this environment or `direnv allow` if you have direnv installed
-          default = pkgs.mkShellNoCC {
+          default = pkgs.mkShell {
             # The Nix packages provided in the environment
             packages = with pkgs; [
-              # Add the flake's formatter to your project's environment
-              self.formatter.${system}
-
-              # Other packages
-              ponysay
+              # Rust
+              cargo
+              rustc
+              rust-analyzer
+              clippy
+              rustfmt
+              
+              # LLVM / MLIR
+              llvmPackages_18.mlir
+              llvmPackages_18.libllvm
+              libffi
+              libxml2
+              zlib
+              ncurses
+              pkg-config
             ];
 
             # Set any environment variables for your development environment
-            env = { };
+            env = {
+              MLIR_SYS_180_PREFIX = "${pkgs.llvmPackages_18.mlir.dev}";
+              LLVM_SYS_180_PREFIX = "${pkgs.llvmPackages_18.libllvm.dev}";
+            };
 
             # Add any shell logic you want executed when the environment is activated
-            shellHook = "";
+            shellHook = ''
+              export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [
+                pkgs.llvmPackages_18.libllvm
+                pkgs.llvmPackages_18.mlir
+                pkgs.libffi
+                pkgs.libxml2
+                pkgs.zlib
+                pkgs.ncurses
+              ]}:$LD_LIBRARY_PATH
+            '';
           };
         }
       );
