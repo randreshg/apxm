@@ -1,0 +1,19 @@
+# Formatting configuration
+
+# Line Settings
+max_width = 100
+
+# Indentation Settings
+hard_tabs = false
+tab_spaces = 4
+
+# Edition of Rust
+edition = "2024"
+
+# Structural
+reorder_imports = true
+merge_derives = false
+
+# Cleanliness
+remove_nested_parens = true
+
