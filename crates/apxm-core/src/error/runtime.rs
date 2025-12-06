@@ -1,0 +1,200 @@
+//! Runtime errors.
+//!
+//! This module defines errors that occur during execution of the program,
+//! including scheduler errors, operation executiong failures, and system errors.
+
+use std::time::Duration;
+
+use thiserror::Error;
+
+use crate::error::common::OpId;
+use crate::error::security::SecurityError;
+use crate::types::AISOperationType;
+
+/// Errors that occur during runtime execution.
+#[derive(Debug, Error)]
+pub enum RuntimeError {
+    /// Scheduler error.
+    #[error("Scheduler error: {message}")]
+    Scheduler {
+        /// Error message describing the scheduler failure.
+        message: String,
+    },
+
+    /// Operation execution error.
+    #[error("Operation execution failed: {op_type} - {message}")]
+    Operation {
+        /// Type of operation that failed.
+        op_type: AISOperationType,
+        /// Error message describing the operation failure.
+        message: String,
+    },
+
+    /// Capability invocation error.
+    #[error("Capability error: {capability} - {message}")]
+    Capability {
+        /// Name of the capability that failed.
+        capability: String,
+        /// Error message describing the capability failure.
+        message: String,
+    },
+
+    /// LLM backend error
+    #[error("LLM error{backend}: {message}", backend = .backend.as_ref().map(|b| format!(" (backend: {})", b)).unwrap_or_default())]
+    LLM {
+        /// Error message describing the LLM failure.
+        message: String,
+        /// Optional backend identifier.
+        backend: Option<String>,
+    },
+
+    /// Memory system error.
+    #[error("Memory error{space}: {message}", space = .space.as_ref().map(|s| format!(" (space: {})", s)).unwrap_or_default())]
+    Memory {
+        /// Error message describing the memory failure.
+        message: String,
+        /// Optional memory space identifier.
+        space: Option<String>,
+    },
+
+    /// Security error (wraps SecurityError).
+    #[error("Security error: {0}")]
+    Security(#[from] SecurityError),
+
+    /// Timeout error.
+    #[error("Timeout: operation {op_id} exceeded timeout {timeout:?}")]
+    Timeout {
+        /// Operation ID that timed out.
+        op_id: OpId,
+        /// Time duration that was exceeded.
+        timeout: Duration,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scheduler_error() {
+        let error = RuntimeError::Scheduler {
+            message: "Deadlock detected".to_string(),
+        };
+
+        let display = format!("{}", error);
+        assert!(display.contains("Scheduler error"));
+        assert!(display.contains("Deadlock detected"));
+    }
+
+    #[test]
+    fn test_operation_error() {
+        let error = RuntimeError::Operation {
+            op_type: AISOperationType::Inv,
+            message: "Capability not found".to_string(),
+        };
+
+        let display = format!("{}", error);
+        assert!(display.contains("Operation execution failed"));
+        assert!(display.contains("INV"));
+        assert!(display.contains("Capability not found"));
+    }
+
+    #[test]
+    fn test_capability_error() {
+        let error = RuntimeError::Capability {
+            capability: "http_request".to_string(),
+            message: "Connection refused".to_string(),
+        };
+
+        let display = format!("{}", error);
+        assert!(display.contains("Capability error"));
+        assert!(display.contains("http_request"));
+        assert!(display.contains("Connection refused"));
+    }
+
+    #[test]
+    fn test_llm_error() {
+        let error = RuntimeError::LLM {
+            message: "API rate limit exceeded".to_string(),
+            backend: None,
+        };
+
+        let display = format!("{}", error);
+        assert!(display.contains("LLM error"));
+        assert!(display.contains("API rate limit exceeded"));
+    }
+
+    #[test]
+    fn test_llm_error_with_backend() {
+        let error = RuntimeError::LLM {
+            message: "Invalid API key".to_string(),
+            backend: Some("openai".to_string()),
+        };
+
+        let display = format!("{}", error);
+        assert!(display.contains("LLM error"));
+        assert!(display.contains("openai"));
+        assert!(display.contains("Invalid API key"));
+    }
+
+    #[test]
+    fn test_memory_error() {
+        let error = RuntimeError::Memory {
+            message: "Memory space full".to_string(),
+            space: None,
+        };
+
+        let display = format!("{}", error);
+        assert!(display.contains("Memory error"));
+        assert!(display.contains("Memory space full"));
+    }
+
+    #[test]
+    fn test_memory_error_with_space() {
+        let error = RuntimeError::Memory {
+            message: "Query failed".to_string(),
+            space: Some("LTM".to_string()),
+        };
+
+        let display = format!("{}", error);
+        assert!(display.contains("Memory error"));
+        assert!(display.contains("LTM"));
+        assert!(display.contains("Query failed"));
+    }
+
+    #[test]
+    fn test_security_error_conversion() {
+        let sec_error = SecurityError::PolicyViolation {
+            policy: "rate_limit".to_string(),
+            reason: "Too many requests".to_string(),
+        };
+
+        let runtime_error: RuntimeError = sec_error.into();
+        let display = format!("{}", runtime_error);
+        assert!(display.contains("Security error"));
+        assert!(display.contains("Policy violation"));
+    }
+
+    #[test]
+    fn test_timeout_error() {
+        let error = RuntimeError::Timeout {
+            op_id: 42,
+            timeout: Duration::from_secs(30),
+        };
+
+        let display = format!("{}", error);
+        assert!(display.contains("Timeout"));
+        assert!(display.contains("42"));
+        assert!(display.contains("30s"));
+    }
+
+    #[test]
+    fn test_error_implements_std_error() {
+        let error = RuntimeError::Scheduler {
+            message: "Test".to_string(),
+        };
+
+        // Verify it implements std::error::Error
+        let _: &dyn std::error::Error = &error;
+    }
+}
