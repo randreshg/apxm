@@ -13,7 +13,7 @@ use crate::types::{AISOperationType, TokenId, Value};
 pub type NodeId = u64;
 
 /// Metadata associated with a node for scheduling and optimization.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct NodeMetadata {
     /// Priority for execution (higher = more important).
     pub priority: u32,
@@ -21,15 +21,6 @@ pub struct NodeMetadata {
     /// TODO: Implement more sophisticated serialization format.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub estimated_latency: Option<u64>, // nanoseconds
-}
-
-impl Default for NodeMetadata {
-    fn default() -> Self {
-        NodeMetadata {
-            priority: 0,
-            estimated_latency: None,
-        }
-    }
 }
 
 /// Represents a node in the execution DAG.

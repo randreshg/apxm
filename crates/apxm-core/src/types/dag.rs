@@ -148,10 +148,7 @@ impl ExecutionDag {
         // Count in-degrees and build adjacency list
         for edge in &self.edges {
             *in_degree.entry(edge.to).or_insert(0) += 1;
-            adjacency
-                .entry(edge.from)
-                .or_insert_with(Vec::new)
-                .push(edge.to);
+            adjacency.entry(edge.from).or_default().push(edge.to);
         }
 
         // Find nodes with no incoming edges
