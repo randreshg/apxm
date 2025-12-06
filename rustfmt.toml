@@ -16,4 +16,3 @@ merge_derives = false
 
 # Cleanliness
 remove_nested_parens = true
-
