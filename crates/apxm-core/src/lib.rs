@@ -3,8 +3,14 @@
 //! This crate provides the foundational types, data structures, and traits
 //! that all other APXM components depend on.
 
+pub mod aam;
 pub mod error;
 pub mod types;
+
+pub use aam::{
+    AAMState, Belief, CapabilityExecutionProfile, CapabilityMetadata, CapabilitySchemas,
+    EpisodicLog, Goal, GoalChange, GoalId, GoalStatus, Parameter, StateTransition,
+};
 
 pub use error::{
     common::{ErrorContext, ErrorContextExt, OpId, SourceLocation, TraceId},
@@ -20,13 +26,15 @@ pub use types::{
 #[cfg(test)]
 mod tests {
     use super::{
-        AISOperationType, Number, Token, Value,
+        AAMState, AISOperationType, Belief, CapabilityExecutionProfile, CapabilityMetadata,
+        CapabilitySchemas, Goal, GoalChange, GoalStatus, Number, Parameter, StateTransition, Token,
+        Value,
         error::{
             common::SourceLocation, compile::CompileError, runtime::RuntimeError,
             security::SecurityError,
         },
     };
-    use std::time::Duration;
+    use std::{collections::HashMap, time::Duration};
 
     #[test]
     fn test_types_export() {
@@ -82,5 +90,83 @@ mod tests {
         assert!(display.contains("Timeout"));
         assert!(display.contains("7"));
         assert!(display.contains("5s"));
+    }
+
+    #[test]
+    fn test_aam_state_exports() {
+        let state = AAMState::new();
+        state.set_belief("status".to_string(), Value::String("idle".to_string()));
+
+        let belief = Belief::new("flag".to_string(), Value::Bool(true));
+        assert_eq!(belief.key(), "flag");
+
+        let goal = Goal::new(1, "Demo".to_string(), 5);
+        state.add_goal(goal.clone()).expect("goal added");
+        let peeked = state
+            .peek_next_goal()
+            .expect("goal queue accessible")
+            .expect("goal present");
+        assert_eq!(peeked.id, goal.id);
+
+        let change = GoalChange::StatusChanged(goal.id, GoalStatus::Pending, GoalStatus::Active);
+        let mut before: HashMap<String, Value> = HashMap::new();
+        before.insert("status".to_string(), Value::String("idle".to_string()));
+        state
+            .record_transition(
+                AISOperationType::Plan,
+                before,
+                vec![change],
+                Duration::from_millis(10),
+            )
+            .expect("transition recorded");
+        assert_eq!(state.transition_count().expect("transition count"), 1);
+    }
+
+    #[test]
+    fn test_capability_and_transition_exports() {
+        let param_schema = serde_json::json!({"type": "string"});
+        let param = Parameter::with_schema(
+            "query".to_string(),
+            "string".to_string(),
+            true,
+            param_schema.clone(),
+        );
+        assert!(param.required);
+        assert_eq!(param.schema, param_schema);
+
+        let schema = serde_json::json!({"type": "object"});
+        let schemas = CapabilitySchemas::new(schema.clone(), schema.clone());
+        let profile = CapabilityExecutionProfile::new(true, 2.5, 42);
+        let mut capability = CapabilityMetadata::with_details(
+            "search".to_string(),
+            "Search capability".to_string(),
+            "1.0".to_string(),
+            schemas,
+            profile,
+            vec!["utility".to_string()],
+        );
+        capability.add_tag("utility".to_string());
+        assert!(capability.has_tag("utility"));
+        assert!(capability.requires_sandbox);
+
+        let mut before = HashMap::new();
+        before.insert("input".to_string(), Value::String("rust".to_string()));
+        let mut after = before.clone();
+        after.insert("result".to_string(), Value::Bool(true));
+        let goal = Goal::new(9, "Find info".to_string(), 1);
+        let mut transition = StateTransition::with_capability(
+            AISOperationType::Inv,
+            before,
+            after,
+            vec![GoalChange::Added(goal)],
+            "search".to_string(),
+            Duration::from_millis(5),
+        );
+        transition.add_metadata("note".to_string(), Value::String("ok".to_string()));
+        assert_eq!(transition.capability_used.as_deref(), Some("search"));
+        assert_eq!(
+            transition.get_metadata("note"),
+            Some(&Value::String("ok".to_string()))
+        );
     }
 }
