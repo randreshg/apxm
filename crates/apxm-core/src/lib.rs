@@ -5,6 +5,7 @@
 
 pub mod aam;
 pub mod error;
+pub mod memory;
 pub mod types;
 
 pub use aam::{
@@ -18,6 +19,11 @@ pub use error::{
     runtime::RuntimeError,
     security::SecurityError,
 };
+
+pub use memory::{
+    EpisodicEntry, EpisodicQuery, LTMBackend, LTMQuery, LTMResult, MemorySpace, STMConfig, STMEntry,
+};
+
 pub use types::{
     AISOperationType, DependencyType, Edge, Node, NodeId, NodeMetadata, Number, Token, TokenId,
     TokenStatus, Value,
@@ -27,8 +33,8 @@ pub use types::{
 mod tests {
     use super::{
         AAMState, AISOperationType, Belief, CapabilityExecutionProfile, CapabilityMetadata,
-        CapabilitySchemas, Goal, GoalChange, GoalStatus, Number, Parameter, StateTransition, Token,
-        Value,
+        CapabilitySchemas, EpisodicEntry, EpisodicQuery, Goal, GoalChange, GoalStatus, LTMQuery,
+        MemorySpace, Number, Parameter, STMConfig, STMEntry, StateTransition, Token, Value,
         error::{
             common::SourceLocation, compile::CompileError, runtime::RuntimeError,
             security::SecurityError,
@@ -168,5 +174,29 @@ mod tests {
             transition.get_metadata("note"),
             Some(&Value::String("ok".to_string()))
         );
+    }
+
+    #[test]
+    fn test_memory_exports() {
+        let space = MemorySpace::Ltm;
+        assert!(space.is_ltm());
+
+        let ttl = Duration::from_secs(60);
+        let entry = STMEntry::new("k", Value::Bool(true), ttl);
+        assert_eq!(entry.key, "k");
+
+        let cfg = STMConfig::default();
+        assert!(cfg.max_size > 0);
+
+        let query = LTMQuery::new("hello");
+        assert!(query.validate().is_ok());
+
+        let episode = EpisodicEntry::new(
+            "exec",
+            vec![Value::String("op".into())],
+            vec![Value::Bool(true)],
+        );
+        let filter = EpisodicQuery::new().with_execution_id("exec");
+        assert!(filter.matches(&episode));
     }
 }
