@@ -20,7 +20,10 @@ pub enum CompileError {
     },
 
     /// Type error during type checking.
-    #[error("Type error: expected {expected}, got {actual}{}", .message.as_ref().map(|m| format!(" - {}", m)).unwrap_or_default())]
+    #[error(
+        "Type error: expected {expected}, got {actual}{}",
+        Self::type_message_suffix(.message)
+    )]
     Type {
         /// Expected type.
         expected: String,
@@ -50,6 +53,15 @@ pub enum CompileError {
         /// Name of the moduel that was not found.
         name: String,
     },
+}
+
+impl CompileError {
+    fn type_message_suffix(message: &Option<String>) -> String {
+        match message.as_ref() {
+            Some(note) => format!(" - {}", note),
+            None => String::new(),
+        }
+    }
 }
 
 #[cfg(test)]

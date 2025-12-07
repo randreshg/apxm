@@ -40,7 +40,10 @@ pub enum RuntimeError {
     },
 
     /// LLM backend error
-    #[error("LLM error{backend}: {message}", backend = .backend.as_ref().map(|b| format!(" (backend: {})", b)).unwrap_or_default())]
+    #[error(
+        "LLM error{backend}: {message}",
+        backend = Self::backend_suffix(.backend)
+    )]
     LLM {
         /// Error message describing the LLM failure.
         message: String,
@@ -49,7 +52,10 @@ pub enum RuntimeError {
     },
 
     /// Memory system error.
-    #[error("Memory error{space}: {message}", space = .space.as_ref().map(|s| format!(" (space: {})", s)).unwrap_or_default())]
+    #[error(
+        "Memory error{space}: {message}",
+        space = Self::memory_space_suffix(.space)
+    )]
     Memory {
         /// Error message describing the memory failure.
         message: String,
@@ -69,6 +75,22 @@ pub enum RuntimeError {
         /// Time duration that was exceeded.
         timeout: Duration,
     },
+}
+
+impl RuntimeError {
+    fn backend_suffix(backend: &Option<String>) -> String {
+        match backend {
+            Some(b) => format!(" (backend: {})", b),
+            None => String::new(),
+        }
+    }
+
+    fn memory_space_suffix(space: &Option<String>) -> String {
+        match space {
+            Some(s) => format!(" (space: {})", s),
+            None => String::new(),
+        }
+    }
 }
 
 #[cfg(test)]

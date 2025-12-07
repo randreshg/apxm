@@ -97,85 +97,67 @@ impl ExecutionDag {
 
     /// Finds all entry nodes (nodes with no incoming edges).
     pub fn find_entry_nodes(&self) -> Vec<NodeId> {
-        let mut has_incoming: HashSet<NodeId> = HashSet::new();
-        for edge in &self.edges {
-            has_incoming.insert(edge.to);
-        }
+        let incoming_nodes: HashSet<NodeId> = self.edges.iter().map(|edge| edge.to).collect();
         self.nodes
             .iter()
-            .filter_map(|n| {
-                if !has_incoming.contains(&n.id) {
-                    Some(n.id)
-                } else {
-                    None
-                }
-            })
+            .filter(|n| !incoming_nodes.contains(&n.id))
+            .map(|n| n.id)
             .collect()
     }
 
     /// Finds all exit nodes (nodes with no outgoing edges).
     pub fn find_exit_nodes(&self) -> Vec<NodeId> {
-        let mut has_outgoing: HashSet<NodeId> = HashSet::new();
-        for edge in &self.edges {
-            has_outgoing.insert(edge.from);
-        }
+        // Track nodes that appear as sources so we can detect which have no outgoing edges.
+        let outgoing_nodes: HashSet<NodeId> = self.edges.iter().map(|edge| edge.from).collect();
         self.nodes
             .iter()
-            .filter_map(|n| {
-                if !has_outgoing.contains(&n.id) {
-                    Some(n.id)
-                } else {
-                    None
-                }
-            })
+            .filter(|n| !outgoing_nodes.contains(&n.id))
+            .map(|n| n.id)
             .collect()
     }
-
     /// Checks if the DAG contains cycles.
     ///
     /// Uses Kahn's algorithm (topological sort) to detect cycles.
     pub fn has_cycles(&self) -> bool {
         // Build adjacency list and in-degree count
-        let mut in_degree: HashMap<NodeId, usize> = HashMap::new();
-        let mut adjacency: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
-
         // Initialize in-degree for all nodes
-        for node in &self.nodes {
-            in_degree.insert(node.id, 0);
-            adjacency.insert(node.id, Vec::new());
-        }
-
-        // Count in-degrees and build adjacency list
+        let mut in_degree: HashMap<NodeId, usize> =
+            self.nodes.iter().map(|node| (node.id, 0)).collect();
+        let mut adjacency: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
         for edge in &self.edges {
-            *in_degree.entry(edge.to).or_insert(0) += 1;
             adjacency.entry(edge.from).or_default().push(edge.to);
+            *in_degree.entry(edge.to).or_insert(0) += 1;
         }
 
         // Find nodes with no incoming edges
-        let mut queue: VecDeque<NodeId> = VecDeque::new();
-        for (node_id, &degree) in &in_degree {
-            if degree == 0 {
-                queue.push_back(*node_id);
-            }
-        }
+        let mut queue: VecDeque<NodeId> = in_degree
+            .iter()
+            .filter_map(|(id, &degree)| if degree == 0 { Some(*id) } else { None })
+            .collect();
 
         // Process nodes
         let mut processed = 0;
+        let total_nodes = self.nodes.len();
+
         while let Some(node_id) = queue.pop_front() {
             processed += 1;
-            if let Some(neighbors) = adjacency.get(&node_id) {
-                for &neighbor in neighbors {
-                    let degree = in_degree.get_mut(&neighbor).unwrap();
-                    *degree -= 1;
-                    if *degree == 0 {
-                        queue.push_back(neighbor);
+            if let Some(neighbors) = adjacency.remove(&node_id) {
+                for neighbor in neighbors {
+                    if let Some(degree) = in_degree.get_mut(&neighbor) {
+                        *degree -= 1;
+                        if *degree == 0 {
+                            queue.push_back(neighbor);
+                        }
+                    } else {
+                        // Missing neighbors indicate inconsistent state, treat as a cycle.
+                        return true;
                     }
                 }
             }
         }
 
         // If we didn't process all nodes, there's a cycle
-        processed != self.nodes.len()
+        processed != total_nodes
     }
 
     /// Validates the DAG structure.
@@ -213,15 +195,12 @@ impl ExecutionDag {
         }
 
         // Check token references in nodes
-        let mut token_ids: HashSet<TokenId> = HashSet::new();
-        for node in &self.nodes {
-            for &token_id in &node.input_tokens {
-                token_ids.insert(token_id);
-            }
-            for &token_id in &node.output_tokens {
-                token_ids.insert(token_id);
-            }
-        }
+        let token_ids: HashSet<TokenId> = self
+            .nodes
+            .iter()
+            .flat_map(|node| node.input_tokens.iter().chain(&node.output_tokens))
+            .copied()
+            .collect();
 
         // Check that edges reference valid tokens
         for edge in &self.edges {
@@ -234,20 +213,19 @@ impl ExecutionDag {
         }
 
         // Validate entry/exit nodes
-        let computed_entry = self.find_entry_nodes();
-        let computed_exit = self.find_exit_nodes();
+        let computed_entry: HashSet<NodeId> = self.find_entry_nodes().into_iter().collect();
+        let computed_exit: HashSet<NodeId> = self.find_exit_nodes().into_iter().collect();
 
         // Check if stored entry/exit nodes match computed ones
-        let stored_entry_set: HashSet<NodeId> = self.entry_nodes.iter().copied().collect();
-        let computed_entry_set: HashSet<NodeId> = computed_entry.iter().copied().collect();
-        if stored_entry_set != computed_entry_set {
-            return Err("Stored entry nodes don't match computed entry nodes".to_string());
+        let stored_entry: HashSet<NodeId> = self.entry_nodes.iter().copied().collect();
+        let stored_exit: HashSet<NodeId> = self.exit_nodes.iter().copied().collect();
+
+        if stored_entry != computed_entry {
+            return Err("Stored entry nodes don't match computed entry nodes".into());
         }
 
-        let stored_exit_set: HashSet<NodeId> = self.exit_nodes.iter().copied().collect();
-        let computed_exit_set: HashSet<NodeId> = computed_exit.iter().copied().collect();
-        if stored_exit_set != computed_exit_set {
-            return Err("Stored exit nodes don't match computed exit nodes".to_string());
+        if stored_exit != computed_exit {
+            return Err("Stored exit nodes don't match computed exit nodes".into());
         }
 
         Ok(())
@@ -285,15 +263,18 @@ mod tests {
         let mut dag = ExecutionDag::new();
         let node1 = Node::new(1, AISOperationType::Inv);
         let node2 = Node::new(1, AISOperationType::Rsn);
-        dag.add_node(node1).unwrap();
+        dag.add_node(node1)
+            .expect("initial node insertion should succeed");
         assert!(dag.add_node(node2).is_err());
     }
 
     #[test]
     fn test_add_edge() {
         let mut dag = ExecutionDag::new();
-        dag.add_node(Node::new(1, AISOperationType::Inv)).unwrap();
-        dag.add_node(Node::new(2, AISOperationType::Rsn)).unwrap();
+        dag.add_node(Node::new(1, AISOperationType::Inv))
+            .expect("node insertion should succeed");
+        dag.add_node(Node::new(2, AISOperationType::Rsn))
+            .expect("node insertion should succeed");
         let edge = Edge::new(1, 2, 10, crate::types::DependencyType::Data);
         assert!(dag.add_edge(edge).is_ok());
         assert_eq!(dag.edges.len(), 1);
@@ -302,7 +283,8 @@ mod tests {
     #[test]
     fn test_add_edge_invalid_source() {
         let mut dag = ExecutionDag::new();
-        dag.add_node(Node::new(2, AISOperationType::Rsn)).unwrap();
+        dag.add_node(Node::new(2, AISOperationType::Rsn))
+            .expect("node insertion should succeed");
         let edge = Edge::new(1, 2, 10, crate::types::DependencyType::Data);
         assert!(dag.add_edge(edge).is_err());
     }
@@ -311,7 +293,8 @@ mod tests {
     fn test_get_node() {
         let mut dag = ExecutionDag::new();
         let node = Node::new(1, AISOperationType::Inv);
-        dag.add_node(node.clone()).unwrap();
+        dag.add_node(node.clone())
+            .expect("node insertion should succeed");
         assert_eq!(dag.get_node(1), Some(&node));
         assert_eq!(dag.get_node(999), None);
     }
@@ -319,13 +302,16 @@ mod tests {
     #[test]
     fn test_get_edges_from() {
         let mut dag = ExecutionDag::new();
-        dag.add_node(Node::new(1, AISOperationType::Inv)).unwrap();
-        dag.add_node(Node::new(2, AISOperationType::Rsn)).unwrap();
-        dag.add_node(Node::new(3, AISOperationType::QMem)).unwrap();
+        dag.add_node(Node::new(1, AISOperationType::Inv))
+            .expect("node insertion should succeed");
+        dag.add_node(Node::new(2, AISOperationType::Rsn))
+            .expect("node insertion should succeed");
+        dag.add_node(Node::new(3, AISOperationType::QMem))
+            .expect("node insertion should succeed");
         dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
-            .unwrap();
+            .expect("edge insertion should succeed");
         dag.add_edge(Edge::new(1, 3, 20, crate::types::DependencyType::Data))
-            .unwrap();
+            .expect("edge insertion should succeed");
         let edges = dag.get_edges_from(1);
         assert_eq!(edges.len(), 2);
     }
@@ -333,10 +319,12 @@ mod tests {
     #[test]
     fn test_find_entry_nodes() {
         let mut dag = ExecutionDag::new();
-        dag.add_node(Node::new(1, AISOperationType::Inv)).unwrap();
-        dag.add_node(Node::new(2, AISOperationType::Rsn)).unwrap();
+        dag.add_node(Node::new(1, AISOperationType::Inv))
+            .expect("node insertion should succeed");
+        dag.add_node(Node::new(2, AISOperationType::Rsn))
+            .expect("node insertion should succeed");
         dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
-            .unwrap();
+            .expect("edge insertion should succeed");
         let entry = dag.find_entry_nodes();
         assert_eq!(entry, vec![1]);
     }
@@ -344,10 +332,12 @@ mod tests {
     #[test]
     fn test_find_exit_nodes() {
         let mut dag = ExecutionDag::new();
-        dag.add_node(Node::new(1, AISOperationType::Inv)).unwrap();
-        dag.add_node(Node::new(2, AISOperationType::Rsn)).unwrap();
+        dag.add_node(Node::new(1, AISOperationType::Inv))
+            .expect("node insertion should succeed");
+        dag.add_node(Node::new(2, AISOperationType::Rsn))
+            .expect("node insertion should succeed");
         dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
-            .unwrap();
+            .expect("edge insertion should succeed");
         let exit = dag.find_exit_nodes();
         assert_eq!(exit, vec![2]);
     }
@@ -355,25 +345,30 @@ mod tests {
     #[test]
     fn test_no_cycles_linear() {
         let mut dag = ExecutionDag::new();
-        dag.add_node(Node::new(1, AISOperationType::Inv)).unwrap();
-        dag.add_node(Node::new(2, AISOperationType::Rsn)).unwrap();
-        dag.add_node(Node::new(3, AISOperationType::QMem)).unwrap();
+        dag.add_node(Node::new(1, AISOperationType::Inv))
+            .expect("node insertion should succeed");
+        dag.add_node(Node::new(2, AISOperationType::Rsn))
+            .expect("node insertion should succeed");
+        dag.add_node(Node::new(3, AISOperationType::QMem))
+            .expect("node insertion should succeed");
         dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
-            .unwrap();
+            .expect("edge insertion should succeed");
         dag.add_edge(Edge::new(2, 3, 20, crate::types::DependencyType::Data))
-            .unwrap();
+            .expect("edge insertion should succeed");
         assert!(!dag.has_cycles());
     }
 
     #[test]
     fn test_has_cycles() {
         let mut dag = ExecutionDag::new();
-        dag.add_node(Node::new(1, AISOperationType::Inv)).unwrap();
-        dag.add_node(Node::new(2, AISOperationType::Rsn)).unwrap();
+        dag.add_node(Node::new(1, AISOperationType::Inv))
+            .expect("node insertion should succeed");
+        dag.add_node(Node::new(2, AISOperationType::Rsn))
+            .expect("node insertion should succeed");
         dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
-            .unwrap();
+            .expect("edge insertion should succeed");
         dag.add_edge(Edge::new(2, 1, 20, crate::types::DependencyType::Data))
-            .unwrap();
+            .expect("edge insertion should succeed");
         assert!(dag.has_cycles());
     }
 
@@ -382,12 +377,12 @@ mod tests {
         let mut dag = ExecutionDag::new();
         let mut node1 = Node::new(1, AISOperationType::Inv);
         node1.add_output_token(10);
-        dag.add_node(node1).unwrap();
+        dag.add_node(node1).expect("node insertion should succeed");
         let mut node2 = Node::new(2, AISOperationType::Rsn);
         node2.add_input_token(10);
-        dag.add_node(node2).unwrap();
+        dag.add_node(node2).expect("node insertion should succeed");
         dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
-            .unwrap();
+            .expect("edge insertion should succeed");
         dag.entry_nodes = dag.find_entry_nodes();
         dag.exit_nodes = dag.find_exit_nodes();
         assert!(dag.validate().is_ok());
@@ -396,12 +391,14 @@ mod tests {
     #[test]
     fn test_validate_cycle() {
         let mut dag = ExecutionDag::new();
-        dag.add_node(Node::new(1, AISOperationType::Inv)).unwrap();
-        dag.add_node(Node::new(2, AISOperationType::Rsn)).unwrap();
+        dag.add_node(Node::new(1, AISOperationType::Inv))
+            .expect("node insertion should succeed");
+        dag.add_node(Node::new(2, AISOperationType::Rsn))
+            .expect("node insertion should succeed");
         dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
-            .unwrap();
+            .expect("edge insertion should succeed");
         dag.add_edge(Edge::new(2, 1, 20, crate::types::DependencyType::Data))
-            .unwrap();
+            .expect("edge insertion should succeed");
         assert!(dag.validate().is_err());
     }
 }

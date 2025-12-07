@@ -134,7 +134,9 @@ mod tests {
     #[test]
     fn test_set_value_when_ready() {
         let mut token = Token::new(1);
-        token.set_value(Value::Bool(true)).unwrap();
+        token
+            .set_value(Value::Bool(true))
+            .expect("initial token value assignment should succeed");
         assert!(token.set_value(Value::Bool(false)).is_err());
     }
 
@@ -142,8 +144,10 @@ mod tests {
     fn test_consume() {
         let mut token = Token::new(1);
         let value = Value::Bool(true);
-        token.set_value(value.clone()).unwrap();
-        let consumed = token.consume().unwrap();
+        token
+            .set_value(value.clone())
+            .expect("token set value should succeed");
+        let consumed = token.consume().expect("consuming ready token should work");
         assert_eq!(consumed, value);
         assert!(matches!(token.status, TokenStatus::Consumed));
         assert!(!token.is_ready());
@@ -158,8 +162,12 @@ mod tests {
     #[test]
     fn test_consume_when_consumed() {
         let mut token = Token::new(1);
-        token.set_value(Value::Bool(true)).unwrap();
-        token.consume().unwrap();
+        token
+            .set_value(Value::Bool(true))
+            .expect("token set value should succeed");
+        token
+            .consume()
+            .expect("consuming ready token should work the first time");
         assert!(token.consume().is_err());
     }
 
@@ -169,25 +177,31 @@ mod tests {
         assert_eq!(token.get_value(), None);
 
         let value = Value::Bool(true);
-        token.set_value(value.clone()).unwrap();
+        token
+            .set_value(value.clone())
+            .expect("token set value should succeed");
         assert_eq!(token.get_value(), Some(&value));
 
-        token.consume().unwrap();
+        token
+            .consume()
+            .expect("consuming ready token should work the first time");
         assert_eq!(token.get_value(), None);
     }
 
     #[test]
     fn test_serialization() {
         let mut token = Token::new(1);
-        token.set_value(Value::Bool(true)).unwrap();
-        let json = serde_json::to_string(&token).unwrap();
+        token
+            .set_value(Value::Bool(true))
+            .expect("token set value should succeed");
+        let json = serde_json::to_string(&token).expect("serialize token");
         assert!(json.contains("1"));
     }
 
     #[test]
     fn test_deserialization() {
         let json = r#"{"id":1,"value":{"type":"Bool","value":true},"status":"Ready"}"#;
-        let token: Token = serde_json::from_str(json).unwrap();
+        let token: Token = serde_json::from_str(json).expect("deserialize token");
         assert_eq!(token.id, 1);
         assert!(token.is_ready());
     }

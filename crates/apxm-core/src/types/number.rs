@@ -125,7 +125,7 @@ mod tests {
     #[test]
     fn test_serialization_integer() {
         let num = Number::Integer(42);
-        let json = serde_json::to_string(&num).unwrap();
+        let json = serde_json::to_string(&num).expect("serialize integer number variant to JSON");
         assert!(json.contains("Integer"));
         assert!(json.contains("42"));
     }
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn test_serialization_float() {
         let num = Number::Float(3.14);
-        let json = serde_json::to_string(&num).unwrap();
+        let json = serde_json::to_string(&num).expect("serialize float number variant to JSON");
         assert!(json.contains("Float"));
         assert!(json.contains("3.14"));
     }
@@ -141,30 +141,34 @@ mod tests {
     #[test]
     fn test_deserialization_integer() {
         let json = r#"{"type":"Integer","value":42}"#;
-        let num: Number = serde_json::from_str(json).unwrap();
+        let num: Number =
+            serde_json::from_str(json).expect("deserialize integer number variant from JSON");
         assert!(matches!(num, Number::Integer(42)));
     }
 
     #[test]
     fn test_deserialization_float() {
         let json = r#"{"type":"Float","value":3.14}"#;
-        let num: Number = serde_json::from_str(json).unwrap();
+        let num: Number =
+            serde_json::from_str(json).expect("deserialize float number variant from JSON");
         assert!(matches!(num, Number::Float(f) if (f - 3.14).abs() < f64::EPSILON));
     }
 
     #[test]
     fn test_round_trip_serialization_integer() {
         let original = Number::Integer(42);
-        let json = serde_json::to_string(&original).unwrap();
-        let deserialized: Number = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&original).expect("round-trip serialize integer number");
+        let deserialized: Number =
+            serde_json::from_str(&json).expect("round-trip deserialize integer number");
         assert_eq!(original, deserialized);
     }
 
     #[test]
     fn test_round_trip_serialization_float() {
         let original = Number::Float(3.14);
-        let json = serde_json::to_string(&original).unwrap();
-        let deserialized: Number = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&original).expect("round-trip serialize float number");
+        let deserialized: Number =
+            serde_json::from_str(&json).expect("round-trip deserialize float number");
         assert_eq!(original, deserialized);
     }
 

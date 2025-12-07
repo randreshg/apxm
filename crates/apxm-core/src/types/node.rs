@@ -134,7 +134,7 @@ mod tests {
     fn test_serialization() {
         let mut node = Node::new(1, AISOperationType::Inv);
         node.set_attribute("test".to_string(), Value::Bool(true));
-        let json = serde_json::to_string(&node).unwrap();
+        let json = serde_json::to_string(&node).expect("serialize node");
         assert!(json.contains("1"));
         assert!(json.contains("INV"));
     }

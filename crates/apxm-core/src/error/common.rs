@@ -123,11 +123,15 @@ pub trait ErrorContextExt {
 ///
 /// A formatted string representing the error chain.
 pub fn chain_errors(errors: Vec<Box<dyn std::error::Error>>) -> String {
-    errors
+    if let Some(result) = errors
         .iter()
         .map(|e| e.to_string())
         .reduce(|acc, e| format!("{}\n  caused by: {}", acc, e))
-        .unwrap_or_else(|| String::from("No errors"))
+    {
+        result
+    } else {
+        String::from("No errors")
+    }
 }
 
 /// Formats a single error with its context.

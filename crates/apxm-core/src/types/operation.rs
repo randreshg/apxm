@@ -65,14 +65,15 @@ mod tests {
     #[test]
     fn test_serialization() {
         let op = AISOperationType::Inv;
-        let json = serde_json::to_string(&op).unwrap();
+        let json = serde_json::to_string(&op).expect("serialize AISOperationType");
         assert_eq!(json, "\"INV\"");
     }
 
     #[test]
     fn test_deserialization() {
         let json = "\"RSN\"";
-        let op: AISOperationType = serde_json::from_str(json).unwrap();
+        let op: AISOperationType =
+            serde_json::from_str(json).expect("deserialize AISOperationType");
         assert_eq!(op, AISOperationType::Rsn);
     }
 

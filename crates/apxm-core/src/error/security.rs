@@ -18,7 +18,10 @@ pub enum SecurityError {
     },
 
     /// Rate limit exceeded error.
-    #[error("Rate limit exceeded: resource '{resource}'{}", .limit.map(|l| format!(" (limit: {})", l)).unwrap_or_default())]
+    #[error(
+        "Rate limit exceeded: resource '{resource}'{}",
+        Self::limit_suffix(.limit)
+    )]
     RateLimitExceeded {
         /// Resource that exceeded the rate limit.
         resource: String,
@@ -34,13 +37,32 @@ pub enum SecurityError {
     },
 
     /// Unauthorized access error.
-    #[error("Unauthorized access: resource '{resource}'{}", .reason.as_ref().map(|r| format!(" - {}", r)).unwrap_or_default())]
+    #[error(
+        "Unauthorized access: resource '{resource}'{}",
+        Self::reason_suffix(.reason)
+    )]
     Unauthorized {
         /// Resource that was accessed without authorization.
         resource: String,
         /// Optional reason for the unauthorized access.
         reason: Option<String>,
     },
+}
+
+impl SecurityError {
+    fn limit_suffix(limit: &Option<u64>) -> String {
+        match limit {
+            Some(value) => format!(" (limit: {})", value),
+            None => String::new(),
+        }
+    }
+
+    fn reason_suffix(reason: &Option<String>) -> String {
+        match reason.as_ref() {
+            Some(r) => format!(" - {}", r),
+            None => String::new(),
+        }
+    }
 }
 
 #[cfg(test)]

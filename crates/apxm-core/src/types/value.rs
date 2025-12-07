@@ -210,7 +210,9 @@ mod tests {
     #[test]
     fn test_array() {
         let val = Value::Array(vec![Value::Bool(true), Value::Number(Number::Integer(42))]);
-        let arr = val.as_array().unwrap();
+        let arr = val
+            .as_array()
+            .expect("value should provide array reference");
         assert_eq!(arr.len(), 2);
     }
 
@@ -219,7 +221,9 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("key".to_string(), Value::String("value".to_string()));
         let val = Value::Object(map);
-        let obj = val.as_object().unwrap();
+        let obj = val
+            .as_object()
+            .expect("value should provide object reference");
         assert_eq!(obj.len(), 1);
     }
 
@@ -262,37 +266,37 @@ mod tests {
     #[test]
     fn test_to_json_null() {
         let val = Value::Null;
-        let json = val.to_json().unwrap();
+        let json = val.to_json().expect("serialize null value");
         assert!(json.is_null());
     }
 
     #[test]
     fn test_to_json_bool() {
         let val = Value::Bool(true);
-        let json = val.to_json().unwrap();
+        let json = val.to_json().expect("serialize bool value");
         assert_eq!(json.as_bool(), Some(true));
     }
 
     #[test]
     fn test_to_json_number() {
         let val = Value::Number(Number::Integer(42));
-        let json = val.to_json().unwrap();
+        let json = val.to_json().expect("serialize number value");
         assert_eq!(json.as_i64(), Some(42));
     }
 
     #[test]
     fn test_to_json_string() {
         let val = Value::String("hello".to_string());
-        let json = val.to_json().unwrap();
+        let json = val.to_json().expect("serialize string value");
         assert_eq!(json.as_str(), Some("hello"));
     }
 
     #[test]
     fn test_to_json_array() {
         let val = Value::Array(vec![Value::Bool(true), Value::Number(Number::Integer(42))]);
-        let json = val.to_json().unwrap();
+        let json = val.to_json().expect("serialize array value");
         assert!(json.is_array());
-        let arr = json.as_array().unwrap();
+        let arr = json.as_array().expect("array JSON expected");
         assert_eq!(arr.len(), 2);
     }
 
@@ -301,7 +305,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("key".to_string(), Value::String("value".to_string()));
         let val = Value::Object(map);
-        let json = val.to_json().unwrap();
+        let json = val.to_json().expect("serialize object value");
         assert!(json.is_object());
     }
 
@@ -318,22 +322,24 @@ mod tests {
             Value::Number(Number::Integer(42)),
             Value::String("hello".to_string()),
         ]);
-        let json = serde_json::to_string(&val).unwrap();
+        let json = serde_json::to_string(&val).expect("serialize value via serde");
         assert!(json.contains("Array"));
     }
 
     #[test]
     fn test_deserialization() {
         let json = r#"{"type":"Bool","value":true}"#;
-        let val: Value = serde_json::from_str(json).unwrap();
+        let val: Value = serde_json::from_str(json).expect("deserialize value via serde");
         assert_eq!(val.as_boolean(), Some(true));
     }
 
     #[test]
     fn test_round_trip_serialization() {
         let original = Value::Array(vec![Value::Bool(true), Value::Number(Number::Integer(42))]);
-        let json = serde_json::to_string(&original).unwrap();
-        let deserialized: Value = serde_json::from_str(&json).unwrap();
+        let json =
+            serde_json::to_string(&original).expect("serialize value for round-trip testing");
+        let deserialized: Value =
+            serde_json::from_str(&json).expect("deserialize value for round-trip testing");
         assert_eq!(original, deserialized);
     }
 }
