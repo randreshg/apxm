@@ -6,6 +6,7 @@
 pub mod aam;
 pub mod error;
 pub mod memory;
+pub mod traits;
 pub mod types;
 
 pub use aam::{
@@ -24,9 +25,14 @@ pub use memory::{
     EpisodicEntry, EpisodicQuery, LTMBackend, LTMQuery, LTMResult, MemorySpace, STMConfig, STMEntry,
 };
 
+pub use traits::{
+    Capability, CapabilityError, ExecutionError, FinishReason, LLMBackend, LLMError, LLMRequest,
+    LLMResponse, LLMResponseStream, OperationExecutor, TokenUsage,
+};
+
 pub use types::{
-    AISOperationType, DependencyType, Edge, Node, NodeId, NodeMetadata, Number, Token, TokenId,
-    TokenStatus, Value,
+    AISOperation, AISOperationType, DependencyType, Edge, Node, NodeId, NodeMetadata, Number,
+    Token, TokenId, TokenStatus, Value,
 };
 
 #[cfg(test)]

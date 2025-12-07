@@ -21,6 +21,6 @@ pub use dag::{DagMetadata, ExecutionDag};
 pub use edge::{DependencyType, Edge};
 pub use node::{Node, NodeId, NodeMetadata};
 pub use number::Number;
-pub use operation::AISOperationType;
+pub use operation::{AISOperation, AISOperationType};
 pub use token::{Token, TokenId, TokenStatus};
 pub use value::Value;

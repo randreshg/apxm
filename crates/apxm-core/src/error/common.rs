@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::time::SystemTime;
 
+use serde::{Deserialize, Serialize};
+
 use crate::types::{AISOperationType, Value};
 
 /// Operations correspond to node in the execution DAG, so OpID is the same as NodeId.
@@ -20,14 +22,14 @@ pub struct SourceLocation {
     /// File path or identifier,
     pub file: String,
     /// Line number (1-indexed).
-    pub line: u32,
+    pub line: usize,
     /// Column number (1-indexed).
-    pub column: u32,
+    pub column: usize,
 }
 
 impl SourceLocation {
     /// Creates a new source location.
-    pub fn new(file: String, line: u32, column: u32) -> Self {
+    pub fn new(file: String, line: usize, column: usize) -> Self {
         SourceLocation { file, line, column }
     }
 }
@@ -42,7 +44,7 @@ impl fmt::Display for SourceLocation {
 ///
 /// This struct allow errors to carry contextyal information such as operation IDs,
 /// trace IDs, and user information for better debugging and observability.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ErrorContext {
     /// Operation identifier where the error occurred.
     pub operation_id: Option<OpId>,

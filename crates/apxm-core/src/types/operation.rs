@@ -3,7 +3,10 @@
 //! This module defines all the operation types that can be executed in the APXM system.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
+
+use crate::types::Value;
 
 /// Represents all possible AIS operation types.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -42,6 +45,38 @@ impl fmt::Display for AISOperationType {
             AISOperationType::Fence => write!(f, "FENCE"),
             AISOperationType::Exc => write!(f, "EXC"),
         }
+    }
+}
+
+/// Representation of an AIS operation instance.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AISOperation {
+    /// Unique operation identifier.
+    pub id: u64,
+    /// Operation type.
+    pub op_type: AISOperationType,
+    /// Optional attributes associated with the operation.
+    pub attributes: HashMap<String, Value>,
+}
+
+impl AISOperation {
+    /// Creates a new operation with the given id and type.
+    pub fn new(id: u64, op_type: AISOperationType) -> Self {
+        AISOperation {
+            id,
+            op_type,
+            attributes: HashMap::new(),
+        }
+    }
+
+    /// Adds or replaces an attribute value.
+    pub fn set_attribute(&mut self, key: impl Into<String>, value: Value) {
+        self.attributes.insert(key.into(), value);
+    }
+
+    /// Retrieves an attribute by key.
+    pub fn get_attribute(&self, key: &str) -> Option<&Value> {
+        self.attributes.get(key)
     }
 }
 
@@ -88,5 +123,25 @@ mod tests {
         let op1 = AISOperationType::Inv;
         let op2 = op1.clone();
         assert_eq!(op1, op2);
+    }
+
+    #[test]
+    fn test_operation_attributes() {
+        let mut op = AISOperation::new(1, AISOperationType::Plan);
+        op.set_attribute("key", Value::String("v".into()));
+        assert_eq!(
+            op.get_attribute("key"),
+            Some(&Value::String("v".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_operation_serialization() {
+        let mut op = AISOperation::new(7, AISOperationType::Inv);
+        op.set_attribute("flag", Value::Bool(true));
+        let json = serde_json::to_string(&op).unwrap();
+        let restored: AISOperation = serde_json::from_str(&json).unwrap();
+        assert_eq!(op.id, restored.id);
+        assert_eq!(restored.get_attribute("flag"), Some(&Value::Bool(true)));
     }
 }
