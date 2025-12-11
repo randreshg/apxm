@@ -8,7 +8,7 @@
 #ifndef APXM_AIS_TYPES_IMPL_H
 #define APXM_AIS_TYPES_IMPL_H
 
-#include "apxm/AIS/IR/AISTypes.h"
+#include "apxm/Dialect/AIS/IR/AISTypes.h"
 #include "mlir/IR/TypeSupport.h"
 #include <utility>
 
@@ -19,12 +19,12 @@ struct TokenTypeStorage : public TypeStorage {
 
   explicit TokenTypeStorage(Type inner) : innerType(inner) {}
 
-  bool operator==(const KeyTy &key) const { return key == innerType; }
+  bool operator==(const KeyTy &key) const {
+    return key == innerType;
+  }
 
-  static TokenTypeStorage *construct(TypeStorageAllocator &allocator,
-                                     const KeyTy &key) {
-    return new (allocator.allocate<TokenTypeStorage>())
-        TokenTypeStorage(key);
+  static TokenTypeStorage *construct(TypeStorageAllocator &allocator, const KeyTy &key) {
+    return new (allocator.allocate<TokenTypeStorage>()) TokenTypeStorage(key);
   }
 
   Type innerType;
@@ -33,17 +33,14 @@ struct TokenTypeStorage : public TypeStorage {
 struct HandleTypeStorage : public TypeStorage {
   using KeyTy = std::pair<MemorySpace, Type>;
 
-  HandleTypeStorage(MemorySpace space, Type payload)
-      : space(space), payload(payload) {}
+  HandleTypeStorage(MemorySpace space, Type payload) : space(space), payload(payload) {}
 
   bool operator==(const KeyTy &key) const {
     return key.first == space && key.second == payload;
   }
 
-  static HandleTypeStorage *construct(TypeStorageAllocator &allocator,
-                                      const KeyTy &key) {
-    return new (allocator.allocate<HandleTypeStorage>())
-        HandleTypeStorage(key.first, key.second);
+  static HandleTypeStorage *construct(TypeStorageAllocator &allocator, const KeyTy &key) {
+    return new (allocator.allocate<HandleTypeStorage>()) HandleTypeStorage(key.first, key.second);
   }
 
   MemorySpace space;
@@ -55,16 +52,17 @@ struct GoalTypeStorage : public TypeStorage {
 
   explicit GoalTypeStorage(unsigned priority) : priority(priority) {}
 
-  bool operator==(const KeyTy &key) const { return key == priority; }
+  bool operator==(const KeyTy &key) const {
+    return key == priority;
+  }
 
-  static GoalTypeStorage *construct(TypeStorageAllocator &allocator,
-                                    const KeyTy &key) {
+  static GoalTypeStorage *construct(TypeStorageAllocator &allocator, const KeyTy &key) {
     return new (allocator.allocate<GoalTypeStorage>()) GoalTypeStorage(key);
   }
 
   unsigned priority;
 };
 
-} // namespace mlir::ais::detail
+}  // namespace mlir::ais::detail
 
-#endif // APXM_AIS_TYPES_IMPL_H
+#endif  // APXM_AIS_TYPES_IMPL_H

@@ -1,0 +1,111 @@
+//===- Passes.td - AIS Pass Definitions --------------------*- tablegen -*-===//
+//
+// Part of the A-PXM project, under the Apache License v2.0.
+// See LICENSE for license information.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef APXM_AIS_PASSES
+#define APXM_AIS_PASSES
+
+include "mlir/Pass/PassBase.td"
+
+//===----------------------------------------------------------------------===//
+// Domain-Specific Transform Passes
+//===----------------------------------------------------------------------===//
+
+def NormalizeAgentGraph : Pass<"normalize", "mlir::ModuleOp"> {
+  let summary = "Normalize AIS graph structure";
+  let description = [{
+    Canonicalizes the AIS graph by:
+    - Deduplicating reasoning contexts
+    - Normalizing string attributes (lowercase capability/space names)
+    - Establishing SSA ordering invariants for downstream passes
+
+    This pass ensures the IR is in a canonical form that other passes
+    can rely on, similar to MLIR's canonicalizer but domain-specific.
+  }];
+  let constructor = "mlir::ais::createNormalizeAgentGraphPass()";
+}
+
+def CapabilityScheduling : Pass<"scheduling", "mlir::ModuleOp"> {
+  let summary = "Annotate operations with scheduling metadata";
+  let description = [{
+    Classifies capabilities into execution tiers and annotates operations
+    with scheduling hints for the runtime:
+
+    - Tier classification (io/compute/reasoning/memory/general)
+    - Cost estimation based on context size
+    - Parallel-safety markers for speculation
+
+    These annotations guide the runtime dataflow scheduler to overlap work
+    and optimize execution order.
+  }];
+  let constructor = "mlir::ais::createCapabilitySchedulingPass()";
+  let options = [
+    Option<"parallelThreshold", "parallel-threshold", "unsigned", /*default=*/"3",
+           "Maximum context size considered safe for parallel execution">,
+    Option<"baseCost", "base-cost", "unsigned", /*default=*/"2",
+           "Base estimated cost for each operation">,
+    Option<"contextWeight", "context-weight", "unsigned", /*default=*/"2",
+           "Cost multiplier per context operand">
+  ];
+}
+
+def FuseReasoning : Pass<"fuse-reasoning", "mlir::ModuleOp"> {
+  let summary = "Fuse reasoning chains to reduce LLM calls";
+  let description = [{
+    Identifies producer-consumer ais.rsn chains and merges them into single
+    batched operations. This is the highest-ROI optimization (100-400x) as it:
+
+    - Reduces serialized LLM API calls (each ~500ms-2s)
+    - Concatenates reasoning templates with separator
+    - Combines contexts from both operations
+
+    Only fuses when producer has single use and neither has inner_plan.
+  }];
+  let constructor = "mlir::ais::createFuseReasoningPass()";
+}
+
+//===----------------------------------------------------------------------===//
+// Conversion/Lowering Passes
+//===----------------------------------------------------------------------===//
+
+def AISToAsyncPass : Pass<"lower-to-async", "mlir::ModuleOp"> {
+  let summary = "Lower AIS operations to async dialect";
+  let description = [{
+    Converts AIS operations (inv, rsn, qmem, umem, wait_all) to MLIR's
+    async dialect by wrapping them in async.execute regions. This:
+
+    - Makes parallelism explicit in the IR
+    - Enables async-aware optimizations
+    - Prepares for runtime interpretation
+
+    Note: Runtime interprets async dialect directly without additional
+    lowering layer (no AsyncToRuntime pass needed per ais-compiler design).
+  }];
+  let constructor = "mlir::ais::createAISToAsyncPass()";
+  let dependentDialects = ["async::AsyncDialect", "func::FuncDialect"];
+}
+
+def AISToRustPass : Pass<"ais-emit-rust", "mlir::ModuleOp"> {
+  let summary = "Emit Rust source code from AIS dialect";
+  let description = [{
+    Transpiles AIS operations to Rust source code that uses apxm-runtime.
+    The generated code:
+
+    - Uses apxm-runtime's public API (AgentBuilder, Executor, operations)
+    - Is human-readable and debuggable
+    - Compiles to native code with rustc
+    - Achieves native performance (no interpretation overhead)
+
+    This pass enables ahead-of-time compilation of agent programs.
+  }];
+  let constructor = "mlir::ais::createAISToRustPass()";
+  let options = [
+    Option<"output", "output", "std::string", /*default=*/"\"\"",
+           "Output file path for generated Rust code">
+  ];
+}
+
+#endif // APXM_AIS_PASSES

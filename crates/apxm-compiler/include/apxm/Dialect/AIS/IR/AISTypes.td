@@ -12,7 +12,7 @@
 #ifndef APXM_AIS_TYPES
 #define APXM_AIS_TYPES
 
-include "apxm/AIS/Dialect/AISDialect.td"
+include "apxm/Dialect/AIS/IR/AISDialect.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//

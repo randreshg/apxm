@@ -22,7 +22,7 @@ namespace detail {
 struct TokenTypeStorage;
 struct HandleTypeStorage;
 struct GoalTypeStorage;
-} // namespace detail
+}  // namespace detail
 
 enum class MemorySpace : uint8_t { STM = 0, LTM, Episodic };
 
@@ -33,11 +33,11 @@ Type getDefaultPayloadType(MLIRContext *context);
 class TokenType : public Type::TypeBase<TokenType, Type, detail::TokenTypeStorage> {
 public:
   using Base::Base;
-  
+
   static constexpr StringLiteral name = "ais.token";
-  
+
   static TokenType get(MLIRContext *context, Type innerType);
-  
+
   Type getInnerType() const;
 };
 
@@ -47,8 +47,7 @@ public:
 
   static constexpr StringLiteral name = "ais.handle";
 
-  static HandleType get(MLIRContext *context, MemorySpace space,
-                        Type payload = Type());
+  static HandleType get(MLIRContext *context, MemorySpace space, Type payload = Type());
 
   MemorySpace getSpace() const;
   Type getPayload() const;
@@ -65,6 +64,6 @@ public:
   unsigned getPriority() const;
 };
 
-} // namespace mlir::ais
+}  // namespace mlir::ais
 
-#endif // APXM_AIS_TYPES_H
+#endif  // APXM_AIS_TYPES_H

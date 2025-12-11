@@ -12,9 +12,8 @@
 #ifndef APXM_AIS_OPS
 #define APXM_AIS_OPS
 
-include "apxm/AIS/Dialect/AISDialect.td"
-include "apxm/AIS/IR/AISTypes.td"
-include "apxm/AIS/Interfaces/RuntimeInterfaces.td"
+include "apxm/Dialect/AIS/IR/AISDialect.td"
+include "apxm/Dialect/AIS/IR/AISTypes.td"
 include "mlir/IR/CommonTypeConstraints.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
@@ -28,7 +27,7 @@ def AIS_ConstStrOp : AIS_Op<"const_str", [Pure]> {
   let description = [{
     Defines a string constant value that can be used as input to other operations.
     The string value is stored as an attribute and a token handle is returned.
-    
+
     Example:
     ```mlir
     %str = ais.const_str "Hello, world!" : !ais.token<i64>
@@ -37,19 +36,18 @@ def AIS_ConstStrOp : AIS_Op<"const_str", [Pure]> {
   let arguments = (ins StrAttr:$value);
   let results = (outs AIS_TokenType:$result);
   let assemblyFormat = "$value attr-dict `:` type($result)";
-  
+
   // Enable constant folding and canonicalization for string deduplication
   let hasFolder = 1;
 }
 
 def AIS_QMemOp : AIS_Op<"qmem",
-    [MemoryEffects<[MemRead<AIS_BeliefResource>]>,
-     DeclareOpInterfaceMethods<AISRuntimeCallableOpInterface>]> {
+    [MemoryEffects<[MemRead<AIS_BeliefResource>]>]> {
   let summary = "Query memory (AAM)";
   let description = [{
     Queries the Agent Abstract Machine memory at the specified tier
     and returns a handle to the retrieved content.
-    
+
     Example:
     ```mlir
     %handle = ais.qmem "find facts about topic X" stage "belief_db" in "ltm" : !ais.handle
@@ -69,12 +67,11 @@ def AIS_QMemOp : AIS_Op<"qmem",
 }
 
 def AIS_UMemOp : AIS_Op<"umem",
-    [MemoryEffects<[MemWrite<AIS_BeliefResource>]>,
-     DeclareOpInterfaceMethods<AISRuntimeCallableOpInterface>]> {
+    [MemoryEffects<[MemWrite<AIS_BeliefResource>]>]> {
   let summary = "Update memory (AAM)";
   let description = [{
     Updates the Agent Abstract Machine memory with a new value.
-    
+
     Example:
     ```mlir
     ais.umem %token into "ltm" : !ais.token
@@ -95,12 +92,11 @@ def AIS_UMemOp : AIS_Op<"umem",
 //===----------------------------------------------------------------------===//
 
 def AIS_InvOp : AIS_Op<"inv",
-    [MemoryEffects<[MemRead<AIS_CapabilityResource>]>,
-     DeclareOpInterfaceMethods<AISRuntimeCallableOpInterface>]> {
+    [MemoryEffects<[MemRead<AIS_CapabilityResource>]>]> {
   let summary = "Invoke capability (tool/API)";
   let description = [{
     Invokes a registered capability (tool, API, or function) with parameters.
-    
+
     Example:
     ```mlir
     %result = ais.inv "web_search" ("query": "MLIR compiler") : !ais.token
@@ -123,13 +119,12 @@ def AIS_InvOp : AIS_Op<"inv",
 
 def AIS_RsnOp : AIS_Op<"rsn",
     [MemoryEffects<[MemRead<AIS_BeliefResource>, MemWrite<AIS_BeliefResource>,
-                    MemWrite<AIS_GoalResource>]>,
-     DeclareOpInterfaceMethods<AISRuntimeCallableOpInterface>]> {
+                    MemWrite<AIS_GoalResource>]>]> {
   let summary = "Reason with LLM/SLM";
   let description = [{
     Performs reasoning using a language model with the given template and context.
     Can optionally include an inner planning region.
-    
+
     Example:
     ```mlir
     %result = ais.rsn "Analyze: {{context}}" [%ctx1, %ctx2 : !ais.token, !ais.handle] : !ais.token
@@ -146,6 +141,7 @@ def AIS_RsnOp : AIS_Op<"rsn",
     attr-dict `:` type($result)
   }];
   let hasVerifier = 1;
+  let hasCanonicalizer = 1;
 }
 
 def AIS_ReflectOp : AIS_Op<"reflect",
@@ -153,7 +149,7 @@ def AIS_ReflectOp : AIS_Op<"reflect",
   let summary = "Reflect over episodic traces";
   let description = [{
     Analyzes past execution traces to extract insights or patterns.
-    
+
     Example:
     ```mlir
     %insight = ais.reflect "trace_123" : !ais.token
@@ -175,10 +171,10 @@ def AIS_VerifyOp : AIS_Op<"verify",
   let summary = "Verify claim against evidence";
   let description = [{
     Verifies a claim using provided evidence and a verification template.
-    
+
     Example:
     ```mlir
-    %verified = ais.verify %claim : !ais.token vs %evidence : !ais.handle 
+    %verified = ais.verify %claim : !ais.token vs %evidence : !ais.handle
                 with "Check if claim is supported" : !ais.token
     ```
   }];
@@ -189,7 +185,7 @@ def AIS_VerifyOp : AIS_Op<"verify",
   );
   let results = (outs AIS_TokenType:$result);
   let assemblyFormat = [{
-    $claim `:` type($claim) `vs` $evidence `:` type($evidence) 
+    $claim `:` type($claim) `vs` $evidence `:` type($evidence)
     `with` $template_str attr-dict `:` type($result)
   }];
   let hasVerifier = 1;
@@ -204,7 +200,7 @@ def AIS_PlanOp : AIS_Op<"plan",
   let summary = "Plan new subgraph";
   let description = [{
     Creates a planning goal that can be refined into executable operations.
-    
+
     Example:
     ```mlir
     %goal = ais.plan "Solve task X" (%ctx : !ais.token) : !ais.goal
@@ -229,7 +225,7 @@ def AIS_ExcOp : AIS_Op<"exc"> {
   let summary = "Execute sandboxed code";
   let description = [{
     Executes code in a sandboxed environment with provided context.
-    
+
     Example:
     ```mlir
     %result = ais.exc "print('hello')" : !ais.token
@@ -254,7 +250,7 @@ def AIS_WaitAllOp : AIS_Op<"wait_all", [Pure]> {
   let summary = "Barrier waiting for tokens";
   let description = [{
     Waits for all input tokens to be ready before producing the result.
-    
+
     Example:
     ```mlir
     %synced = ais.wait_all %tok1, %tok2, %tok3 : !ais.token
@@ -273,7 +269,7 @@ def AIS_MergeOp : AIS_Op<"merge", [Pure]> {
   let summary = "Merge tokens";
   let description = [{
     Merges multiple tokens into a single token.
-    
+
     Example:
     ```mlir
     %merged = ais.merge %tok1, %tok2 : !ais.token
@@ -368,7 +364,7 @@ def AIS_ErrOp : AIS_Op<"err"> {
   let summary = "Error handling";
   let description = [{
     Handles errors with optional recovery logic.
-    
+
     Example:
     ```mlir
     %recovered = ais.err %failed with "Retry with fallback" : !ais.token
@@ -394,7 +390,7 @@ def AIS_CommunicateOp : AIS_Op<"communicate"> {
   let summary = "Multi-agent communication";
   let description = [{
     Sends a message to another agent with optional attachments.
-    
+
     Example:
     ```mlir
     %ack = ais.communicate "agent_bob" (%data : !ais.token) : !ais.token
