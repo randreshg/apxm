@@ -68,7 +68,9 @@ add_mlir_dialect_library(APXMAISIR
 
 add_mlir_library(APXMAISTransforms
   Transforms/Passes.cpp
-  // Add transform files here
+  Transforms/CapabilityScheduling.cpp
+  Transforms/FuseReasoning.cpp
+  Transforms/NormalizeAgentGraph.cpp
 
   ADDITIONAL_HEADER_DIRS
   ${APXM_INCLUDE_DIR}
