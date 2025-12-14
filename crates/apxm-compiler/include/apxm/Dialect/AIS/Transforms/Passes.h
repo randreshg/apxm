@@ -1,18 +1,19 @@
-//===- Passes.h - AIS Pass Declarations -----------------------*- C++ -*-===//
-//
-// Part of the A-PXM project, under the Apache License v2.0.
-// See LICENSE for license information.
-//
-//===----------------------------------------------------------------------===//
-//
-// Consolidated pass declarations aligned with ais-compiler MVP design.
-//
-// Philosophy: Keep it simple
-// - 3 domain-specific transform passes
-// - 1 lowering pass to async dialect
-// - Use MLIR native passes (canonicalizer, CSE, symbol-dce)
-//
-//===----------------------------------------------------------------------===//
+/**
+ * @file  Passes.h
+ * @brief Public entry point for all AIS transformation passes.
+ *
+ * The file re-exports the auto-generated pass declarations (`GEN_PASS_DECL`)
+ * and provides factory functions for each pass.  That keeps the registration
+ * site (AisTransforms.cpp) and command-line driver code free of TableGen
+ * details.
+ *
+ * Pass list (in canonical order):
+ *   1. normalize         – canonicalise the graph
+ *   2. scheduling        – annotate with tier/cost/parallel-safe flags
+ *   3. fuse-reasoning    – batch LLM calls (highest ROI)
+ *   4. lower-to-async    – expose parallelism to the runtime
+ *   5. ais-emit-rust     – ahead-of-time Rust code generation
+ */
 
 #ifndef APXM_AIS_PASSES_H
 #define APXM_AIS_PASSES_H

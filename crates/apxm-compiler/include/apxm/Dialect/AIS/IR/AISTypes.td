@@ -1,13 +1,19 @@
-//===- AISTypes.td - AIS Type Definitions ------------------*- tablegen -*-===//
-//
-// Part of the A-PXM project, under the Apache License v2.0.
-// See LICENSE for license information.
-//
-//===----------------------------------------------------------------------===//
-//
-// This file defines types for the AIS dialect.
-//
-//===----------------------------------------------------------------------===//
+/**
+ * @file  AISTypes.td
+ * @brief Type definitions and type constraints for the AIS dialect.
+ *
+ * Three first-class types are exposed:
+ *   - !ais.token<innerType>   – data-flow token carrying a typed value
+ *   - !ais.handle<space,payload> – reference to content in an AAM memory space
+ *   - !ais.goal<priority>    – planning goal that can be refined into a subgraph
+ *
+ * Type constraints `AIS_AnyTokenOrHandle` and `AIS_AnyTokenHandleOrGoal` are
+ * used throughout AISOps.td to accept the common super-sets without resorting
+ * to `AnyType`.
+ *
+ * Memory resources (`AIS_BeliefResource`, ...) are also declared here so that
+ * both ODS and C++ code use the same symbolic names.
+ */
 
 #ifndef APXM_AIS_TYPES
 #define APXM_AIS_TYPES
@@ -63,6 +69,10 @@ def AIS_GoalType : DialectType<AIS_Dialect,
 /// Type constraint: Accept either Token or Handle
 def AIS_AnyTokenOrHandle : AnyTypeOf<[AIS_TokenType, AIS_HandleType],
     "token or handle">;
+
+/// Type constraint: Accept Token, Handle, or Goal
+def AIS_AnyTokenHandleOrGoal : AnyTypeOf<[AIS_TokenType, AIS_HandleType, AIS_GoalType],
+    "token, handle, or goal">;
 
 //===----------------------------------------------------------------------===//
 // Memory Resources (for Side Effect Interface)

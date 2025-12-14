@@ -1,13 +1,28 @@
-//===- AISOps.td - AIS Operation Definitions ---------------*- tablegen -*-===//
-//
-// Part of the A-PXM project, under the Apache License v2.0.
-// See LICENSE for license information.
-//
-//===----------------------------------------------------------------------===//
-//
-// This file defines operations for the AIS dialect.
-//
-//===----------------------------------------------------------------------===//
+/**
+ * @file  AISOps.td
+ * @brief Operation definitions for the Agent Instruction Set (AIS) dialect.
+ *
+ * This file declares every AIS operation, grouped by functional area:
+ *   - Agent metadata
+ *   - Memory (qmem/umem)
+ *   - Capabilities (inv)
+ *   - Reasoning (rsn, reflect, verify)
+ *   - Planning (plan)
+ *   - Execution (exc)
+ *   - Synchronization (wait_all, merge, fence)
+ *   - Control flow (jump, branch_on_value, loop_*, try_catch, return)
+ *   - Error handling (err)
+ *   - Communication (communicate)
+ *
+ * All operations inherit from `AIS_Op<>` defined in AISDialect.td and
+ * use the resource-based side-effect interface introduced in AISOps.h.
+ * That allows fine-grained dependence analysis without falling back to
+ * the generic "memory" effect.
+ *
+ * Canonicalisers and folders are declared only where they are already
+ * implemented; other operations carry `hasVerifier = 1` so that
+ * invariants can be checked early.
+ */
 
 #ifndef APXM_AIS_OPS
 #define APXM_AIS_OPS
@@ -17,6 +32,22 @@ include "apxm/Dialect/AIS/IR/AISTypes.td"
 include "mlir/IR/CommonTypeConstraints.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+
+//===----------------------------------------------------------------------===//
+// Agent Metadata
+//===----------------------------------------------------------------------===//
+
+def AIS_AgentOp : AIS_Op<"agent", [HasParent<"mlir::ModuleOp">]> {
+  let summary = "Declarative agent metadata";
+  let description = [{
+    Captures the structural declarations associated with an agent (memory
+    stores, beliefs, goals, capabilities). This keeps the DSL information
+    available to later compiler stages and the runtime even though flows are
+    lowered to `func.func`.
+  }];
+  let arguments = (ins StrAttr:$name);
+  let assemblyFormat = "$name attr-dict";
+}
 
 //===----------------------------------------------------------------------===//
 // Memory Operations
@@ -132,7 +163,7 @@ def AIS_RsnOp : AIS_Op<"rsn",
   }];
   let arguments = (ins
     StrAttr:$template_str,
-    Variadic<AIS_AnyTokenOrHandle>:$context
+    Variadic<AIS_AnyTokenHandleOrGoal>:$context
   );
   let results = (outs AIS_TokenType:$result);
   let regions = (region AnyRegion:$inner_plan);
@@ -157,7 +188,7 @@ def AIS_ReflectOp : AIS_Op<"reflect",
   }];
   let arguments = (ins
     StrAttr:$trace_id,
-    Variadic<AIS_AnyTokenOrHandle>:$context
+    Variadic<AIS_AnyTokenHandleOrGoal>:$context
   );
   let results = (outs AIS_TokenType:$result);
   let assemblyFormat = [{
@@ -179,8 +210,8 @@ def AIS_VerifyOp : AIS_Op<"verify",
     ```
   }];
   let arguments = (ins
-    AIS_AnyTokenOrHandle:$claim,
-    AIS_AnyTokenOrHandle:$evidence,
+    AIS_AnyTokenHandleOrGoal:$claim,
+    AIS_AnyTokenHandleOrGoal:$evidence,
     StrAttr:$template_str
   );
   let results = (outs AIS_TokenType:$result);
@@ -208,7 +239,7 @@ def AIS_PlanOp : AIS_Op<"plan",
   }];
   let arguments = (ins
     StrAttr:$goal,
-    Variadic<AIS_AnyTokenOrHandle>:$context
+    Variadic<AIS_AnyTokenHandleOrGoal>:$context
   );
   let results = (outs AIS_GoalType:$result);
   let assemblyFormat = [{
@@ -233,7 +264,7 @@ def AIS_ExcOp : AIS_Op<"exc"> {
   }];
   let arguments = (ins
     StrAttr:$code,
-    Variadic<AIS_AnyTokenOrHandle>:$context
+    Variadic<AIS_AnyTokenHandleOrGoal>:$context
   );
   let results = (outs AIS_TokenType:$result);
   let assemblyFormat = [{
@@ -400,7 +431,7 @@ def AIS_CommunicateOp : AIS_Op<"communicate"> {
     StrAttr:$recipient,
     OptionalAttr<StrAttr>:$protocol,
     OptionalAttr<StrAttr>:$payload,
-    Variadic<AIS_AnyTokenOrHandle>:$attachments
+    Variadic<AIS_AnyTokenHandleOrGoal>:$attachments
   );
   let results = (outs AIS_TokenType:$result);
   let assemblyFormat = [{

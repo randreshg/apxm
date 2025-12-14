@@ -1,11 +1,20 @@
-///==========================================================================///
-/// File: AISDebug.h
-///
-/// Centralized debug utilities for AIS compiler passes and components.
-/// Based on the A-PXM execution model for Agentic AI.
-///==========================================================================///
+/**
+ * @file  AISDebug.h
+ * @brief Unified debug/logging facility for the AIS stack.
+ *
+ * The header provides:
+ *   - A single debug stream (`debugStream()`) that respects terminal colours
+ *   - Per-component debug type setup (`AIS_DEBUG_SETUP`)
+ *   - Coloured severity macros (INFO, DEBUG, WARN, ERROR)
+ *   - Section helpers that print headers/footers so that `-debug-only` output
+ *     is easy to grep
+ *
+ * Every macro is guarded by `DEBUG_WITH_TYPE` so that `-debug-only=scheduling`
+ * or any other debug type filters the output.  The macros expand to nothing
+ * in release builds, giving zero overhead.
+ */
 
-#ifndef APXM_AIS_SUPPORT_AISDEBUG_H
+ #ifndef APXM_AIS_SUPPORT_AISDEBUG_H
 #define APXM_AIS_SUPPORT_AISDEBUG_H
 
 #include "llvm/Support/Debug.h"

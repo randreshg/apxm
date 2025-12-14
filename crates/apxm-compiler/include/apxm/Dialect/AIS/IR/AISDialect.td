@@ -1,23 +1,23 @@
-//===- AISDialect.td - AIS Dialect Definition --------------*- tablegen -*-===//
-//
-// Part of the A-PXM project, under the Apache License v2.0.
-// See LICENSE for license information.
-//
-//===----------------------------------------------------------------------===//
-//
-// This file defines the AIS (Agent Instruction Set) dialect.
-//
-//===----------------------------------------------------------------------===//
+/**
+ * @file  AISDialect.td
+ * @brief Dialect skeleton and base operation class for AIS.
+ *
+ * The dialect is intentionally light-weight: only the name, C++ namespace,
+ * summary/description, and a hook for custom type parser/printer are
+ * specified here.  The actual operations are defined in AISOps.td so that
+ * dialect-level options (e.g. new interfaces) can be added without
+ * recompiling every operation.
+ *
+ * `AIS_Op<>` is the conventional base class used by *all* AIS operations;
+ * it wires the mnemonic and trait list into the dialect automatically.
+ */
 
 #ifndef APXM_AIS_DIALECT
 #define APXM_AIS_DIALECT
 
 include "mlir/IR/OpBase.td"
 
-//===----------------------------------------------------------------------===//
-// AIS Dialect Definition
-//===----------------------------------------------------------------------===//
-
+// AIS Dialect definition
 def AIS_Dialect : Dialect {
   let name = "ais";
   let cppNamespace = "::mlir::ais";
@@ -25,13 +25,6 @@ def AIS_Dialect : Dialect {
   let description = [{
     The AIS dialect provides operations for agent programming with explicit
     state management and data-driven execution.
-    
-    Key features:
-    - Token-based dataflow for dependency tracking
-    - Memory operations (query/update) for AAM (Agent Abstract Machine)
-    - LLM integration via reasoning operations
-    - Sandboxed code execution
-    - Multi-agent communication primitives
   }];
 
   let extraClassDeclaration = [{
@@ -39,8 +32,9 @@ def AIS_Dialect : Dialect {
     ::mlir::Type parseType(::mlir::DialectAsmParser &parser) const override;
     void printType(::mlir::Type type, ::mlir::DialectAsmPrinter &printer) const override;
   }];
-  
+
   let useDefaultTypePrinterParser = 0;
+  let useDefaultAttributePrinterParser = 1;
 }
 
 /// Base class for AIS operations

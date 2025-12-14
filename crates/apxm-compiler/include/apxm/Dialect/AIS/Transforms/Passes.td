@@ -1,9 +1,22 @@
-//===- Passes.td - AIS Pass Definitions --------------------*- tablegen -*-===//
-//
-// Part of the A-PXM project, under the Apache License v2.0.
-// See LICENSE for license information.
-//
-//===----------------------------------------------------------------------===//
+/**
+ * @file  Passes.td
+ * @brief Transform and lowering passes that operate on the AIS dialect.
+ *
+ * Passes are split into two categories:
+ *
+ * 1. Domain-specific transforms
+ *    - normalize, scheduling, fuse-reasoning – work purely on AIS ops
+ * 2. Lowering passes
+ *    - lower-to-async – convert to `async.execute` so the runtime can schedule
+ *    - ais-emit-rust  – transpile to Rust source that uses apxm-runtime
+ *
+ * Each pass declares its constructor, dependent dialects, and tunable options
+ * so that `mlir-opt --help` displays them.  Options are wired to the
+ * generated pass class via `PassOptions` and can be set on the command line:
+ *
+ *   mlir-opt --pass-pipeline='builtin.module(ais-fuse-reasoning)' \
+ *            --ais-parallel-threshold=5
+ */
 
 #ifndef APXM_AIS_PASSES
 #define APXM_AIS_PASSES

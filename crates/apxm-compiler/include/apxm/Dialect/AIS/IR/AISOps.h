@@ -1,15 +1,24 @@
-//===- AISOps.h -----------------------------------------------------------===//
-//
-// Part of the A-PXM project, under the Apache License v2.0.
-// See LICENSE for license information.
-//
-//===----------------------------------------------------------------------===//
+/**
+ * @file  AISOps.h
+ * @brief Resource declarations and operation class prototypes for the AIS dialect.
+ *
+ * The four resource types (`BeliefResource`, `GoalResource`, ...) allow
+ * operations to declare fine-grained memory effects without falling back to
+ * the generic `MemoryEffects::Effect` instance.  They are declared here
+ * instead of inside the TableGen file so that C++ code (passes, folders,
+ * etc.) can reference them directly.
+ *
+ * The header ends by pulling in the generated operation classes through
+ * `GET_OP_CLASSES`; the matching `#undef` keeps the macro from leaking
+ * into later includes.
+ */
 
 #ifndef APXM_AIS_OPS_H
 #define APXM_AIS_OPS_H
 
 #include "apxm/Dialect/AIS/IR/AISTypes.h"
 #include "mlir/Bytecode/BytecodeOpInterface.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"

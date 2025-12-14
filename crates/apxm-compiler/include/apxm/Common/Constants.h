@@ -1,13 +1,11 @@
-//===- Constants.h - Common Constants ---------------------------*- C++ -*-===//
-//
-// Part of the APXM Project
-//
-//===----------------------------------------------------------------------===//
-//
-// Centralized constants to eliminate magic strings and numbers throughout
-// the codebase. Using constexpr for compile-time guarantees.
-//
-//===----------------------------------------------------------------------===//
+/**
+ * @file Constants.h
+ * @brief Central registry for string literals and numeric constants.
+ *
+ * This header keeps hard-coded tokens in one place so that:
+ * - Types are caught at compile time
+ * - Refactoring is trivial-change a constant here and every user picks it up
+ */
 
 #ifndef APXM_COMMON_CONSTANTS_H
 #define APXM_COMMON_CONSTANTS_H
