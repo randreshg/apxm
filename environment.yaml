@@ -1,0 +1,19 @@
+name: apxm
+channels:
+    - conda-forge
+dependencies:
+    # LLVM/MLIR toolchain
+    - llvmdev=21
+    - clangdev=21
+    - llvm-tools=21
+    - mlir=21
+    # Common native build tools
+    - cmake
+    - ninja
+    - pkg-config
+    - make
+    # System libraries used across crates
+    - openssl
+    - zlib
+    - libxml2
+    - zstd
