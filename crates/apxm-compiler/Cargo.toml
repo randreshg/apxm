@@ -1,6 +1,29 @@
 [package]
 name = "apxm-compiler"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
+# core
+apxm-core = { version = "0.0.1", path = "../apxm-core" }
+
+# FFI
+libc = "0.2.178"
+
+# serialization
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+
+# Error handling
+anyhow = "1.0.100"
+thiserror = "2.0.17"
+
+[dev-dependencies]
+insta = { version = "1.44.3", features = ["yaml"] }
+tempfile = "3.23.0"
+
+[build-dependencies]
+anyhow = "1.0.100"
+apxm-core = { version = "0.0.1", path = "../apxm-core" }
+bindgen = "0.72.1"
+tracing = "0.1.43"
