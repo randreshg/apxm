@@ -1,12 +1,20 @@
 [package]
 name = "apxm-core"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
+anyhow = "1.0.100"
 chrono = { version = "0.4.42", features = ["serde"] }
 dashmap = "6.1.0"
+envy = { version = "0.4.2", optional = true }
 priority-queue = "2.7.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 thiserror = "2.0.17"
+tracing-subscriber = { version = "0.3.22", optional = true }
+which = "8.0.0"
+
+[features]
+envy = ["dep:envy"]
+tracing-subscriber = ["dep:tracing-subscriber"]

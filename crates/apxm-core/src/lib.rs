@@ -5,6 +5,7 @@
 
 pub mod aam;
 pub mod error;
+pub mod logging;
 pub mod memory;
 pub mod traits;
 pub mod types;
