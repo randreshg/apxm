@@ -59,35 +59,35 @@ pub fn log<M: Display>(level: Level, module: &str, message: M) {
 #[macro_export]
 macro_rules! log_error {
     ($module:expr, $($arg:tt)*) => {
-        tracing::event!(tracing::Level::ERROR, module = $module, $($arg)*);
+        tracing::event!(tracing::Level::ERROR, module = $module, $($arg)*)
     }
 }
 
 #[macro_export]
 macro_rules! log_warn {
     ($module:expr, $($arg:tt)*) => {
-        tracing::event!(tracing::Level::WARN, module = $module, $($arg)*);
+        tracing::event!(tracing::Level::WARN, module = $module, $($arg)*)
     }
 }
 
 #[macro_export]
 macro_rules! log_info {
     ($module:expr, $($arg:tt)*) => {
-        tracing::event!(tracing::Level::INFO, module = $module, $($arg)*);
+        tracing::event!(tracing::Level::INFO, module = $module, $($arg)*)
     }
 }
 
 #[macro_export]
 macro_rules! log_debug {
     ($module:expr, $($arg:tt)*) => {
-        tracing::event!(tracing::Level::DEBUG, module = $module, $($arg)*);
+        tracing::event!(tracing::Level::DEBUG, module = $module, $($arg)*)
     }
 }
 
 #[macro_export]
 macro_rules! log_trace {
     ($module:expr, $($arg:tt)*) => {
-        tracing::event!(tracing::Level::TRACE, module = $module, $($arg)*);
+        tracing::event!(tracing::Level::TRACE, module = $module, $($arg)*)
     }
 }
 

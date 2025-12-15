@@ -9,6 +9,7 @@ pub mod logging;
 pub mod memory;
 pub mod traits;
 pub mod types;
+pub mod utils;
 
 pub use aam::{
     AAMState, Belief, CapabilityExecutionProfile, CapabilityMetadata, CapabilitySchemas,
