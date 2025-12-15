@@ -14,11 +14,49 @@ use crate::types::AISOperationType;
 /// Errors that occur during runtime execution.
 #[derive(Debug, Error)]
 pub enum RuntimeError {
-    /// Scheduler error.
+    /// Scheduler error: general.
     #[error("Scheduler error: {message}")]
     Scheduler {
         /// Error message describing the scheduler failure.
         message: String,
+    },
+
+    /// Scheduler error: missing token.
+    #[error("Missing token {token_id} for node {node_id}")]
+    SchedulerMissingToken {
+        /// Node ID that needs the token.
+        node_id: u64,
+        /// Token ID that is missing.
+        token_id: u64,
+    },
+
+    /// Scheduler error: duplicate producer.
+    #[error("Duplicate producer for token {token_id}")]
+    SchedulerDuplicateProducer {
+        /// Token ID with duplicate producer.
+        token_id: u64,
+    },
+
+    /// Scheduler error: deadlock detected.
+    #[error("Deadlock detected after {timeout_ms}ms with {remaining} nodes remaining")]
+    SchedulerDeadlock {
+        /// Timeout in milliseconds.
+        timeout_ms: u64,
+        /// Number of remaining nodes.
+        remaining: usize,
+    },
+
+    /// Scheduler error: execution cancelled.
+    #[error("Execution cancelled")]
+    SchedulerCancelled,
+
+    /// Scheduler error: retry exhausted.
+    #[error("Node {node_id} failed after retries: {reason}")]
+    SchedulerRetryExhausted {
+        /// Node ID that failed.
+        node_id: u64,
+        /// Reason for failure.
+        reason: String,
     },
 
     /// Operation execution error.
@@ -75,6 +113,18 @@ pub enum RuntimeError {
         /// Time duration that was exceeded.
         timeout: Duration,
     },
+
+    /// Serialization/Deserialization error.
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+
+    /// Executor error.
+    #[error("Executor error: {0}")]
+    Executor(String),
+
+    /// State error.
+    #[error("State error: {0}")]
+    State(String),
 }
 
 impl RuntimeError {

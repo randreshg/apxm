@@ -2,64 +2,69 @@
 //!
 //! This module defines errors that occur during the compilation phase,
 //! including parsing, type checking, verification, and optimization errors.
+//!
+//! All errors wrap [`Error`] to provide detailed, contextual error reporting
+//! with source spans, suggestions, and help text.
 
-use thiserror::Error;
+use thiserror::Error as ThisError;
 
-use crate::error::common::SourceLocation;
+use crate::error::Error;
 
 /// Errors that occur during compilation.
-#[derive(Debug, Error)]
+#[derive(Debug, ThisError)]
 pub enum CompileError {
-    /// Parse error during source code parsing.
-    #[error("Parse error at {location}: {message}")]
-    Parse {
-        /// Source location where the parse error occurred.
-        location: SourceLocation,
-        /// Error message describing what went wrong.
-        message: String,
-    },
+    /// Parse error with rich context
+    #[error("Parse error: {0}")]
+    Parse(Box<Error>),
 
-    /// Type error during type checking.
-    #[error(
-        "Type error: expected {expected}, got {actual}{}",
-        Self::type_message_suffix(.message)
-    )]
-    Type {
-        /// Expected type.
-        expected: String,
-        /// Actual type that was found.
-        actual: String,
-        /// Optional additional message.
-        message: Option<String>,
-    },
+    /// Type error with rich context
+    #[error("Type error: {0}")]
+    Type(Box<Error>),
 
-    /// Verification error during DAG or program verification.
-    #[error("Verification error: {message}")]
-    Verification {
-        /// Error message describing the verification failure.
-        message: String,
-    },
+    /// Verification error with rich context
+    #[error("Verification error: {0}")]
+    Verification(Box<Error>),
 
-    /// Optimization error during optimization passes.
-    #[error("Optimization error: {message}")]
-    Optimization {
-        /// Error message describing the optimization failure.
-        message: String,
-    },
+    /// Optimization error with rich context
+    #[error("Optimization error: {0}")]
+    Optimization(Box<Error>),
 
-    /// Module not found error.
+    /// Pass execution failed with rich context
+    #[error("Pass execution failed: {0}")]
+    PassFailed(Box<Error>),
+
+    /// DAG construction error with rich context
+    #[error("DAG construction failed: {0}")]
+    DagConstruction(Box<Error>),
+
+    /// Module not found (simple error, no rich context needed)
     #[error("Module not found: {name}")]
     ModuleNotFound {
-        /// Name of the moduel that was not found.
+        /// Name of the module that was not found.
         name: String,
     },
 }
 
 impl CompileError {
-    fn type_message_suffix(message: &Option<String>) -> String {
-        match message.as_ref() {
-            Some(note) => format!(" - {}", note),
-            None => String::new(),
+    /// Get the underlying Error if available
+    pub fn as_error(&self) -> Option<&Error> {
+        match self {
+            CompileError::Parse(e) => Some(e),
+            CompileError::Type(e) => Some(e),
+            CompileError::Verification(e) => Some(e),
+            CompileError::Optimization(e) => Some(e),
+            CompileError::PassFailed(e) => Some(e),
+            CompileError::DagConstruction(e) => Some(e),
+            CompileError::ModuleNotFound { .. } => None,
+        }
+    }
+
+    /// Pretty-print with source code
+    pub fn pretty_print(&self, source: Option<&str>) -> String {
+        if let Some(e) = self.as_error() {
+            e.pretty_print(source)
+        } else {
+            format!("{}", self)
         }
     }
 }
@@ -67,69 +72,87 @@ impl CompileError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::codes::ErrorCode;
+    use crate::error::span::Span;
 
     #[test]
     fn test_parse_error() {
-        let location = SourceLocation::new("test.ais".to_string(), 5, 10);
-        let error = CompileError::Parse {
-            location: location.clone(),
-            message: "Unexpected token".to_string(),
-        };
+        let span = Span::new("test.ais".to_string(), 5, 10, 1);
+        let err = Error::new(
+            ErrorCode::UnexpectedToken,
+            "Unexpected token".to_string(),
+            span,
+        );
+        let error = CompileError::Parse(Box::new(err));
 
         let display = format!("{}", error);
         assert!(display.contains("Parse error"));
-        assert!(display.contains("test.ais:5:10"));
+        assert!(display.contains("E001"));
         assert!(display.contains("Unexpected token"));
     }
 
     #[test]
     fn test_type_error() {
-        let error = CompileError::Type {
-            expected: "String".to_string(),
-            actual: "Number".to_string(),
-            message: None,
-        };
+        let span = Span::new("test.ais".to_string(), 10, 5, 3);
+        let err = Error::new(
+            ErrorCode::TypeMismatch,
+            "expected 'String', got 'Number'".to_string(),
+            span,
+        );
+        let error = CompileError::Type(Box::new(err));
 
         let display = format!("{}", error);
         assert!(display.contains("Type error"));
-        assert!(display.contains("expected String"));
-        assert!(display.contains("got Number"));
+        assert!(display.contains("E101"));
+        assert!(display.contains("expected 'String'"));
+        assert!(display.contains("got 'Number'"));
     }
 
     #[test]
-    fn test_type_error_with_message() {
-        let error = CompileError::Type {
-            expected: "String".to_string(),
-            actual: "Number".to_string(),
-            message: Some("Cannot convert number to string".to_string()),
-        };
+    fn test_type_error_with_note() {
+        let span = Span::new("test.ais".to_string(), 10, 5, 3);
+        let err = Error::new(
+            ErrorCode::TypeMismatch,
+            "expected 'String', got 'Number'".to_string(),
+            span,
+        )
+        .with_note("Cannot convert number to string".to_string());
+        let error = CompileError::Type(Box::new(err));
 
         let display = format!("{}", error);
         assert!(display.contains("Type error"));
-        assert!(display.contains("expected String"));
-        assert!(display.contains("got Number"));
-        assert!(display.contains("Cannot convert number to string"));
+        assert!(display.contains("E101"));
     }
 
     #[test]
     fn test_verification_error() {
-        let error = CompileError::Verification {
-            message: "Cycle detected in DAG".to_string(),
-        };
+        let span = Span::new("test.ais".to_string(), 15, 1, 5);
+        let err = Error::new(
+            ErrorCode::DagCycleDetected,
+            "Cycle detected in DAG".to_string(),
+            span,
+        );
+        let error = CompileError::Verification(Box::new(err));
 
         let display = format!("{}", error);
         assert!(display.contains("Verification error"));
+        assert!(display.contains("E203"));
         assert!(display.contains("Cycle detected in DAG"));
     }
 
     #[test]
     fn test_optimization_error() {
-        let error = CompileError::Optimization {
-            message: "Failed to apply optimization pass".to_string(),
-        };
+        let span = Span::new("test.ais".to_string(), 20, 1, 10);
+        let err = Error::new(
+            ErrorCode::PassExecutionFailed,
+            "Failed to apply optimization pass".to_string(),
+            span,
+        );
+        let error = CompileError::Optimization(Box::new(err));
 
         let display = format!("{}", error);
         assert!(display.contains("Optimization error"));
+        assert!(display.contains("E301"));
         assert!(display.contains("Failed to apply optimization pass"));
     }
 
@@ -146,12 +169,38 @@ mod tests {
 
     #[test]
     fn test_error_implements_std_error() {
-        let error = CompileError::Parse {
-            location: SourceLocation::new("test.ais".to_string(), 1, 1),
-            message: "Test".to_string(),
-        };
+        let span = Span::new("test.ais".to_string(), 1, 1, 1);
+        let err = Error::new(ErrorCode::UnexpectedToken, "Test".to_string(), span);
+        let error = CompileError::Parse(Box::new(err));
 
         // Verify it implements std::error::Error
         let _: &dyn std::error::Error = &error;
+    }
+
+    #[test]
+    fn test_as_error() {
+        let span = Span::new("test.ais".to_string(), 5, 10, 1);
+        let err = Error::new(ErrorCode::UnexpectedToken, "Test error".to_string(), span);
+        let error = CompileError::Parse(Box::new(err));
+
+        assert!(error.as_error().is_some());
+        let e = error.as_error().unwrap();
+        assert_eq!(e.code, ErrorCode::UnexpectedToken);
+    }
+
+    #[test]
+    fn test_pretty_print() {
+        let span = Span::new("test.ais".to_string(), 1, 5, 3);
+        let error = Error::new(
+            ErrorCode::ExpectedExpression,
+            "expected expression".to_string(),
+            span,
+        );
+        let error = CompileError::Parse(Box::new(error));
+
+        let source = "let x = ";
+        let output = error.pretty_print(Some(source));
+        assert!(output.contains("error[E002]"));
+        assert!(output.contains("expected expression"));
     }
 }

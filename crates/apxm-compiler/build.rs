@@ -187,9 +187,23 @@ fn generate_bindings(
     out_dir: &Path,
     mlir_include_dir: &Path,
     project_include_dir: &Path,
+    mlir_prefix: &Path,
 ) -> Result<()> {
     let bindings_path = out_dir.join("bindings.rs");
     let header_path = manifest_dir.join("include/apxm/CAPI/Compiler.h");
+
+    // Set up libclang path for bindgen
+    let clang_lib_path = mlir_prefix.join("lib");
+    if clang_lib_path.exists() {
+        log_info!(
+            "apxm-compiler-build",
+            "Setting clang library path for bindgen: {}",
+            clang_lib_path.display()
+        );
+        unsafe {
+            env::set_var("LIBCLANG_PATH", &clang_lib_path);
+        }
+    }
 
     let builder = bindgen::Builder::default()
         .header(header_path.to_str().context("Invalid header path")?)
@@ -350,6 +364,7 @@ fn build() -> Result<()> {
         &config.out_dir,
         &mlir_include_dir,
         &project_include_dir,
+        &mlir_dir,
     )?;
 
     emit_compiler_link_directives(&config.install_dir, &locate_mlir_layout()?)?;

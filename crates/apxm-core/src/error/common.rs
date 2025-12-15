@@ -32,6 +32,14 @@ impl SourceLocation {
     pub fn new(file: String, line: usize, column: usize) -> Self {
         SourceLocation { file, line, column }
     }
+
+    pub fn unknown() -> Self {
+        SourceLocation {
+            file: "<unknown>".to_string(),
+            line: 0,
+            column: 0,
+        }
+    }
 }
 
 impl fmt::Display for SourceLocation {
