@@ -23,6 +23,7 @@
 
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 #include <algorithm>
 #include <array>
@@ -37,23 +38,32 @@ namespace {
 APXM_AIS_DEBUG_SETUP(scheduling)
 
 // Declarative capability tier classification
-constexpr std::array kTierMappings = {
-    std::pair{AISTierKind::io, std::array{"search", "fetch", "http"}},
-    std::pair{AISTierKind::compute, std::array{"calc", "math", "solve"}},
-    std::pair{AISTierKind::reasoning, std::array{"reason", "plan"}},
-    std::pair{AISTierKind::memory, std::array{"mem", "store"}},
+struct TierMapping {
+  AISTierKind tier;
+  std::array<llvm::StringLiteral, 3> keywords;
+  size_t keywordCount;
 };
+
+constexpr std::array<TierMapping, 4> kTierMappings = {{
+    {AISTierKind::io, {"search", "fetch", "http"}, 3},
+    {AISTierKind::compute, {"calc", "math", "solve"}, 3},
+    {AISTierKind::reasoning, {"reason", "plan", ""}, 2},
+    {AISTierKind::memory, {"mem", "store", ""}, 2},
+}};
 
 AISTierKind classifyCapabilityTier(StringRef capability) {
   const std::string lowered = capability.lower();
+  StringRef loweredRef(lowered);
 
-  auto matchesKeywords = [&](const auto& mapping) {
-    return std::any_of(mapping.second.begin(), mapping.second.end(),
-      [&](StringRef keyword) { return lowered.contains(keyword); });
+  auto matchesKeywords = [&](const TierMapping& mapping) {
+    return std::any_of(mapping.keywords.begin(),
+                       mapping.keywords.begin() + mapping.keywordCount,
+                       [&](StringRef keyword) { return loweredRef.contains(keyword); });
   };
 
-  if (const auto* match = llvm::find_if(kTierMappings, matchesKeywords))
-    return match->first;
+  if (const auto match = llvm::find_if(kTierMappings, matchesKeywords);
+      match != kTierMappings.end())
+    return match->tier;
 
   return AISTierKind::general;
 }
@@ -119,10 +129,10 @@ private:
     const AISTierKind tier = classifyCapabilityTier(op.getCapabilityAttr().getValue());
     const unsigned cost = baseCost + contextWeight;
 
-    op->setAttr("ais.tier", AISTierAttr::get(op.getContext(), tier));
-    op->setAttr("ais.intent", AISIntentAttr::get(op.getContext(), AISIntentKind::capability));
+    op->setAttr("ais.tier", AISTierAttr::get(op->getContext(), tier));
+    op->setAttr("ais.intent", AISIntentAttr::get(op->getContext(), AISIntentKind::capability));
     op->setAttr("ais.estimated_cost",
-                AISEstimatedCostAttr::get(op.getContext(), static_cast<int32_t>(cost)));
+                AISEstimatedCostAttr::get(op->getContext(), static_cast<int32_t>(cost)));
   }
 
   void annotateReasoning(RsnOp op) const {
@@ -130,13 +140,13 @@ private:
     const unsigned cost = baseCost + static_cast<unsigned>(contextSize) * contextWeight;
     const bool isParallelSafe = (contextSize <= parallelThreshold);
 
-    op->setAttr("ais.tier", AISTierAttr::get(op.getContext(), AISTierKind::reasoning));
-    op->setAttr("ais.intent", AISIntentAttr::get(op.getContext(), AISIntentKind::reasoning));
+    op->setAttr("ais.tier", AISTierAttr::get(op->getContext(), AISTierKind::reasoning));
+    op->setAttr("ais.intent", AISIntentAttr::get(op->getContext(), AISIntentKind::reasoning));
     op->setAttr("ais.estimated_cost",
-                AISEstimatedCostAttr::get(op.getContext(), static_cast<int32_t>(cost)));
+                AISEstimatedCostAttr::get(op->getContext(), static_cast<int32_t>(cost)));
 
     if (isParallelSafe)
-      op->setAttr("ais.parallel_safe", AISParallelSafeAttr::get(op.getContext()));
+      op->setAttr("ais.parallel_safe", AISParallelSafeAttr::get(op->getContext()));
     else
       op->removeAttr("ais.parallel_safe");
   }
@@ -146,9 +156,9 @@ private:
                                * static_cast<unsigned>(op.getContext().size());
     const unsigned cost = baseCost + contextCost;
 
-    op->setAttr("ais.intent", AISIntentAttr::get(op.getContext(), AISIntentKind::goal));
+    op->setAttr("ais.intent", AISIntentAttr::get(op->getContext(), AISIntentKind::goal));
     op->setAttr("ais.estimated_cost",
-                AISEstimatedCostAttr::get(op.getContext(), static_cast<int32_t>(cost)));
+                AISEstimatedCostAttr::get(op->getContext(), static_cast<int32_t>(cost)));
   }
 };
 

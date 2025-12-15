@@ -52,7 +52,7 @@ static std::string fuseTemplates(StringRef producerTemplate, StringRef consumerT
   fused.append(producerTemplate);
   fused.append("\n---\n");
   fused.append(consumerTemplate);
-  return fused.str();
+  return std::string(fused);
 }
 
 struct FuseReasoningPass : impl::FuseReasoningBase<FuseReasoningPass> {

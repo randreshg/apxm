@@ -442,7 +442,8 @@ struct RsnDedupContext : public OpRewritePattern<RsnOp> {
 
     // Copy inner_plan region if present
     if (!op.getInnerPlan().empty()) {
-      op.getInnerPlan().cloneInto(&newOp.getInnerPlan(), IRMapping{});
+      IRMapping mapper;
+      op.getInnerPlan().cloneInto(&newOp.getInnerPlan(), mapper);
     }
 
     // Copy other attributes (excluding template_str which is already set)

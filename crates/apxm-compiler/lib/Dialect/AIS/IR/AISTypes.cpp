@@ -12,7 +12,6 @@
  */
 
 #include "apxm/Dialect/AIS/IR/AISTypes.h"
-#include "apxm/Dialect/AIS/IR/AISTypesImpl.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/ADT/StringSwitch.h"
 #include <utility>

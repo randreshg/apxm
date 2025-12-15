@@ -107,11 +107,8 @@ public:
 
   static constexpr StringLiteral name = "ais.token";
 
-  static TokenType get(MLIRContext *ctx, Type innerType) {
-    return Base::get(ctx, innerType);
-  }
-
-  Type getInnerType() const { return getImpl()->innerType; }
+  static TokenType get(MLIRContext *ctx, Type innerType);
+  Type getInnerType() const;
 };
 
 class HandleType : public Type::TypeBase<HandleType, Type, detail::HandleTypeStorage> {
@@ -120,12 +117,10 @@ public:
 
   static constexpr StringLiteral name = "ais.handle";
 
-  static HandleType get(MLIRContext *ctx, MemorySpace space, Type payload = Type()) {
-    return Base::get(ctx, space, payload);
-  }
+  static HandleType get(MLIRContext *ctx, MemorySpace space, Type payload = Type());
 
-  MemorySpace getSpace() const { return getImpl()->space; }
-  Type   getPayload() const { return getImpl()->payload; }
+  MemorySpace getSpace() const;
+  Type getPayload() const;
 };
 
 class GoalType : public Type::TypeBase<GoalType, Type, detail::GoalTypeStorage> {
@@ -134,11 +129,8 @@ public:
 
   static constexpr StringLiteral name = "ais.goal";
 
-  static GoalType get(MLIRContext *ctx, unsigned priority) {
-    return Base::get(ctx, priority);
-  }
-
-  unsigned getPriority() const { return getImpl()->priority; }
+  static GoalType get(MLIRContext *ctx, unsigned priority);
+  unsigned getPriority() const;
 };
 
 } // namespace mlir::ais

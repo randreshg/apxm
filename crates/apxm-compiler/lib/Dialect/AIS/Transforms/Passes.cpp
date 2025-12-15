@@ -12,6 +12,6 @@
 #include "apxm/Dialect/AIS/Transforms/Passes.h"
 
 namespace mlir::ais {
-  #define GEN_PASS_REGISTRATION
-  #include "apxm/Dialect/AIS/Transforms/Passes.inc"
+#define GEN_PASS_REGISTRATION
+#include "apxm/Dialect/AIS/Transforms/Passes.h.inc"
 } // namespace mlir::ais

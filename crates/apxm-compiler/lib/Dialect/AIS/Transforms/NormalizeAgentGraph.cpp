@@ -91,9 +91,9 @@ private:
     if (!attr || !needsLowercaseNormalization(attr.getValue()))
       return false;
 
-    // Declarative normalization
-    SmallString<64> normalized;
-    llvm::lowercase(attr.getValue(), normalized);
+    SmallString<64> normalized(attr.getValue());
+    for (char &ch : normalized)
+      ch = llvm::toLower(ch);
 
     OpBuilder builder(op);
     op->setAttr(attrName, builder.getStringAttr(normalized));

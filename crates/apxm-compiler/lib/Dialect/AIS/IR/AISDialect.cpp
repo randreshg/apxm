@@ -8,7 +8,6 @@
 
 #include "apxm/Dialect/AIS/IR/AISDialect.h"
 #include "apxm/Dialect/AIS/IR/AISAttributes.h"
-#include "apxm/Dialect/AIS/IR/AISTypesImpl.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"

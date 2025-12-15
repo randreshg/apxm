@@ -7,12 +7,9 @@ file(RELATIVE_PATH APXM_AIS_TABLEGEN_OUTPUT_PREFIX
   ${APXM_AIS_GENERATED_INCLUDE_DIR}
 )
 
-set(APXM_AIS_IR_TD_FILES
-  ${APXM_INCLUDE_DIR}/apxm/Dialect/AIS/IR/AIS.td
-  ${APXM_INCLUDE_DIR}/apxm/Dialect/AIS/IR/AISDialect.td
-  ${APXM_INCLUDE_DIR}/apxm/Dialect/AIS/IR/AISAttributes.td
-  ${APXM_INCLUDE_DIR}/apxm/Dialect/AIS/IR/AISTypes.td
-  ${APXM_INCLUDE_DIR}/apxm/Dialect/AIS/IR/AISOps.td
+# Glob TableGen files instead of listing them individually
+file(GLOB APXM_AIS_IR_TD_FILES CONFIGURE_DEPENDS
+  ${APXM_INCLUDE_DIR}/apxm/Dialect/AIS/IR/*.td
 )
 
 set(LLVM_TARGET_DEFINITIONS ${APXM_INCLUDE_DIR}/apxm/Dialect/AIS/IR/AIS.td)
@@ -47,10 +44,12 @@ set(LLVM_TARGET_DEFINITIONS ${APXM_INCLUDE_DIR}/apxm/Dialect/AIS/Transforms/Pass
 mlir_tablegen(${APXM_AIS_TABLEGEN_OUTPUT_PREFIX}/apxm/Dialect/AIS/Transforms/Passes.h.inc -gen-pass-decls -name AIS)
 add_public_tablegen_target(AISPassIncGen)
 
+file(GLOB APXMAISIR_SOURCES CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/IR/*.cpp
+)
+
 add_mlir_dialect_library(APXMAISIR
-  IR/AISDialect.cpp
-  IR/AISOps.cpp
-  IR/AISTypes.cpp
+  ${APXMAISIR_SOURCES}
 
   ADDITIONAL_HEADER_DIRS
   ${APXM_INCLUDE_DIR}
@@ -66,11 +65,12 @@ add_mlir_dialect_library(APXMAISIR
   MLIRSupport
 )
 
+file(GLOB APXMAISTRANS_SOURCES CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/Transforms/*.cpp
+)
+
 add_mlir_library(APXMAISTransforms
-  Transforms/Passes.cpp
-  Transforms/CapabilityScheduling.cpp
-  Transforms/FuseReasoning.cpp
-  Transforms/NormalizeAgentGraph.cpp
+  ${APXMAISTRANS_SOURCES}
 
   ADDITIONAL_HEADER_DIRS
   ${APXM_INCLUDE_DIR}
