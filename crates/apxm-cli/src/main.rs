@@ -115,8 +115,6 @@ async fn main() -> ExitCode {
     })
 }
 
-/// Run the doctor command to check installation.
-
 /// Print version information.
 fn print_version() {
     println!("apxm {}", env!("CARGO_PKG_VERSION"));

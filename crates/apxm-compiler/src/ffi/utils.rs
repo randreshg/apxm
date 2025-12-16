@@ -35,4 +35,3 @@ pub fn handle_bool_result(success: bool, context: &str) -> Result<()> {
         format!("{}: operation failed", context),
     ))))
 }
-

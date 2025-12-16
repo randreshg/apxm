@@ -46,7 +46,7 @@ pub enum CliError {
     #[error("Unknown pass '{name}': pass not registered or not available")]
     UnknownPass {
         name: String,
-        suggestion: Option<Suggestion>,
+        suggestion: Box<Option<Suggestion>>,
         code: ErrorCode,
     },
 
@@ -95,7 +95,7 @@ impl CliError {
     pub fn unknown_pass(name: impl Into<String>, suggestion: Option<Suggestion>) -> Self {
         CliError::UnknownPass {
             name: name.into(),
-            suggestion,
+            suggestion: Box::new(suggestion),
             code: ErrorCode::PassNotFound,
         }
     }
@@ -103,7 +103,7 @@ impl CliError {
     /// Get suggestion for this error, if available.
     pub fn suggestion(&self) -> Option<&Suggestion> {
         match self {
-            CliError::UnknownPass { suggestion, .. } => suggestion.as_ref(),
+            CliError::UnknownPass { suggestion, .. } => suggestion.as_ref().as_ref(),
             _ => None,
         }
     }

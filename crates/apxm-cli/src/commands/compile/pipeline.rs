@@ -2,8 +2,8 @@ use super::args::CompileArgs;
 use apxm_compiler::{
     Context, OptimizationLevel, PassCategory, PassInfo, PassManager, find_pass, list_passes,
 };
-use apxm_core::error::cli::{CliError, CliResult};
 use apxm_core::error::Suggestion;
+use apxm_core::error::cli::{CliError, CliResult};
 use apxm_core::log_info;
 use apxm_core::types::CompilationStage;
 
@@ -185,7 +185,7 @@ fn optimization_pipeline(opt_level: OptimizationLevel) -> Vec<&'static str> {
                 "canonicalizer",
                 "cse",
                 "symbol-dce",
-                "fuse-reasoning",  // Second pass for deeper fusion
+                "fuse-reasoning", // Second pass for deeper fusion
                 "canonicalizer",
             ]
         }
@@ -198,12 +198,12 @@ fn optimization_pipeline(opt_level: OptimizationLevel) -> Vec<&'static str> {
                 "canonicalizer",
                 "cse",
                 "symbol-dce",
-                "fuse-reasoning",  // Second fusion pass
-                "scheduling",      // Re-schedule after fusion
+                "fuse-reasoning", // Second fusion pass
+                "scheduling",     // Re-schedule after fusion
                 "canonicalizer",
                 "cse",
                 "symbol-dce",
-                "fuse-reasoning",  // Third fusion pass for deep optimization
+                "fuse-reasoning", // Third fusion pass for deep optimization
                 "canonicalizer",
             ]
         }
@@ -234,63 +234,70 @@ fn suggest_similar_pass(provided_name: &str) -> Option<Suggestion> {
             let distance = levenshtein_distance(provided_name, &p.name);
             (p.name.clone(), distance)
         })
-        .filter(|(_, dist)| *dist <= 2)  // Only suggest if within edit distance of 2
+        .filter(|(_, dist)| *dist <= 2) // Only suggest if within edit distance of 2
         .collect::<Vec<_>>();
 
     if suggestions.is_empty() {
         // If no similar passes found, suggest running --list-passes
-        return Some(Suggestion::new(
-            format!(
-                "Did you mean one of the available passes? Run 'apxm compile --list-passes' to see all options."
+        return Some(
+            Suggestion::new(
+                "Run 'apxm compile --list-passes' to see all available passes".to_string(),
             )
-        ).with_help(
-            "Available pass categories: Analysis, Transform, Optimization, Lowering".to_string()
-        ));
+            .with_help(
+                "Available pass categories: Analysis, Transform, Optimization, Lowering"
+                    .to_string(),
+            ),
+        );
     }
 
     // Get the best match (smallest distance)
     let (best_match, _) = suggestions.into_iter().min_by_key(|(_, dist)| *dist)?;
 
-    Some(Suggestion::new(
-        format!("Did you mean '{}'?", best_match)
-    ).with_help(
-        format!("Run 'apxm compile --list-passes' to see all available passes")
-    ))
+    Some(
+        Suggestion::new(format!("Did you mean '{}'?", best_match))
+            .with_help("Run 'apxm compile --list-passes' to see all available passes".to_string()),
+    )
 }
 
 /// Calculate Levenshtein distance between two strings.
 fn levenshtein_distance(a: &str, b: &str) -> usize {
-    let a_len = a.len();
-    let b_len = b.len();
-
-    if a_len == 0 {
-        return b_len;
-    }
-    if b_len == 0 {
-        return a_len;
+    if a == b {
+        return 0;
     }
 
-    let mut matrix = vec![vec![0; b_len + 1]; a_len + 1];
+    // Work on the shorter string across columns to minimize memory
+    let (short, long) = if a.len() <= b.len() {
+        (a.as_bytes(), b.as_bytes())
+    } else {
+        (b.as_bytes(), a.as_bytes())
+    };
 
-    for i in 0..=a_len {
-        matrix[i][0] = i;
-    }
-    for j in 0..=b_len {
-        matrix[0][j] = j;
+    let n = short.len();
+    let m = long.len();
+
+    if n == 0 {
+        return m;
     }
 
-    for (i, a_char) in a.chars().enumerate() {
-        for (j, b_char) in b.chars().enumerate() {
-            let cost = if a_char == b_char { 0 } else { 1 };
-            matrix[i + 1][j + 1] = std::cmp::min(
-                std::cmp::min(
-                    matrix[i][j + 1] + 1,      // deletion
-                    matrix[i + 1][j] + 1,      // insertion
-                ),
-                matrix[i][j] + cost,            // substitution
-            );
+    // prev[j] = distance(long[..i], short[..j]) for the previous i
+    let mut prev: Vec<usize> = (0..=n).collect();
+    let mut curr = vec![0usize; n + 1];
+
+    for (i, &lc) in long.iter().enumerate() {
+        curr[0] = i + 1;
+
+        for (j, &sc) in short.iter().enumerate() {
+            let cost = (sc != lc) as usize;
+
+            let delete = prev[j + 1] + 1; // drop from long
+            let insert = curr[j] + 1; // add to long (match short)
+            let subst = prev[j] + cost; // substitute
+
+            curr[j + 1] = delete.min(insert).min(subst);
         }
+
+        std::mem::swap(&mut prev, &mut curr);
     }
 
-    matrix[a_len][b_len]
+    prev[n]
 }

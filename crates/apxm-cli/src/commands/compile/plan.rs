@@ -34,7 +34,9 @@ pub fn resolve_plan(args: &CompileArgs) -> CliResult<CompilePlan> {
                 message: format!(
                     "Emit format '{:?}' requires at least '{:?}' compilation stage, but '{:?}' was requested. \
                      Use '--stage {}' or a different emit format.",
-                    emit, required_stage, stage,
+                    emit,
+                    required_stage,
+                    stage,
                     format!("{:?}", required_stage).to_lowercase()
                 ),
             });

@@ -128,13 +128,11 @@ impl RustBackend {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(CompilerError::Internal(Box::new(
-                Error::new(
-                    ErrorCode::InternalError,
-                    format!("Generated code does not compile:\n{}", stderr),
-                    Span::new("<validation>".to_string(), 0, 0, 0),
-                ),
-            )));
+            return Err(CompilerError::Internal(Box::new(Error::new(
+                ErrorCode::InternalError,
+                format!("Generated code does not compile:\n{}", stderr),
+                Span::new("<validation>".to_string(), 0, 0, 0),
+            ))));
         }
 
         Ok(())
