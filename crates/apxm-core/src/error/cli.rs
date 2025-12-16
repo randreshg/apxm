@@ -3,6 +3,7 @@
 //! Provides CLI-specific error handling with proper exit codes
 //! and user-friendly error messages.
 
+use crate::error::{ErrorCode, Suggestion};
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -42,10 +43,12 @@ pub enum CliError {
     Runtime { message: String },
 
     /// Unknown pass name.
-    #[error(
-        "Unknown pass: {name}. Valid passes: dce, cse, fusion, batching, parallelism, normalize, scheduling"
-    )]
-    UnknownPass { name: String },
+    #[error("Unknown pass '{name}': pass not registered or not available")]
+    UnknownPass {
+        name: String,
+        suggestion: Option<Suggestion>,
+        code: ErrorCode,
+    },
 
     /// IO error.
     #[error("IO error: {0}")]
@@ -85,6 +88,23 @@ impl CliError {
         CliError::Compiler {
             message: err.to_string(),
             source: Some(Box::new(err)),
+        }
+    }
+
+    /// Creates an unknown pass error with an optional suggestion.
+    pub fn unknown_pass(name: impl Into<String>, suggestion: Option<Suggestion>) -> Self {
+        CliError::UnknownPass {
+            name: name.into(),
+            suggestion,
+            code: ErrorCode::PassNotFound,
+        }
+    }
+
+    /// Get suggestion for this error, if available.
+    pub fn suggestion(&self) -> Option<&Suggestion> {
+        match self {
+            CliError::UnknownPass { suggestion, .. } => suggestion.as_ref(),
+            _ => None,
         }
     }
 }
