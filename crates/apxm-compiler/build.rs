@@ -216,24 +216,15 @@ fn generate_bindings(
 
     let bindings = builder.generate().context("Failed to generate bindings")?;
 
-    bindings
-        .write_to_file(&bindings_path)
-        .context("Failed to write bindings")?;
+    let bindings_str = bindings.to_string();
+    let with_allow = format!(
+        "#[allow(dead_code, non_upper_case_globals)]\npub mod bindings_inner {{\n{}\n}}\npub use bindings_inner::*;",
+        bindings_str
+    );
 
-    // Post-process to add unsafe to extern blocks (Rust 1.86+ requirement)
-    post_process_bindings(&bindings_path)?;
+    std::fs::write(&bindings_path, with_allow).context("Failed to write bindings")?;
 
     Ok(())
-}
-
-/// Post-process generated bindings to ensure Rust 1.86+ compatibility
-fn post_process_bindings(bindings_path: &Path) -> Result<()> {
-    let content = std::fs::read_to_string(bindings_path)
-        .context("Failed to read bindings for post-processing")?;
-
-    let processed = content.replace("extern \"C\" {", "unsafe extern \"C\" {");
-
-    std::fs::write(bindings_path, processed).context("Failed to write processed bindings")
 }
 
 /// Emit linker directives for C++ libraries
