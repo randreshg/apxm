@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", content = "value")]
+#[serde(untagged)]
 pub enum Number {
     // Integer value (64-bit signed integer).
     Integer(i64),
@@ -28,13 +28,22 @@ impl Number {
     /// let int = Number::Integer(42);
     /// assert_eq!(int.as_f64(), 42.0);
     ///
-    /// let float = Number::Float(3.14);
-    /// assert_eq!(float.as_f64(), 3.14);
+    /// let float = Number::Float(std::f64::consts::PI);
+    /// assert_eq!(float.as_f64(), std::f64::consts::PI);
     /// ```
     pub fn as_f64(&self) -> f64 {
         match self {
             Number::Integer(i) => *i as f64,
             Number::Float(f) => *f,
+        }
+    }
+}
+
+impl std::fmt::Display for Number {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Number::Integer(i) => write!(f, "{i}"),
+            Number::Float(fl) => write!(f, "{fl}"),
         }
     }
 }
@@ -88,8 +97,8 @@ mod tests {
 
     #[test]
     fn test_float_creation() {
-        let num = Number::Float(3.14);
-        assert!(matches!(num, Number::Float(f) if (f - 3.14).abs() < f64::EPSILON));
+        let num = Number::Float(std::f64::consts::PI);
+        assert!(matches!(num, Number::Float(f) if (f - std::f64::consts::PI).abs() < f64::EPSILON));
     }
 
     #[test]
@@ -100,8 +109,8 @@ mod tests {
 
     #[test]
     fn test_as_f64_float() {
-        let num = Number::Float(3.14);
-        assert!((num.as_f64() - 3.14).abs() < f64::EPSILON);
+        let num = Number::Float(std::f64::consts::PI);
+        assert!((num.as_f64() - std::f64::consts::PI).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -112,8 +121,8 @@ mod tests {
 
     #[test]
     fn test_from_f64() {
-        let num = Number::from(3.14);
-        assert!(matches!(num, Number::Float(f) if (f - 3.14).abs() < f64::EPSILON));
+        let num = Number::from(std::f64::consts::PI);
+        assert!(matches!(num, Number::Float(f) if (f - std::f64::consts::PI).abs() < f64::EPSILON));
     }
 
     #[test]
@@ -126,21 +135,19 @@ mod tests {
     fn test_serialization_integer() {
         let num = Number::Integer(42);
         let json = serde_json::to_string(&num).expect("serialize integer number variant to JSON");
-        assert!(json.contains("Integer"));
-        assert!(json.contains("42"));
+        assert_eq!(json, "42");
     }
 
     #[test]
     fn test_serialization_float() {
-        let num = Number::Float(3.14);
+        let num = Number::Float(std::f64::consts::PI);
         let json = serde_json::to_string(&num).expect("serialize float number variant to JSON");
-        assert!(json.contains("Float"));
-        assert!(json.contains("3.14"));
+        assert!(json.contains("3.141"));
     }
 
     #[test]
     fn test_deserialization_integer() {
-        let json = r#"{"type":"Integer","value":42}"#;
+        let json = "42";
         let num: Number =
             serde_json::from_str(json).expect("deserialize integer number variant from JSON");
         assert!(matches!(num, Number::Integer(42)));
@@ -148,10 +155,10 @@ mod tests {
 
     #[test]
     fn test_deserialization_float() {
-        let json = r#"{"type":"Float","value":3.14}"#;
+        let json = "3.141592653589793";
         let num: Number =
             serde_json::from_str(json).expect("deserialize float number variant from JSON");
-        assert!(matches!(num, Number::Float(f) if (f - 3.14).abs() < f64::EPSILON));
+        assert!(matches!(num, Number::Float(f) if (f - std::f64::consts::PI).abs() < f64::EPSILON));
     }
 
     #[test]
@@ -165,7 +172,7 @@ mod tests {
 
     #[test]
     fn test_round_trip_serialization_float() {
-        let original = Number::Float(3.14);
+        let original = Number::Float(std::f64::consts::PI);
         let json = serde_json::to_string(&original).expect("round-trip serialize float number");
         let deserialized: Number =
             serde_json::from_str(&json).expect("round-trip deserialize float number");

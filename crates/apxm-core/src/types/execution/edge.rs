@@ -39,7 +39,7 @@ impl Edge {
     /// Examples
     ///
     /// ```
-    /// use apxm_core::types::edge::{Edge, DependencyType};
+    /// use apxm_core::types::{Edge, DependencyType};
     ///
     /// let edge = Edge::new(1, 2, 10, DependencyType::Data);
     /// assert_eq!(edge.from, 1);

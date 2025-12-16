@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::{AISOperationType, TokenId, Value};
+use crate::types::{AISOperationType, TokenId, Value, validate_operation};
 
 /// Type alias for node identifiers.
 pub type NodeId = u64;
@@ -49,8 +49,7 @@ impl Node {
     /// # Examples
     ///
     /// ```
-    /// use apxm_core::types::node::{Node, NodeId};
-    /// use apxm_core::types::AISOperationType;
+    /// use apxm_core::types::{Node, NodeIdType, AISOperationType};
     ///
     /// let node = Node::new(1, AISOperationType::Inv);
     /// assert_eq!(node.id, 1);
@@ -84,6 +83,11 @@ impl Node {
     /// Gets and attribute value by key.
     pub fn get_attribute(&self, key: &str) -> Option<&Value> {
         self.attributes.get(key)
+    }
+
+    /// Validates the node's operation against its metadata.
+    pub fn validate(&self) -> Result<(), String> {
+        validate_operation(&self.op_type, &self.attributes)
     }
 }
 
@@ -137,5 +141,15 @@ mod tests {
         let json = serde_json::to_string(&node).expect("serialize node");
         assert!(json.contains("1"));
         assert!(json.contains("INV"));
+    }
+
+    #[test]
+    fn test_validation() {
+        let mut node = Node::new(1, AISOperationType::QMem);
+        node.set_attribute("query".to_string(), Value::String("test".to_string()));
+        assert!(node.validate().is_ok());
+
+        let node_invalid = Node::new(2, AISOperationType::QMem);
+        assert!(node_invalid.validate().is_err());
     }
 }

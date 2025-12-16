@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::runtime::RuntimeError;
 use crate::types::{Edge, Node, NodeId, TokenId};
 
 /// Metadata associated with the execution DAG.
@@ -51,9 +52,12 @@ impl ExecutionDag {
     /// # Errors
     ///
     /// Returns an error if a node with the same ID already exists.
-    pub fn add_node(&mut self, node: Node) -> Result<(), String> {
+    pub fn add_node(&mut self, node: Node) -> Result<(), RuntimeError> {
         if self.nodes.iter().any(|n| n.id == node.id) {
-            return Err(format!("Node with ID {} already exists", node.id));
+            return Err(RuntimeError::State(format!(
+                "Node with ID {} already exists",
+                node.id
+            )));
         }
         self.nodes.push(node);
         Ok(())
@@ -64,12 +68,18 @@ impl ExecutionDag {
     /// # Errors
     ///
     /// Returns an error if the source or target node doesn't exist.
-    pub fn add_edge(&mut self, edge: Edge) -> Result<(), String> {
+    pub fn add_edge(&mut self, edge: Edge) -> Result<(), RuntimeError> {
         if !self.nodes.iter().any(|n| n.id == edge.from) {
-            return Err(format!("Source node {} does not exist", edge.from));
+            return Err(RuntimeError::State(format!(
+                "Source node {} does not exist",
+                edge.from
+            )));
         }
         if !self.nodes.iter().any(|n| n.id == edge.to) {
-            return Err(format!("Target node {} does not exist", edge.to));
+            return Err(RuntimeError::State(format!(
+                "Target node {} does not exist",
+                edge.to
+            )));
         }
         self.edges.push(edge);
         Ok(())
@@ -123,7 +133,9 @@ impl ExecutionDag {
         // Initialize in-degree for all nodes
         let mut in_degree: HashMap<NodeId, usize> =
             self.nodes.iter().map(|node| (node.id, 0)).collect();
+
         let mut adjacency: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
+
         for edge in &self.edges {
             adjacency.entry(edge.from).or_default().push(edge.to);
             *in_degree.entry(edge.to).or_insert(0) += 1;
@@ -132,7 +144,7 @@ impl ExecutionDag {
         // Find nodes with no incoming edges
         let mut queue: VecDeque<NodeId> = in_degree
             .iter()
-            .filter_map(|(id, &degree)| if degree == 0 { Some(*id) } else { None })
+            .filter_map(|(id, &degree)| (degree == 0).then_some(*id))
             .collect();
 
         // Process nodes
@@ -141,6 +153,7 @@ impl ExecutionDag {
 
         while let Some(node_id) = queue.pop_front() {
             processed += 1;
+
             if let Some(neighbors) = adjacency.remove(&node_id) {
                 for neighbor in neighbors {
                     if let Some(degree) = in_degree.get_mut(&neighbor) {
@@ -171,26 +184,27 @@ impl ExecutionDag {
     /// # Errors
     ///
     /// Returns an error if validation fails.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), RuntimeError> {
         // Check for cycles
         if self.has_cycles() {
-            return Err("DAG contains cycles".to_string());
+            return Err(RuntimeError::State("DAG contains cycles".to_string()));
         }
 
         // Check that all edge references are valid
         let node_ids: HashSet<NodeId> = self.nodes.iter().map(|n| n.id).collect();
+
         for edge in &self.edges {
             if !node_ids.contains(&edge.from) {
-                return Err(format!(
+                return Err(RuntimeError::State(format!(
                     "Edge references non-existent source node {}",
                     edge.from
-                ));
+                )));
             }
             if !node_ids.contains(&edge.to) {
-                return Err(format!(
+                return Err(RuntimeError::State(format!(
                     "Edge references non-existent target node {}",
                     edge.to
-                ));
+                )));
             }
         }
 
@@ -205,10 +219,10 @@ impl ExecutionDag {
         // Check that edges reference valid tokens
         for edge in &self.edges {
             if !token_ids.contains(&edge.token_id) {
-                return Err(format!(
+                return Err(RuntimeError::State(format!(
                     "Edge references non-existent token {}",
                     edge.token_id
-                ));
+                )));
             }
         }
 
@@ -221,11 +235,15 @@ impl ExecutionDag {
         let stored_exit: HashSet<NodeId> = self.exit_nodes.iter().copied().collect();
 
         if stored_entry != computed_entry {
-            return Err("Stored entry nodes don't match computed entry nodes".into());
+            return Err(RuntimeError::State(
+                "Stored entry nodes don't match computed entry nodes".into(),
+            ));
         }
 
         if stored_exit != computed_exit {
-            return Err("Stored exit nodes don't match computed exit nodes".into());
+            return Err(RuntimeError::State(
+                "Stored exit nodes don't match computed exit nodes".into(),
+            ));
         }
 
         Ok(())

@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::runtime::RuntimeError;
 use crate::types::Value;
 
 /// Type alias for token identifiers.
@@ -41,7 +42,7 @@ impl Token {
     /// # Examples
     ///
     /// ```
-    /// use apxm_core::types::token::{Token, TokenId};
+    /// use apxm_core::types::{Token, TokenIdType};
     ///
     /// let token = Token::new(1);
     /// assert!(!token.is_ready());
@@ -64,15 +65,17 @@ impl Token {
     /// # Errors
     ///
     /// Returns an error if the token is not in Pending state.
-    pub fn set_value(&mut self, value: Value) -> Result<(), String> {
+    pub fn set_value(&mut self, value: Value) -> Result<(), RuntimeError> {
         match self.status {
             TokenStatus::Pending => {
                 self.value = Some(value);
                 self.status = TokenStatus::Ready;
                 Ok(())
             }
-            TokenStatus::Ready => Err("Token is already ready".to_string()),
-            TokenStatus::Consumed => Err("Token is already consumed".to_string()),
+            TokenStatus::Ready => Err(RuntimeError::State("Token is already ready".to_string())),
+            TokenStatus::Consumed => {
+                Err(RuntimeError::State("Token is already consumed".to_string()))
+            }
         }
     }
 
@@ -83,18 +86,20 @@ impl Token {
     /// # Errors
     ///
     /// Returns an error if the token is not in Ready state.
-    pub fn consume(&mut self) -> Result<Value, String> {
+    pub fn consume(&mut self) -> Result<Value, RuntimeError> {
         match self.status {
             TokenStatus::Ready => {
                 let value = self
                     .value
                     .take()
-                    .ok_or_else(|| "Token has no value".to_string())?;
+                    .ok_or_else(|| RuntimeError::State("Token has no value".to_string()))?;
                 self.status = TokenStatus::Consumed;
                 Ok(value)
             }
-            TokenStatus::Pending => Err("Token is not ready".to_string()),
-            TokenStatus::Consumed => Err("Token is already consumed".to_string()),
+            TokenStatus::Pending => Err(RuntimeError::State("Token is not ready".to_string())),
+            TokenStatus::Consumed => {
+                Err(RuntimeError::State("Token is already consumed".to_string()))
+            }
         }
     }
 
