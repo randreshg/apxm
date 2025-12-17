@@ -5,6 +5,7 @@
 
 use std::time::Instant;
 
+use crate::aam::effects::OperationEffects;
 use apxm_core::types::{NodeId, OpStatus, Value};
 
 /// Internal operation state tracked during execution.
@@ -23,18 +24,29 @@ pub(crate) struct OpState {
     pub started_at: Option<Instant>,
     /// Time when execution finished.
     pub finished_at: Option<Instant>,
+    /// Operation effect metadata
+    pub effects: OperationEffects,
 }
 
 impl OpState {
     /// Create a new operation state in Pending status.
     pub fn new() -> Self {
+        Self::new_with_effects(OperationEffects::new())
+    }
+
+    pub fn new_with_effects(effects: OperationEffects) -> Self {
         Self {
             status: OpStatus::Pending,
             retries: 0,
             last_error: None,
             started_at: None,
             finished_at: None,
+            effects,
         }
+    }
+
+    pub fn effects(&self) -> &OperationEffects {
+        &self.effects
     }
 }
 

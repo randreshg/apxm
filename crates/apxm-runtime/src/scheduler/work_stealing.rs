@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use apxm_core::types::NodeId;
-use crossbeam_deque::{Injector, Steal, Stealer, Worker};
+use crossbeam_deque::{Steal, Stealer, Worker};
 
 use crate::scheduler::queue::{Priority, PriorityQueue};
 
@@ -30,10 +30,7 @@ impl WorkStealingScheduler {
     /// Create a new work-stealing scheduler.
     ///
     /// Returns the scheduler and a vector of Worker handles (one per thread).
-    pub fn new(
-        num_workers: usize,
-        queue: Arc<PriorityQueue>,
-    ) -> (Self, Vec<Worker<NodeId>>) {
+    pub fn new(num_workers: usize, queue: Arc<PriorityQueue>) -> (Self, Vec<Worker<NodeId>>) {
         let mut stealers = Vec::with_capacity(num_workers);
         let mut workers = Vec::with_capacity(num_workers);
 
@@ -56,11 +53,7 @@ impl WorkStealingScheduler {
     /// 3. Steal from other workers' queues
     ///
     /// Returns Some(node_id) if work was found, None if all queues are empty.
-    pub fn steal_next(
-        &self,
-        worker: &Worker<NodeId>,
-        worker_id: usize,
-    ) -> Option<NodeId> {
+    pub fn steal_next(&self, worker: &Worker<NodeId>, worker_id: usize) -> Option<NodeId> {
         // Step 1: Try local queue first (fastest path)
         if let Some(node_id) = worker.pop() {
             return Some(node_id);

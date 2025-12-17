@@ -6,13 +6,15 @@ use std::time::{Duration, Instant};
 use apxm_core::types::{ExecutionDag, ExecutionStats, Value};
 use tokio::task::JoinHandle;
 
-use crate::config::SchedulerConfig;
-use crate::context::ExecutionContext;
-use crate::error::{RuntimeError, RuntimeResult};
+use crate::executor::ExecutionContext;
 use crate::executor::ExecutorEngine;
 use crate::observability::MetricsCollector;
+use crate::scheduler::config::SchedulerConfig;
 use crate::scheduler::state::SchedulerState;
 use crate::scheduler::worker;
+use apxm_core::error::RuntimeError;
+
+type RuntimeResult<T> = Result<T, RuntimeError>;
 
 /// Dataflow scheduler for executing DAGs with automatic parallelism.
 ///
@@ -42,7 +44,7 @@ impl DataflowScheduler {
         dag: ExecutionDag,
         executor: Arc<ExecutorEngine>,
         ctx: ExecutionContext,
-    ) -> RuntimeResult<(Vec<Value>, ExecutionStats)> {
+    ) -> RuntimeResult<(std::collections::HashMap<u64, Value>, ExecutionStats)> {
         let start = Instant::now();
 
         // Validate DAG cost budget early
@@ -68,7 +70,8 @@ impl DataflowScheduler {
         }
 
         // Check for errors
-        if let Some(error) = state.first_error.lock().clone() {
+        let mut first_error = state.first_error.lock();
+        if let Some(error) = first_error.take() {
             return Err(error);
         }
 
@@ -137,9 +140,7 @@ fn spawn_watchdog(state: Arc<SchedulerState>) {
 
             if now_ms.saturating_sub(last_progress_ms) >= cfg.deadlock_timeout_ms {
                 // Deadlock detected
-                let remaining = state
-                    .remaining
-                    .load(std::sync::atomic::Ordering::Relaxed);
+                let remaining = state.remaining.load(std::sync::atomic::Ordering::Relaxed);
 
                 state.set_first_error(RuntimeError::SchedulerDeadlock {
                     timeout_ms: cfg.deadlock_timeout_ms,

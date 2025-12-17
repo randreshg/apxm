@@ -7,9 +7,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
-use tokio::sync::{Semaphore, SemaphorePermit};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-use crate::error::{RuntimeError, RuntimeResult};
+use apxm_core::error::RuntimeError;
+type RuntimeResult<T> = std::result::Result<T, RuntimeError>;
 
 /// Concurrency controller for limiting in-flight operations.
 ///
@@ -56,10 +57,9 @@ impl ConcurrencyControl {
             return Err(RuntimeError::SchedulerCancelled);
         }
 
-        // Acquire semaphore permit
-        let permit = self
-            .semaphore
-            .acquire()
+        // Acquire an owned semaphore permit so the permit isn't bound to a lifetime.
+        let permit = Arc::clone(&self.semaphore)
+            .acquire_owned()
             .await
             .map_err(|_| RuntimeError::SchedulerCancelled)?;
 
@@ -80,7 +80,8 @@ impl ConcurrencyControl {
             return None;
         }
 
-        let permit = self.semaphore.try_acquire().ok()?;
+        // Use the owned try-acquire to avoid lifetime issues
+        let permit = self.semaphore.clone().try_acquire_owned().ok()?;
         self.in_flight.fetch_add(1, Ordering::Relaxed);
 
         Some(ConcurrencyPermit {
@@ -92,19 +93,17 @@ impl ConcurrencyControl {
     /// Acquire a permit with a timeout.
     ///
     /// Returns an error if the timeout expires or execution is cancelled.
-    pub async fn acquire_timeout(
-        &self,
-        timeout: Duration,
-    ) -> RuntimeResult<ConcurrencyPermit> {
+    pub async fn acquire_timeout(&self, timeout: Duration) -> RuntimeResult<ConcurrencyPermit> {
         if self.is_cancelled() {
             return Err(RuntimeError::SchedulerCancelled);
         }
 
-        let permit = tokio::time::timeout(timeout, self.semaphore.acquire())
+        // Use acquire_owned in the timeout so the resulting permit is owned
+        let permit = tokio::time::timeout(timeout, Arc::clone(&self.semaphore).acquire_owned())
             .await
             .map_err(|_| RuntimeError::Timeout {
                 op_id: 0, // Generic timeout
-                timeout: timeout.as_millis() as u64,
+                timeout,
             })?
             .map_err(|_| RuntimeError::SchedulerCancelled)?;
 
@@ -166,8 +165,9 @@ impl ConcurrencyControl {
 /// RAII guard for a concurrency permit.
 ///
 /// Automatically releases the permit when dropped.
+#[derive(Debug)]
 pub struct ConcurrencyPermit {
-    _permit: SemaphorePermit<'static>,
+    _permit: OwnedSemaphorePermit,
     in_flight: Arc<AtomicUsize>,
 }
 
@@ -195,9 +195,8 @@ impl ConcurrencyControlHandle {
             return Err(RuntimeError::SchedulerCancelled);
         }
 
-        let permit = self
-            .semaphore
-            .acquire()
+        let permit = Arc::clone(&self.semaphore)
+            .acquire_owned()
             .await
             .map_err(|_| RuntimeError::SchedulerCancelled)?;
 
@@ -215,7 +214,7 @@ impl ConcurrencyControlHandle {
             return None;
         }
 
-        let permit = self.semaphore.try_acquire().ok()?;
+        let permit = self.semaphore.clone().try_acquire_owned().ok()?;
         self.in_flight.fetch_add(1, Ordering::Relaxed);
 
         Some(ConcurrencyPermit {
@@ -258,12 +257,18 @@ mod tests {
         let control = ConcurrencyControl::new(2);
 
         // Acquire first permit
-        let permit1 = control.acquire().await.unwrap();
+        let permit1 = control
+            .acquire()
+            .await
+            .expect("failed to acquire first permit");
         assert_eq!(control.in_flight_count(), 1);
         assert_eq!(control.available_permits(), 1);
 
         // Acquire second permit
-        let permit2 = control.acquire().await.unwrap();
+        let permit2 = control
+            .acquire()
+            .await
+            .expect("failed to acquire second permit");
         assert_eq!(control.in_flight_count(), 2);
         assert_eq!(control.available_permits(), 0);
         assert!(control.is_at_capacity());
@@ -303,12 +308,13 @@ mod tests {
         let control = ConcurrencyControl::new(1);
 
         // Acquire the only permit
-        let _permit = control.acquire().await.unwrap();
+        let _permit = control
+            .acquire()
+            .await
+            .expect("failed to acquire initial permit");
 
         // Try to acquire with short timeout (should fail)
-        let result = control
-            .acquire_timeout(Duration::from_millis(10))
-            .await;
+        let result = control.acquire_timeout(Duration::from_millis(10)).await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), RuntimeError::Timeout { .. }));
     }
@@ -341,11 +347,11 @@ mod tests {
         let handle2 = handle1.clone();
 
         // Acquire through handle1
-        let permit1 = handle1.acquire().await.unwrap();
+        let permit1 = handle1.acquire().await.expect("handle1 acquire failed");
         assert_eq!(handle2.in_flight_count(), 1);
 
         // Acquire through handle2
-        let permit2 = handle2.acquire().await.unwrap();
+        let permit2 = handle2.acquire().await.expect("handle2 acquire failed");
         assert_eq!(handle1.in_flight_count(), 2);
 
         // Release permits
@@ -361,13 +367,11 @@ mod tests {
         let control = Arc::new(ConcurrencyControl::new(1));
 
         // Acquire the only permit
-        let permit = control.acquire().await.unwrap();
+        let permit = control.acquire().await.expect("failed to acquire permit");
 
         // Spawn a task that tries to acquire
         let control_clone = Arc::clone(&control);
-        let handle = tokio::spawn(async move {
-            control_clone.acquire().await
-        });
+        let handle = tokio::spawn(async move { control_clone.acquire().await });
 
         // Give the task time to block
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -387,7 +391,7 @@ mod tests {
 
         // Acquire all permits
         for _ in 0..3 {
-            permits.push(control.acquire().await.unwrap());
+            permits.push(control.acquire().await.expect("failed to acquire permit"));
         }
 
         assert!(control.is_at_capacity());

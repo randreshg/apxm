@@ -13,6 +13,7 @@ pub mod config;
 pub mod dataflow;
 pub mod queue;
 pub mod ready_set;
+pub mod splicing;
 pub mod state;
 pub mod work_stealing;
 pub mod worker;
@@ -24,6 +25,7 @@ pub(crate) mod internal_state;
 pub use config::SchedulerConfig;
 pub use dataflow::DataflowScheduler;
 pub use queue::{Priority, PriorityQueue};
+pub use splicing::SpliceConfig;
 
 // Re-export execution types from apxm-core
 pub use apxm_core::types::{ExecutionStats, NodeStatus, OpStatus};

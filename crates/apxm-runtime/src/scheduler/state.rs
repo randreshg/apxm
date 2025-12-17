@@ -1,19 +1,23 @@
 //! Scheduler state management.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use apxm_core::types::{ExecutionDag, ExecutionStats, Node, NodeId, NodeStatus, OpStatus, TokenId, Value};
+use apxm_core::types::{ExecutionDag, ExecutionStats, Node, NodeId, NodeStatus, TokenId, Value};
 use crossbeam_deque::Worker;
 use dashmap::DashMap;
 use parking_lot::Mutex;
 use tokio::sync::Notify;
 
-use crate::error::{RuntimeError, RuntimeResult};
 use crate::observability::MetricsCollector;
 use crate::scheduler::concurrency_control::{ConcurrencyControl, ConcurrencyControlHandle};
 use crate::scheduler::config::SchedulerConfig;
+use apxm_core::error::RuntimeError;
+
+type RuntimeResult<T> = Result<T, RuntimeError>;
+use crate::aam::effects::{OperationEffects, operation_effects};
 use crate::scheduler::internal_state::{OpState, TokenState};
 use crate::scheduler::queue::{Priority, PriorityQueue};
 use crate::scheduler::ready_set::ReadySet;
@@ -30,9 +34,9 @@ pub struct SchedulerState {
     pub priorities: Arc<DashMap<NodeId, Priority>>,
 
     // Readiness tracking (encapsulated)
-    pub ready_set: ReadySet,
-    pub tokens: Arc<DashMap<TokenId, TokenState>>,
-    pub op_states: Arc<DashMap<NodeId, OpState>>,
+    pub(crate) ready_set: ReadySet,
+    pub(crate) tokens: Arc<DashMap<TokenId, TokenState>>,
+    pub(crate) op_states: Arc<DashMap<NodeId, OpState>>,
 
     // Work-stealing scheduler (encapsulated)
     pub work_stealing: Arc<WorkStealingScheduler>,
@@ -48,6 +52,7 @@ pub struct SchedulerState {
     pub notify_done: Arc<Notify>,
     pub first_error: Arc<Mutex<Option<RuntimeError>>>,
     pub last_progress_ms: Arc<AtomicU64>,
+    pub exit_nodes: Vec<NodeId>,
 }
 
 impl SchedulerState {
@@ -118,6 +123,7 @@ impl SchedulerState {
             notify_done: Arc::new(Notify::new()),
             first_error: Arc::new(Mutex::new(None)),
             last_progress_ms: Arc::new(AtomicU64::new(0)),
+            exit_nodes: dag.exit_nodes.clone(),
         };
 
         // Initialize readiness tracking and seed ready nodes
@@ -159,6 +165,13 @@ impl SchedulerState {
         self.concurrency.is_cancelled()
     }
 
+    /// Retrieve the effect metadata for a node, if available.
+    pub fn operation_effects(&self, node_id: NodeId) -> Option<OperationEffects> {
+        self.op_states
+            .get(&node_id)
+            .map(|entry| entry.effects().clone())
+    }
+
     /// Set the first error if none has been set yet.
     pub fn set_first_error(&self, error: RuntimeError) {
         let mut guard = self.first_error.lock();
@@ -173,20 +186,10 @@ impl SchedulerState {
             .store(self.elapsed_ms() as u64, Ordering::Relaxed);
     }
 
-    pub fn collect_exit_values(&self) -> RuntimeResult<Vec<Value>> {
-        // This requires the original dag exit definition; we infer the conventional exit nodes:
-        // If you need the original exit_nodes, store them in SchedulerState too.
-        let mut exits = Vec::new();
+    pub fn collect_exit_values(&self) -> RuntimeResult<HashMap<TokenId, Value>> {
+        let mut results = HashMap::new();
 
-        // Conventional: nodes with no outputs.
-        for entry in self.nodes.iter() {
-            if entry.value().output_tokens.is_empty() {
-                exits.push(*entry.key());
-            }
-        }
-
-        let mut results = Vec::new();
-        for node_id in exits {
+        for &node_id in &self.exit_nodes {
             if let Some(node) = self.nodes.get(&node_id) {
                 for token_id in &node.output_tokens {
                     if let Some(value) = self
@@ -194,11 +197,12 @@ impl SchedulerState {
                         .get(token_id)
                         .and_then(|state| state.value.clone())
                     {
-                        results.push(value);
+                        results.insert(*token_id, value);
                     }
                 }
             }
         }
+
         Ok(results)
     }
 
@@ -249,7 +253,10 @@ fn materialize_graph_state(
     op_states: &DashMap<NodeId, OpState>,
 ) -> RuntimeResult<()> {
     for node in dag.nodes.iter() {
-        op_states.insert(node.id, OpState::new());
+        op_states.insert(
+            node.id,
+            OpState::new_with_effects(operation_effects(&node.op_type)),
+        );
 
         // Outputs: must have a single producer.
         for &token_id in &node.output_tokens {

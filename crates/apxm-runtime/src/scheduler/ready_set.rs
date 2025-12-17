@@ -8,16 +8,18 @@ use std::sync::Arc;
 use apxm_core::types::{Node, NodeId, OpStatus, TokenId};
 use dashmap::DashMap;
 
-use crate::error::{RuntimeError, RuntimeResult};
 use crate::scheduler::internal_state::{OpState, TokenState};
 use crate::scheduler::queue::{Priority, PriorityQueue};
+use apxm_core::error::RuntimeError;
 
 /// Tracks operation readiness using pending input counts.
 ///
 /// Each operation starts with a count of how many inputs it's waiting for.
 /// As inputs become ready, the count decrements. When it reaches 0, the
 /// operation is marked ready and enqueued.
-pub struct ReadySet {
+type RuntimeResult<T> = std::result::Result<T, RuntimeError>;
+
+pub(crate) struct ReadySet {
     /// Number of pending inputs per operation.
     ///
     /// Operations with count = 0 are ready to execute.
@@ -36,11 +38,11 @@ impl ReadySet {
     /// Initialize readiness tracking for all nodes in the graph.
     ///
     /// Returns the set of immediately ready nodes (those with no pending inputs).
-    pub fn initialize(
+    pub(crate) fn initialize(
         &self,
         nodes: &[Node],
         tokens: &DashMap<TokenId, TokenState>,
-        priorities: &DashMap<NodeId, usize>,
+        priorities: &DashMap<NodeId, Priority>,
         op_states: &DashMap<NodeId, OpState>,
         queue: &PriorityQueue,
     ) -> RuntimeResult<Vec<NodeId>> {
@@ -92,7 +94,7 @@ impl ReadySet {
     fn mark_ready(
         &self,
         node_id: NodeId,
-        priorities: &DashMap<NodeId, usize>,
+        priorities: &DashMap<NodeId, Priority>,
         op_states: &DashMap<NodeId, OpState>,
         queue: &PriorityQueue,
     ) {
@@ -102,12 +104,10 @@ impl ReadySet {
         }
 
         // Enqueue at appropriate priority level
-        let priority_level = priorities
+        let priority = priorities
             .get(&node_id)
-            .map(|v| *v.value())
-            .unwrap_or(1); // Default to Normal priority
-
-        let priority = Priority::from_u8(priority_level as u8);
+            .map(|entry| *entry.value())
+            .unwrap_or(Priority::Normal);
         queue.push(node_id, priority);
     }
 
@@ -117,11 +117,11 @@ impl ReadySet {
     /// it's marked ready and enqueued.
     ///
     /// Returns the list of newly ready node IDs.
-    pub fn on_token_ready(
+    pub(crate) fn on_token_ready(
         &self,
         token_id: TokenId,
         tokens: &DashMap<TokenId, TokenState>,
-        priorities: &DashMap<NodeId, usize>,
+        priorities: &DashMap<NodeId, Priority>,
         op_states: &DashMap<NodeId, OpState>,
         queue: &PriorityQueue,
     ) -> RuntimeResult<Vec<NodeId>> {
@@ -155,6 +155,7 @@ impl ReadySet {
     /// Check if a specific node is ready.
     ///
     /// Returns true if the node has no pending inputs.
+    #[cfg(test)]
     pub fn is_ready(&self, node_id: NodeId) -> bool {
         !self.pending_inputs.contains_key(&node_id)
     }
@@ -162,6 +163,7 @@ impl ReadySet {
     /// Get the pending input count for a node.
     ///
     /// Returns 0 if the node is ready or not tracked.
+    #[cfg(test)]
     pub fn pending_count(&self, node_id: NodeId) -> usize {
         self.pending_inputs
             .get(&node_id)
@@ -170,16 +172,19 @@ impl ReadySet {
     }
 
     /// Get the total number of nodes with pending inputs.
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.pending_inputs.len()
     }
 
     /// Check if all nodes are ready (no pending inputs).
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.pending_inputs.is_empty()
     }
 
     /// Get a snapshot of all pending counts for diagnostics.
+    #[cfg(test)]
     pub fn snapshot(&self) -> Vec<(NodeId, usize)> {
         self.pending_inputs
             .iter()
@@ -197,15 +202,24 @@ impl Default for ReadySet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use apxm_core::types::{OpType, Value};
+    use crate::scheduler::internal_state::{OpState, TokenState};
+    use crate::scheduler::queue::Priority;
+    use apxm_core::types::{
+        TokenId,
+        execution::{Node, NodeId, NodeMetadata},
+        operations::AISOperationType,
+    };
+    use dashmap::DashMap;
+    use std::collections::HashMap;
 
     fn create_test_node(id: NodeId, input_tokens: Vec<TokenId>) -> Node {
         Node {
             id,
-            op_type: OpType::Invoke,
+            op_type: AISOperationType::Inv,
+            attributes: HashMap::new(),
             input_tokens,
             output_tokens: vec![id as TokenId],
-            metadata: Default::default(),
+            metadata: NodeMetadata::default(),
         }
     }
 
@@ -269,19 +283,13 @@ mod tests {
         tokens.insert(10, TokenState::new());
 
         // Initialize state
-        priorities.insert(1, 1);
-        priorities.insert(2, 1);
+        priorities.insert(1, Priority::Normal);
+        priorities.insert(2, Priority::Normal);
         op_states.insert(1, OpState::new());
         op_states.insert(2, OpState::new());
 
         let ready_nodes = ready_set
-            .initialize(
-                &[node1, node2],
-                &tokens,
-                &priorities,
-                &op_states,
-                &queue,
-            )
+            .initialize(&[node1, node2], &tokens, &priorities, &op_states, &queue)
             .unwrap();
 
         // Node 1 should be ready, node 2 should have pending inputs
@@ -309,8 +317,8 @@ mod tests {
         ready_set.pending_inputs.insert(1, 1);
         ready_set.pending_inputs.insert(2, 1);
 
-        priorities.insert(1, 1);
-        priorities.insert(2, 1);
+        priorities.insert(1, Priority::Normal);
+        priorities.insert(2, Priority::Normal);
         op_states.insert(1, OpState::new());
         op_states.insert(2, OpState::new());
 
@@ -344,7 +352,7 @@ mod tests {
         // Node 1 is waiting for 2 tokens
         ready_set.pending_inputs.insert(1, 2);
 
-        priorities.insert(1, 1);
+        priorities.insert(1, Priority::Normal);
         op_states.insert(1, OpState::new());
 
         // Mark token 10 as ready

@@ -9,11 +9,11 @@ use std::time::{Duration, Instant};
 use apxm_core::types::{Node, NodeId, Number, OpStatus, TokenId, Value};
 use crossbeam_deque::Worker;
 
-use crate::context::ExecutionContext;
-use crate::error::RuntimeError;
+use crate::executor::ExecutionContext;
 use crate::executor::ExecutorEngine;
 use crate::scheduler::internal_state::{OpState, TokenState};
 use crate::scheduler::state::SchedulerState;
+use apxm_core::error::RuntimeError;
 
 /// Main worker loop.
 ///
@@ -80,34 +80,32 @@ pub async fn worker_loop(
                 attempts,
                 start_time,
             } => {
-                handle_success(
-                    &state,
-                    &child_ctx,
+                let event = WorkerEvent {
+                    state: &state,
+                    ctx: &child_ctx,
                     node_id,
-                    &node,
-                    &outputs,
-                    value,
-                    attempts,
+                    node: &node,
+                    outputs: &outputs,
                     start_time,
-                )
-                .await;
+                };
+
+                handle_success(&event, value, attempts).await;
             }
             ExecutionOutcome::Failed {
                 error,
                 attempts,
                 start_time,
             } => {
-                let should_abort = handle_failure(
-                    &state,
-                    &child_ctx,
+                let event = WorkerEvent {
+                    state: &state,
+                    ctx: &child_ctx,
                     node_id,
-                    &node,
-                    &outputs,
-                    error,
-                    attempts,
+                    node: &node,
+                    outputs: &outputs,
                     start_time,
-                )
-                .await;
+                };
+
+                let should_abort = handle_failure(&event, error, attempts).await;
 
                 if should_abort {
                     drop(permit);
@@ -123,7 +121,10 @@ pub async fn worker_loop(
 /// Collect input values for an operation.
 ///
 /// Returns None if any inputs are not ready (shouldn't happen due to readiness tracking).
-fn collect_inputs(tokens: &dashmap::DashMap<TokenId, TokenState>, node: &Node) -> Option<Vec<Value>> {
+fn collect_inputs(
+    tokens: &dashmap::DashMap<TokenId, TokenState>,
+    node: &Node,
+) -> Option<Vec<Value>> {
     let mut values = Vec::with_capacity(node.input_tokens.len());
 
     for &token_id in &node.input_tokens {
@@ -183,7 +184,10 @@ async fn execute_with_retries(
         state.metrics.record_schedule();
 
         // Execute operation
-        match executor.execute(node, inputs.to_vec(), ctx).await {
+        match executor
+            .execute_with_context(node, inputs.to_vec(), ctx)
+            .await
+        {
             Ok(outcome) => {
                 state.metrics.record_completion();
                 return ExecutionOutcome::Success {
@@ -227,63 +231,54 @@ fn calculate_backoff(cfg: &crate::scheduler::config::SchedulerConfig, attempt: u
         .min(cfg.retry_backoff_max_ms)
 }
 
-/// Handle successful operation execution.
-async fn handle_success(
-    state: &SchedulerState,
-    ctx: &ExecutionContext,
+struct WorkerEvent<'a> {
+    state: &'a SchedulerState,
+    ctx: &'a ExecutionContext,
     node_id: NodeId,
-    node: &Node,
-    outputs: &[TokenId],
-    value: Value,
-    attempts: u32,
+    node: &'a Node,
+    outputs: &'a [TokenId],
     start_time: Instant,
-) {
+}
+
+/// Handle successful operation execution.
+async fn handle_success(event: &WorkerEvent<'_>, value: Value, attempts: u32) {
     // Update counters
-    state.executed.fetch_add(1, Ordering::Relaxed);
-    state.record_progress();
+    event.state.executed.fetch_add(1, Ordering::Relaxed);
+    event.state.record_progress();
 
     // Publish outputs and propagate readiness
-    publish_outputs(state, outputs, value).await;
+    publish_outputs(event.state, event.outputs, value).await;
 
     // Mark operation as completed
-    if let Some(mut op_state) = state.op_states.get_mut(&node_id) {
+    if let Some(mut op_state) = event.state.op_states.get_mut(&event.node_id) {
         op_state.status = OpStatus::Completed;
         op_state.finished_at = Some(Instant::now());
     }
 
     // Record success event
     record_event(
-        ctx,
-        node_id,
-        node,
+        event.ctx,
+        event.node_id,
+        event.node,
         "op_success",
         attempts,
-        Some(start_time.elapsed().as_millis()),
+        Some(event.start_time.elapsed().as_millis()),
     )
     .await;
 
     // Decrement remaining count
-    finish_one(state);
+    finish_one(event.state);
 }
 
 /// Handle failed operation execution.
 ///
 /// Returns true if execution should abort.
-async fn handle_failure(
-    state: &SchedulerState,
-    ctx: &ExecutionContext,
-    node_id: NodeId,
-    node: &Node,
-    outputs: &[TokenId],
-    error: RuntimeError,
-    attempts: u32,
-    start_time: Instant,
-) -> bool {
+async fn handle_failure(event: &WorkerEvent<'_>, error: RuntimeError, attempts: u32) -> bool {
     // Update counters
-    state.failed.fetch_add(1, Ordering::Relaxed);
+    event.state.failed.fetch_add(1, Ordering::Relaxed);
 
     // Mark operation as failed
-    if let Some(mut op_state) = state.op_states.get_mut(&node_id) {
+    if let Some(mut op_state) = event.state.op_states.get_mut(&event.node_id) {
         op_state.status = OpStatus::Failed;
         op_state.retries = attempts;
         op_state.last_error = Some(error.to_string());
@@ -292,30 +287,32 @@ async fn handle_failure(
 
     // Record failure event
     record_event(
-        ctx,
-        node_id,
-        node,
+        event.ctx,
+        event.node_id,
+        event.node,
         "op_failure",
         attempts,
-        Some(start_time.elapsed().as_millis()),
+        Some(event.start_time.elapsed().as_millis()),
     )
     .await;
 
     // Set first error
-    state.set_first_error(RuntimeError::SchedulerRetryExhausted {
-        node_id,
-        reason: error.to_string(),
-    });
+    event
+        .state
+        .set_first_error(RuntimeError::SchedulerRetryExhausted {
+            node_id: event.node_id,
+            reason: error.to_string(),
+        });
 
     // Check for fallback value
-    if let Some(fallback) = node.attributes.get("fallback").cloned() {
+    if let Some(fallback) = event.node.attributes.get("fallback").cloned() {
         // Use fallback value instead of failing
-        publish_outputs(state, outputs, fallback).await;
-        finish_one(state);
+        publish_outputs(event.state, event.outputs, fallback).await;
+        finish_one(event.state);
         false // Don't abort
     } else {
         // No fallback - abort execution
-        state.mark_done();
+        event.state.mark_done();
         true // Abort
     }
 }
@@ -381,7 +378,8 @@ async fn record_event(
         ));
     }
 
-    ctx.memory()
+    let _ = ctx
+        .memory()
         .record_episodic_event(
             ctx.execution_id.clone(),
             event_type,
