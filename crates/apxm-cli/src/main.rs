@@ -46,14 +46,11 @@ pub enum Command {
     #[command(visible_alias = "c")]
     Compile(commands::CompileArgs),
 
-    /// Run a compiled agent (not yet implemented).
+    /// Run a compiled agent.
     ///
-    /// Executes a compiled AgentBinary using the APXM runtime.
+    /// Executes a compiled AIS program by invoking the compiler and runtime linker.
     #[command(visible_alias = "r")]
-    // Run {
-    //     /// Input AgentBinary file.
-    //     input: PathBuf,
-    // },
+    Run(commands::RunArgs),
 
     /// Start interactive chat interface.
     ///
@@ -103,6 +100,7 @@ async fn main() -> ExitCode {
     // Execute command
     let result = match cli.command {
         Command::Compile(args) => commands::compile::execute(args),
+        Command::Run(args) => commands::run::execute(args, cli.config).await,
         Command::Version => {
             print_version();
             Ok(())

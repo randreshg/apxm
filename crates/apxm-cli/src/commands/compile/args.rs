@@ -30,12 +30,8 @@ pub struct CompileArgs {
     pub stage: Option<StageArg>,
 
     /// Output format
-    #[arg(long, default_value = "mlir", value_name = "FORMAT")]
+    #[arg(long, default_value = "artifact", value_name = "FORMAT")]
     pub emit: EmitFormatArg,
-
-    /// Pipeline profile shortcut (mirrors `ais-opt`/`ais-translate` behavior)
-    #[arg(long, value_enum, default_value = "default")]
-    pub profile: CompileProfileArg,
 
     /// Run specific passes (can be specified multiple times)
     #[arg(long = "pass", value_name = "PASS")]
@@ -56,6 +52,14 @@ pub struct CompileArgs {
     /// Print IR after each pass
     #[arg(long)]
     pub dump_ir: bool,
+
+    /// Write the parsed MLIR to a file for debugging
+    #[arg(long, value_name = "FILE")]
+    pub dump_parsed_mlir: Option<PathBuf>,
+
+    /// Write the optimized MLIR (post-pass) to a file for debugging
+    #[arg(long, value_name = "FILE")]
+    pub dump_optimized_mlir: Option<PathBuf>,
 
     /// Verify module after each optimization pass
     #[arg(long)]
@@ -118,14 +122,8 @@ impl From<StageArg> for CompilationStage {
 /// CLI-friendly handle for output emission.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum EmitFormatArg {
-    /// Raw MLIR text
-    Mlir,
-    /// Optimized MLIR text
-    Optimized,
-    /// Async-lowered MLIR text
-    Async,
-    /// JSON representation
-    Json,
+    /// Binary artifact (.apxmobj)
+    Artifact,
     /// Rust source
     Rust,
 }
@@ -133,24 +131,10 @@ pub enum EmitFormatArg {
 impl From<EmitFormatArg> for EmitFormat {
     fn from(arg: EmitFormatArg) -> Self {
         match arg {
-            EmitFormatArg::Mlir => EmitFormat::Mlir,
-            EmitFormatArg::Optimized => EmitFormat::Optimized,
-            EmitFormatArg::Async => EmitFormat::Async,
-            EmitFormatArg::Json => EmitFormat::Json,
+            EmitFormatArg::Artifact => EmitFormat::Artifact,
             EmitFormatArg::Rust => EmitFormat::Rust,
         }
     }
-}
-
-/// Predefined compile profiles that mirror historical tooling.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum CompileProfileArg {
-    /// Standard pipeline (parse → binary).
-    Default,
-    /// Optimization-focused run (like `ais-opt`).
-    Opt,
-    /// Translation-focused run (like `ais-translate`).
-    Translate,
 }
 
 pub fn selected_stage(stage: Option<StageArg>) -> CompilationStage {

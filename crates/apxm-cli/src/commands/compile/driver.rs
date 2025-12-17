@@ -4,7 +4,6 @@ use super::pipeline::{build_pass_manager, execute_list_passes, print_pipeline};
 use super::plan::resolve_plan;
 use apxm_compiler::{Context, Module};
 use apxm_core::error::cli::{CliError, CliResult};
-use apxm_core::types::CompilationStage;
 use apxm_core::{log_error, log_info};
 use std::fs;
 use std::path::PathBuf;
@@ -55,6 +54,8 @@ pub fn execute(args: CompileArgs) -> CliResult<()> {
 
     let module = parse_input(&ctx, input, args.mlir)?;
 
+    dump_mlir_if_requested(&module, args.dump_parsed_mlir.as_ref(), "parsed MLIR")?;
+
     if args.dump_ir {
         log_info!("compile", "=== After parsing ===");
         match module.to_string() {
@@ -63,18 +64,10 @@ pub fn execute(args: CompileArgs) -> CliResult<()> {
         }
     }
 
-    if stage == CompilationStage::Parse {
-        if args.dump_ir
-            && args.output.is_none()
-            && matches!(emit, apxm_core::types::EmitFormat::Mlir)
-        {
-            return Ok(());
-        }
-        return output_result(&args, &module, &agent_name, emit);
-    }
-
     let pm = build_pass_manager(&ctx, &args, stage)?;
     pm.run(&module).map_err(CliError::from_compiler_error)?;
+
+    dump_mlir_if_requested(&module, args.dump_optimized_mlir.as_ref(), "optimized MLIR")?;
 
     if args.dump_ir {
         log_info!("compile", "=== After optimization ===");
@@ -107,4 +100,19 @@ fn parse_input(ctx: &Context, path: &PathBuf, is_mlir: bool) -> CliResult<Module
         let filename = path.to_string_lossy().to_string();
         Module::parse_dsl(ctx, &source, &filename).map_err(CliError::from_compiler_error)
     }
+}
+
+fn dump_mlir_if_requested(module: &Module, path: Option<&PathBuf>, label: &str) -> CliResult<()> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    let mlir = module.to_string().map_err(|e| CliError::Config {
+        message: format!("Failed to render module: {}", e),
+    })?;
+    std::fs::write(path, mlir.as_bytes()).map_err(|e| CliError::OutputWrite {
+        path: path.clone(),
+        message: e.to_string(),
+    })?;
+    log_info!("compile", "Dumped {} to {}", label, path.display());
+    Ok(())
 }

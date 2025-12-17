@@ -4,5 +4,7 @@
 //! and extensibility.
 
 pub mod compile;
+pub mod run;
 
 pub use compile::CompileArgs;
+pub use run::RunArgs;

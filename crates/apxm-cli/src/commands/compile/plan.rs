@@ -1,4 +1,4 @@
-use super::args::{CompileArgs, CompileProfileArg, selected_stage};
+use super::args::{CompileArgs, selected_stage};
 use apxm_core::error::cli::{CliError, CliResult};
 use apxm_core::types::{CompilationStage, EmitFormat, stage_rank};
 
@@ -9,23 +9,7 @@ pub struct CompilePlan {
 
 pub fn resolve_plan(args: &CompileArgs) -> CliResult<CompilePlan> {
     let mut stage = selected_stage(args.stage);
-    let mut emit = EmitFormat::from(args.emit);
-
-    match args.profile {
-        CompileProfileArg::Default => {}
-        CompileProfileArg::Opt => {
-            if args.stage.is_none() {
-                stage = CompilationStage::Optimize;
-            }
-            emit = EmitFormat::Optimized;
-        }
-        CompileProfileArg::Translate => {
-            if args.stage.is_none() {
-                stage = CompilationStage::Lower;
-            }
-            emit = EmitFormat::Async;
-        }
-    }
+    let emit = EmitFormat::from(args.emit);
 
     let required_stage = emit.required_stage();
     if stage_rank(stage) < stage_rank(required_stage) {

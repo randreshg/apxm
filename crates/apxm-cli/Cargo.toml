@@ -7,6 +7,8 @@ edition.workspace = true
 # workspace
 apxm-compiler = { version = "0.0.1", path = "../apxm-compiler" }
 apxm-core = { version = "0.0.1", path = "../apxm-core" }
+apxm-config = { path = "../apxm-config" }
+apxm-linker = { path = "../apxm-linker" }
 
 # Error handling
 anyhow = "1.0.100"

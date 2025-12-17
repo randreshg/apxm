@@ -153,7 +153,7 @@ fn default_pipeline(stage: CompilationStage, opt_level: OptimizationLevel) -> Ve
         CompilationStage::Optimize => optimization_pipeline(opt_level),
         CompilationStage::Lower => {
             let mut passes = optimization_pipeline(opt_level);
-            passes.extend(["lower-to-async"]);
+            passes.extend(["inline", "lower-to-async"]);
             passes
         }
     }
