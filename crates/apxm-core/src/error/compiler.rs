@@ -152,7 +152,7 @@ mod tests {
     }
 
     #[test]
-    fn test_as_error() {
+    fn test_as_error() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let span = Span::new("test.mlir".to_string(), 5, 10, 1);
         let error = Error::new(
             ErrorCode::MLIRVerificationFailed,
@@ -161,8 +161,16 @@ mod tests {
         );
         let error = CompilerError::Verification(Box::new(error));
 
-        assert!(error.as_error().is_some());
-        let err = error.as_error().unwrap();
-        assert_eq!(err.code, ErrorCode::MLIRVerificationFailed);
+        match error.as_error() {
+            Some(err) => assert_eq!(err.code, ErrorCode::MLIRVerificationFailed),
+            None => {
+                return Err(Box::<dyn std::error::Error>::from(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "expected underlying Error in CompilerError::Verification",
+                )));
+            }
+        }
+
+        Ok(())
     }
 }

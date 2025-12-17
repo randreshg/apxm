@@ -194,6 +194,52 @@ impl fmt::Display for Value {
     }
 }
 
+impl TryFrom<serde_json::Value> for Value {
+    type Error = RuntimeError;
+
+    fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
+        match value {
+            serde_json::Value::Null => Ok(Value::Null),
+            serde_json::Value::Bool(b) => Ok(Value::Bool(b)),
+            serde_json::Value::Number(num) => {
+                if let Some(i) = num.as_i64() {
+                    return Ok(Value::Number(Number::Integer(i)));
+                }
+
+                if let Some(u) = num.as_u64() {
+                    if u <= i64::MAX as u64 {
+                        return Ok(Value::Number(Number::Integer(u as i64)));
+                    }
+                    return Ok(Value::Number(Number::Float(u as f64)));
+                }
+
+                if let Some(f) = num.as_f64() {
+                    return Ok(Value::Number(Number::Float(f)));
+                }
+
+                Err(RuntimeError::Serialization(
+                    "Unsupported numeric value".to_string(),
+                ))
+            }
+            serde_json::Value::String(s) => Ok(Value::String(s)),
+            serde_json::Value::Array(arr) => {
+                let converted = arr
+                    .into_iter()
+                    .map(Value::try_from)
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Value::Array(converted))
+            }
+            serde_json::Value::Object(obj) => {
+                let mut map = HashMap::with_capacity(obj.len());
+                for (key, value) in obj {
+                    map.insert(key, Value::try_from(value)?);
+                }
+                Ok(Value::Object(map))
+            }
+        }
+    }
+}
+
 impl From<bool> for Value {
     fn from(value: bool) -> Self {
         Value::Bool(value)
@@ -341,34 +387,46 @@ mod tests {
     #[test]
     fn test_to_json_null() {
         let v = Value::Null;
-        assert_eq!(v.to_json().unwrap(), serde_json::Value::Null);
+        match v.to_json() {
+            Ok(val) => assert_eq!(val, serde_json::Value::Null),
+            Err(e) => panic!("to_json returned error: {}", e),
+        }
     }
 
     #[test]
     fn test_to_json_bool() {
         let v = Value::Bool(true);
-        assert_eq!(v.to_json().unwrap(), serde_json::Value::Bool(true));
+        match v.to_json() {
+            Ok(val) => assert_eq!(val, serde_json::Value::Bool(true)),
+            Err(e) => panic!("to_json returned error: {}", e),
+        }
     }
 
     #[test]
     fn test_to_json_number() {
         let v = Value::Number(Number::Integer(42));
-        assert_eq!(v.to_json().unwrap(), serde_json::json!(42));
+        match v.to_json() {
+            Ok(val) => assert_eq!(val, serde_json::json!(42)),
+            Err(e) => panic!("to_json returned error: {}", e),
+        }
     }
 
     #[test]
     fn test_to_json_string() {
         let v = Value::String("test".to_string());
-        assert_eq!(
-            v.to_json().unwrap(),
-            serde_json::Value::String("test".to_string())
-        );
+        match v.to_json() {
+            Ok(val) => assert_eq!(val, serde_json::Value::String("test".to_string())),
+            Err(e) => panic!("to_json returned error: {}", e),
+        }
     }
 
     #[test]
     fn test_to_json_array() {
         let v = Value::Array(vec![Value::Number(Number::Integer(1))]);
-        assert_eq!(v.to_json().unwrap(), serde_json::json!([1]));
+        match v.to_json() {
+            Ok(val) => assert_eq!(val, serde_json::json!([1])),
+            Err(e) => panic!("to_json returned error: {}", e),
+        }
     }
 
     #[test]
@@ -376,7 +434,10 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("k".to_string(), Value::Number(Number::Integer(1)));
         let v = Value::Object(map);
-        assert_eq!(v.to_json().unwrap(), serde_json::json!({"k": 1}));
+        match v.to_json() {
+            Ok(val) => assert_eq!(val, serde_json::json!({"k": 1})),
+            Err(e) => panic!("to_json returned error: {}", e),
+        }
     }
 
     #[test]
@@ -388,15 +449,19 @@ mod tests {
     #[test]
     fn test_serialization() {
         let v = Value::Number(Number::Integer(42));
-        let json = serde_json::to_string(&v).unwrap();
-        assert!(json.contains("42"));
+        match serde_json::to_string(&v) {
+            Ok(json) => assert!(json.contains("42")),
+            Err(e) => panic!("serialization failed: {}", e),
+        }
     }
 
     #[test]
     fn test_deserialization() {
         let json = "42";
-        let v: Value = serde_json::from_str(json).unwrap();
-        assert_eq!(v, Value::Number(Number::Integer(42)));
+        match serde_json::from_str::<Value>(json) {
+            Ok(v) => assert_eq!(v, Value::Number(Number::Integer(42))),
+            Err(e) => panic!("deserialization failed: {}", e),
+        }
     }
 
     #[test]
@@ -407,8 +472,12 @@ mod tests {
             Value::Number(Number::Integer(42)),
             Value::String("test".to_string()),
         ]);
-        let json = serde_json::to_string(&v).unwrap();
-        let v2: Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v, v2);
+        match serde_json::to_string(&v) {
+            Ok(json) => match serde_json::from_str::<Value>(&json) {
+                Ok(v2) => assert_eq!(v, v2),
+                Err(e) => panic!("deserialization failed: {}", e),
+            },
+            Err(e) => panic!("serialization failed: {}", e),
+        }
     }
 }

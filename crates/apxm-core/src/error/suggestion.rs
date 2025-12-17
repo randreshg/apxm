@@ -178,7 +178,10 @@ mod tests {
             ";".to_string(),
         );
         assert!(sugg.replacement.is_some());
-        assert_eq!(sugg.replacement.as_ref().unwrap().code, ";");
+        assert_eq!(
+            sugg.replacement.as_ref().map(|r| r.code.as_str()),
+            Some(";")
+        );
         assert_eq!(sugg.confidence, SuggestionConfidence::High);
     }
 

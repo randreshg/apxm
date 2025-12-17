@@ -112,20 +112,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_opt_level_from_str() {
+    fn test_opt_level_from_str() -> Result<(), RuntimeError> {
+        assert_eq!("o0".parse::<OptimizationLevel>()?, OptimizationLevel::O0);
+        assert_eq!("O2".parse::<OptimizationLevel>()?, OptimizationLevel::O2);
         assert_eq!(
-            "o0".parse::<OptimizationLevel>().unwrap(),
-            OptimizationLevel::O0
-        );
-        assert_eq!(
-            "O2".parse::<OptimizationLevel>().unwrap(),
-            OptimizationLevel::O2
-        );
-        assert_eq!(
-            "aggressive".parse::<OptimizationLevel>().unwrap(),
+            "aggressive".parse::<OptimizationLevel>()?,
             OptimizationLevel::O3
         );
         assert!("invalid".parse::<OptimizationLevel>().is_err());
+        Ok(())
     }
 
     #[test]

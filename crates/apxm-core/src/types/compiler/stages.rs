@@ -19,15 +19,9 @@ pub enum CompilationStage {
 /// Output targets supported by the compiler.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmitFormat {
-    /// Raw MLIR textual output (pre-optimization).
-    Mlir,
-    /// Optimized MLIR textual output.
-    Optimized,
-    /// Async-lowered MLIR textual output.
-    Async,
-    /// JSON wrapper over textual MLIR.
-    Json,
-    /// Generated Rust source.
+    /// Binary artifact (`.apxmobj`).
+    Artifact,
+    /// Generated Rust source (kept for debugging).
     Rust,
 }
 
@@ -35,9 +29,7 @@ impl EmitFormat {
     /// Minimum stage required to emit this format.
     pub fn required_stage(self) -> CompilationStage {
         match self {
-            EmitFormat::Mlir | EmitFormat::Json => CompilationStage::Parse,
-            EmitFormat::Optimized => CompilationStage::Optimize,
-            EmitFormat::Async | EmitFormat::Rust => CompilationStage::Lower,
+            EmitFormat::Artifact | EmitFormat::Rust => CompilationStage::Lower,
         }
     }
 }

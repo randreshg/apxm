@@ -223,7 +223,7 @@ mod tests {
         let msg = Message::assistant("Response").with_metadata(metadata);
         assert_eq!(msg.token_count(), Some(42));
         assert_eq!(
-            msg.metadata.as_ref().unwrap().model.as_deref(),
+            msg.metadata.as_ref().and_then(|m| m.model.as_deref()),
             Some("gpt-4")
         );
     }
