@@ -16,8 +16,32 @@
 
 using namespace apxm::parser;
 
+namespace {
+
+bool isOperationIdentifier(TokenKind kind) noexcept {
+  switch (kind) {
+  case TokenKind::identifier:
+  case TokenKind::kw_llm:
+  case TokenKind::kw_tool:
+  case TokenKind::kw_mem:
+  case TokenKind::kw_think:
+  case TokenKind::kw_plan:
+  case TokenKind::kw_reflect:
+  case TokenKind::kw_verify:
+  case TokenKind::kw_exec:
+  case TokenKind::kw_talk:
+  case TokenKind::kw_wait:
+  case TokenKind::kw_merge:
+    return true;
+  default:
+    return false;
+  }
+}
+
+} // namespace
+
 std::unique_ptr<Expr> ExpressionParser::parseExpression() {
-  return parseAssignmentExpr();
+  return parsePipelineExpr();
 }
 
 std::unique_ptr<Expr> ExpressionParser::parseAssignmentExpr() {
@@ -124,28 +148,17 @@ std::unique_ptr<Expr> ExpressionParser::parseUnaryExpr() {
 
 std::unique_ptr<Expr> ExpressionParser::parsePrimaryExpr() {
   Location loc = getCurrentLocation();
+  std::unique_ptr<Expr> base;
 
-  if (peek(TokenKind::identifier)) {
+  if (isOperationIdentifier(peek().kind)) {
     llvm::StringRef name = peek().spelling;
-    advance(); // consume identifier
-
-    // Check for special operations
-    if (name == "llm") return parseCallExpr("llm", loc);
-    if (name == "tool") return parseCallExpr("tool", loc);
-    if (name == "mem") return parseCallExpr("mem", loc);
-    if (name == "think") return parseCallExpr("think", loc);
-    if (name == "plan") return parseCallExpr("plan", loc);
-    if (name == "reflect") return parseCallExpr("reflect", loc);
-    if (name == "verify") return parseCallExpr("verify", loc);
-    if (name == "exec") return parseCallExpr("exec", loc);
-    if (name == "talk") return parseCallExpr("talk", loc);
-    if (name == "wait") return parseCallExpr("wait", loc);
-    if (name == "merge") return parseCallExpr("merge", loc);
-
-    return std::make_unique<VarExpr>(loc, name);
-  }
-
-  if (peek(TokenKind::string_literal)) {
+    advance();
+    base = std::make_unique<VarExpr>(loc, name);
+  } else if (peek(TokenKind::identifier)) {
+    llvm::StringRef name = peek().spelling;
+    advance();
+    base = std::make_unique<VarExpr>(loc, name);
+  } else if (peek(TokenKind::string_literal)) {
     auto value = getStringValue(peek());
     if (!value) {
       emitError(loc, "Invalid string literal");
@@ -153,10 +166,8 @@ std::unique_ptr<Expr> ExpressionParser::parsePrimaryExpr() {
     }
     llvm::StringRef strValue = *value;
     advance(); // consume string literal
-    return std::make_unique<StringLiteralExpr>(loc, strValue);
-  }
-
-  if (peek(TokenKind::number_literal)) {
+    base = std::make_unique<StringLiteralExpr>(loc, strValue);
+  } else if (peek(TokenKind::number_literal)) {
     auto value = getNumericValue(peek());
     if (!value) {
       emitError(loc, "Invalid number literal");
@@ -164,21 +175,15 @@ std::unique_ptr<Expr> ExpressionParser::parsePrimaryExpr() {
     }
     double numValue = *value;
     advance(); // consume number literal
-    return std::make_unique<NumberLiteralExpr>(loc, numValue);
-  }
-
-  if (isBooleanLiteral(peek().kind)) {
+    base = std::make_unique<NumberLiteralExpr>(loc, numValue);
+  } else if (isBooleanLiteral(peek().kind)) {
     bool boolValue = getBooleanValue(peek().kind);
     advance(); // consume boolean literal
-    return std::make_unique<BooleanLiteralExpr>(loc, boolValue);
-  }
-
-  if (peek(TokenKind::kw_null)) {
+    base = std::make_unique<BooleanLiteralExpr>(loc, boolValue);
+  } else if (peek(TokenKind::kw_null)) {
     advance(); // consume null
-    return std::make_unique<NullLiteralExpr>(loc);
-  }
-
-  if (peek(TokenKind::l_paren)) {
+    base = std::make_unique<NullLiteralExpr>(loc);
+  } else if (peek(TokenKind::l_paren)) {
     advance(); // consume '('
     auto expr = parseExpression();
     if (!expr) {
@@ -189,16 +194,19 @@ std::unique_ptr<Expr> ExpressionParser::parsePrimaryExpr() {
       synchronize();
       return expr;
     }
-    return expr;
+    base = std::move(expr);
+  } else if (peek(TokenKind::l_square)) {
+    base = parseArrayExpr();
+  } else {
+    emitError(loc, "Expected expression");
+    synchronize();
+    return nullptr;
   }
 
-  if (peek(TokenKind::l_square)) {
-    return parseArrayExpr();
-  }
+  if (!base)
+    return nullptr;
 
-  emitError(loc, "Expected expression");
-  synchronize();
-  return nullptr;
+  return parsePostfixExpr(std::move(base));
 }
 
 std::unique_ptr<Expr> ExpressionParser::parseArrayExpr() {
@@ -216,7 +224,15 @@ std::unique_ptr<Expr> ExpressionParser::parseArrayExpr() {
 std::unique_ptr<Expr> ExpressionParser::parsePostfixExpr(std::unique_ptr<Expr> base) {
   while (true) {
     if (peek(TokenKind::l_paren)) {
-      base = parseCallExpr("", base->getLocation());
+      auto *var = llvm::dyn_cast<VarExpr>(base.get());
+      if (!var) {
+        emitError(getCurrentLocation(), "Call target must be an identifier");
+        synchronize();
+        return nullptr;
+      }
+      auto callLoc = var->getLocation();
+      auto callee = var->getName().str();
+      base = parseCallExpr(callee, callLoc);
       if (!base) return nullptr;
       continue;
     }
@@ -243,15 +259,14 @@ std::unique_ptr<Expr> ExpressionParser::parsePostfixExpr(std::unique_ptr<Expr> b
     if (peek(TokenKind::dot)) {
       advance(); // consume '.'
 
+      Location loc = getCurrentLocation();
+      Token memberTok = peek();
       if (!expect(TokenKind::identifier)) {
         synchronize();
         return nullptr;
       }
 
-      llvm::StringRef member = peek().spelling;
-      Location loc = getCurrentLocation();
-      advance(); // consume identifier
-
+      llvm::StringRef member = memberTok.spelling;
       base = std::make_unique<MemberAccessExpr>(loc, std::move(base), member);
       continue;
     }

@@ -10,9 +10,12 @@
 #include "apxm/CAPI/Module.h"
 #if defined(APXM_HAS_RUST_EMITTER)
 #include "apxm/Dialect/AIS/Conversion/Rust/AISToRust.h"
+#include "apxm/Dialect/AIS/Conversion/Artifact/ArtifactEmitter.h"
+#include "mlir/Support/LogicalResult.h"
 #endif
 #include "llvm/Support/raw_ostream.h"
 #include <cstring>
+#include <cstdlib>
 
 // Use the public `mlir::ais::RustCodegenOptions` declared in the
 // AIS-to-Rust header. The local anonymous duplicate struct was removed
@@ -66,6 +69,46 @@ char* apxm_codegen_emit_rust_with_options(ApxmModule* module, const ApxmCodegenO
   result[output.size()] = '\0';
   return result;
 #endif
+}
+
+char* apxm_codegen_emit_artifact(ApxmModule* module, const ApxmArtifactOptions* options) {
+  if (!module || !module->module)
+    return nullptr;
+
+#if !defined(APXM_HAS_RUST_EMITTER)
+  (void)options;
+  return nullptr;
+#else
+  mlir::ais::ArtifactEmitOptions cppOptions;
+  if (options) {
+    if (options->module_name && options->module_name[0])
+      cppOptions.moduleName = options->module_name;
+    cppOptions.emitDebugJson = options->emit_debug_json;
+    if (options->target_version && options->target_version[0])
+      cppOptions.targetVersion = options->target_version;
+  }
+
+  mlir::ais::ArtifactEmitter emitter(cppOptions);
+  if (mlir::failed(emitter.emitModule(*module->module)))
+    return nullptr;
+
+  const auto &payload = emitter.getBuffer();
+  uint64_t size = static_cast<uint64_t>(payload.size());
+  size_t total = sizeof(uint64_t) + payload.size();
+  char *result = static_cast<char *>(malloc(total));
+  if (!result)
+    return nullptr;
+
+  std::memcpy(result, &size, sizeof(uint64_t));
+  if (!payload.empty()) {
+    std::memcpy(result + sizeof(uint64_t), payload.data(), payload.size());
+  }
+  return result;
+#endif
+}
+
+void apxm_codegen_free(char *ptr) {
+  free(ptr);
 }
 
 } // extern "C"

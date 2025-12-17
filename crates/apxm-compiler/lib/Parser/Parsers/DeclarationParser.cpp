@@ -13,6 +13,7 @@
  * - On-event declaration
  */
 
+#include "apxm/Parser/AST/Statement.h"
 #include "apxm/Parser/Parsers/DeclarationParser.h"
 #include "apxm/Parser/Parsers/ExpressionParser.h"
 #include "apxm/Parser/Parsers/StatementParser.h"
@@ -20,6 +21,7 @@
 #include "apxm/Parser/Utils/Token.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
+#include <memory>
 #include <utility>
 
 namespace {
@@ -33,9 +35,7 @@ makeStringRefPairs(const llvm::SmallVector<std::pair<std::string, std::string>, 
   }
   return refs;
 }
-
 } // namespace
-#include <memory>
 
 using namespace apxm::parser;
 
@@ -46,13 +46,13 @@ std::unique_ptr<AgentDecl> DeclarationParser::parseAgent() {
   }
 
   Location nameLoc = getCurrentLocation();
+  Token nameTok = peek();
   if (!expect(TokenKind::identifier)) {
     synchronize();
     return nullptr;
   }
 
-  llvm::StringRef agentName = peek().spelling;
-  advance();
+  llvm::StringRef agentName = nameTok.spelling;
 
   if (!expect(TokenKind::l_brace)) {
     synchronize();
@@ -69,8 +69,32 @@ std::unique_ptr<AgentDecl> DeclarationParser::parseAgent() {
 
   while (!peek(TokenKind::r_brace) && !peek(TokenKind::eof)) {
     if (peek(TokenKind::kw_memory)) {
-      if (auto decl = parseMemoryDecl()) {
-        memoryDecls.push_back(std::move(decl));
+      advance();
+      if (peek(TokenKind::l_brace)) {
+        advance();
+        while (!peek(TokenKind::r_brace) && !peek(TokenKind::eof)) {
+          if (peek(TokenKind::comma)) {
+            advance();
+            continue;
+          }
+          if (auto decl = parseMemoryDecl()) {
+            memoryDecls.push_back(std::move(decl));
+          } else {
+            synchronize();
+          }
+          consume(TokenKind::comma);
+          consume(TokenKind::semicolon);
+        }
+        if (!expect(TokenKind::r_brace)) {
+          synchronize();
+        }
+      } else {
+        if (auto decl = parseMemoryDecl()) {
+          memoryDecls.push_back(std::move(decl));
+        }
+        if (!consume(TokenKind::semicolon)) {
+          expect(TokenKind::semicolon);
+        }
       }
     } else if (peek(TokenKind::kw_beliefs)) {
       if (!expect(TokenKind::kw_beliefs)) continue;
@@ -82,6 +106,8 @@ std::unique_ptr<AgentDecl> DeclarationParser::parseAgent() {
         } else {
           synchronize();
         }
+        consume(TokenKind::comma);
+        consume(TokenKind::semicolon);
       }
       if (!expect(TokenKind::r_brace)) {
         synchronize();
@@ -96,6 +122,8 @@ std::unique_ptr<AgentDecl> DeclarationParser::parseAgent() {
         } else {
           synchronize();
         }
+        consume(TokenKind::comma);
+        consume(TokenKind::semicolon);
       }
       if (!expect(TokenKind::r_brace)) {
         synchronize();
@@ -115,6 +143,9 @@ std::unique_ptr<AgentDecl> DeclarationParser::parseAgent() {
     } else {
       emitError(getCurrentLocation(), "Unexpected declaration");
       synchronize();
+      if (!peek(TokenKind::r_brace) && !peek(TokenKind::eof)) {
+        advance();
+      }
     }
   }
 
@@ -137,18 +168,17 @@ std::unique_ptr<AgentDecl> DeclarationParser::parseAgent() {
 
 std::unique_ptr<MemoryDecl> DeclarationParser::parseMemoryDecl() {
   Location loc = getCurrentLocation();
-  if (!expect(TokenKind::kw_memory)) return nullptr;
+  Token nameTok = peek();
   if (!expect(TokenKind::identifier)) return nullptr;
 
-  llvm::StringRef name = peek().spelling;
-  advance();
+  llvm::StringRef name = nameTok.spelling;
 
   if (!expect(TokenKind::colon)) return nullptr;
 
   TokenKind tierKind = peek().kind;
   llvm::StringRef tier;
   if (tierKind == TokenKind::kw_STM || tierKind == TokenKind::kw_LTM ||
-      tierKind == TokenKind::kw_Episodic) {
+      tierKind == TokenKind::kw_Episodic || tierKind == TokenKind::identifier) {
     tier = peek().spelling;
     advance();
   } else {
@@ -156,18 +186,16 @@ std::unique_ptr<MemoryDecl> DeclarationParser::parseMemoryDecl() {
     return nullptr;
   }
 
-  if (!expect(TokenKind::semicolon)) return nullptr;
-
   return std::make_unique<MemoryDecl>(loc, name, tier);
 }
 
 std::unique_ptr<CapabilityDecl> DeclarationParser::parseCapabilityDecl() {
   Location loc = getCurrentLocation();
   if (!expect(TokenKind::kw_capability)) return nullptr;
+  Token nameTok = peek();
   if (!expect(TokenKind::identifier)) return nullptr;
 
-  llvm::StringRef name = peek().spelling;
-  advance();
+  llvm::StringRef name = nameTok.spelling;
 
   if (!expect(TokenKind::l_paren)) return nullptr;
 
@@ -180,7 +208,8 @@ std::unique_ptr<CapabilityDecl> DeclarationParser::parseCapabilityDecl() {
 
   if (!peek(TokenKind::identifier) && !peek(TokenKind::kw_string) &&
       !peek(TokenKind::kw_number) && !peek(TokenKind::kw_bool) &&
-      !peek(TokenKind::kw_json) && !peek(TokenKind::kw_void)) {
+      !peek(TokenKind::kw_json) && !peek(TokenKind::kw_void) &&
+      !peek(TokenKind::kw_token)) {
     emitError(getCurrentLocation(), "Expected return type");
     return nullptr;
   }
@@ -197,10 +226,10 @@ std::unique_ptr<CapabilityDecl> DeclarationParser::parseCapabilityDecl() {
 std::unique_ptr<FlowDecl> DeclarationParser::parseFlowDecl() {
   Location loc = getCurrentLocation();
   if (!expect(TokenKind::kw_flow)) return nullptr;
+  Token nameTok = peek();
   if (!expect(TokenKind::identifier)) return nullptr;
 
-  llvm::StringRef name = peek().spelling;
-  advance();
+  llvm::StringRef name = nameTok.spelling;
 
   if (!expect(TokenKind::l_paren)) return nullptr;
 
@@ -213,7 +242,8 @@ std::unique_ptr<FlowDecl> DeclarationParser::parseFlowDecl() {
 
   if (!peek(TokenKind::identifier) && !peek(TokenKind::kw_string) &&
       !peek(TokenKind::kw_number) && !peek(TokenKind::kw_bool) &&
-      !peek(TokenKind::kw_json) && !peek(TokenKind::kw_void)) {
+      !peek(TokenKind::kw_json) && !peek(TokenKind::kw_void) &&
+      !peek(TokenKind::kw_token)) {
     emitError(getCurrentLocation(), "Expected return type");
     return nullptr;
   }
@@ -221,14 +251,14 @@ std::unique_ptr<FlowDecl> DeclarationParser::parseFlowDecl() {
   llvm::StringRef returnType = peek().spelling;
   advance();
 
-  if (!expect(TokenKind::l_brace)) return nullptr;
-
   llvm::SmallVector<std::unique_ptr<Stmt>, 8> body;
+  if (!peek(TokenKind::l_brace)) {
+    emitError(getCurrentLocation(), "Expected '{' to start flow body");
+    return nullptr;
+  }
   if (!stmtParser.parseStatementBlock(body)) {
     return nullptr;
   }
-
-  if (!expect(TokenKind::r_brace)) return nullptr;
 
   auto paramRefs = makeStringRefPairs(params);
   return std::make_unique<FlowDecl>(loc, name, paramRefs, returnType, body);
@@ -236,12 +266,18 @@ std::unique_ptr<FlowDecl> DeclarationParser::parseFlowDecl() {
 
 std::unique_ptr<BeliefDecl> DeclarationParser::parseBeliefDecl() {
   Location loc = getCurrentLocation();
+  Token nameTok = peek();
   if (!expect(TokenKind::identifier)) return nullptr;
 
-  llvm::StringRef name = peek().spelling;
-  advance();
+  llvm::StringRef name = nameTok.spelling;
 
-  if (!expect(TokenKind::equal)) return nullptr;
+  if (!consume(TokenKind::colon)) {
+    if (!expect(TokenKind::equal)) return nullptr;
+  }
+
+  if (consume(TokenKind::kw_from)) {
+    // Optional 'from' keyword for readability.
+  }
 
   auto source = exprParser.parseExpression();
   if (!source) {
@@ -249,41 +285,92 @@ std::unique_ptr<BeliefDecl> DeclarationParser::parseBeliefDecl() {
     return nullptr;
   }
 
-  if (!expect(TokenKind::semicolon)) return nullptr;
-
   return std::make_unique<BeliefDecl>(loc, name, std::move(source));
 }
 
 std::unique_ptr<GoalDecl> DeclarationParser::parseGoalDecl() {
   Location loc = getCurrentLocation();
+  Token nameTok = peek();
   if (!expect(TokenKind::identifier)) return nullptr;
 
-  llvm::StringRef name = peek().spelling;
-  advance();
+  llvm::StringRef name = nameTok.spelling;
 
   int priority = 1;
-  llvm::StringRef description;
+  std::string description;
 
-  if (consume(TokenKind::colon)) {
+  if (consume(TokenKind::l_paren)) {
+    while (!peek(TokenKind::r_paren) && !peek(TokenKind::eof)) {
+      Token keyTok = peek();
+      if (!expect(TokenKind::identifier)) return nullptr;
+      llvm::StringRef key = keyTok.spelling;
+
+      if (!expect(TokenKind::colon)) return nullptr;
+
+      if (key.equals_insensitive("priority")) {
+        if (!peek(TokenKind::number_literal)) {
+          emitError(getCurrentLocation(), "Expected numeric priority value");
+          return nullptr;
+        }
+        if (auto value = getNumericValue(peek())) {
+          priority = static_cast<int>(*value);
+        }
+        advance();
+      } else if (key.equals_insensitive("description")) {
+        if (!peek(TokenKind::string_literal)) {
+          emitError(getCurrentLocation(), "Expected string description");
+          return nullptr;
+        }
+        if (auto value = getStringValue(peek())) {
+          description = *value;
+        }
+        advance();
+      } else {
+        emitError(getCurrentLocation(), "Unknown goal attribute");
+        return nullptr;
+      }
+
+      if (!consume(TokenKind::comma))
+        break;
+    }
+    if (!expect(TokenKind::r_paren)) return nullptr;
+  } else if (consume(TokenKind::colon)) {
     if (peek(TokenKind::string_literal)) {
-      description = peek().spelling;
+      if (auto value = getStringValue(peek())) {
+        description = *value;
+      }
       advance();
     } else {
       emitError(getCurrentLocation(), "Expected goal description string");
       return nullptr;
     }
-  }
-
-  if (consume(TokenKind::l_paren)) {
+    if (peek(TokenKind::identifier) && peek().spelling == "priority") {
+      advance();
+      if (!peek(TokenKind::number_literal)) {
+        emitError(getCurrentLocation(), "Expected numeric priority value");
+        return nullptr;
+      }
+      if (auto value = getNumericValue(peek())) {
+        priority = static_cast<int>(*value);
+      }
+      advance();
+    } else if (consume(TokenKind::l_paren)) {
+      if (peek(TokenKind::number_literal)) {
+        if (auto value = getNumericValue(peek())) {
+          priority = static_cast<int>(*value);
+        }
+        advance();
+      }
+      if (!expect(TokenKind::r_paren)) return nullptr;
+    }
+  } else if (consume(TokenKind::l_paren)) {
     if (peek(TokenKind::number_literal)) {
       if (auto value = getNumericValue(peek())) {
         priority = static_cast<int>(*value);
       }
+      advance();
     }
     if (!expect(TokenKind::r_paren)) return nullptr;
   }
-
-  if (!expect(TokenKind::semicolon)) return nullptr;
 
   return std::make_unique<GoalDecl>(loc, name, description, priority);
 }
@@ -292,48 +379,77 @@ std::unique_ptr<OnEventDecl> DeclarationParser::parseOnEventDecl() {
   Location loc = getCurrentLocation();
   if (!expect(TokenKind::kw_on)) return nullptr;
 
-  if (!peek(TokenKind::identifier) && !peek(TokenKind::string_literal)) {
+  if (!peek(TokenKind::identifier)) {
     emitError(getCurrentLocation(), "Expected event type");
     return nullptr;
   }
 
-  llvm::StringRef eventType = peek().spelling;
+  std::string eventType = peek().spelling.str();
   advance();
-
-  llvm::SmallVector<std::pair<std::string, std::string>, 4> params;
-  if (consume(TokenKind::l_paren)) {
-    if (!parseNamedTypeList(TokenKind::r_paren, "parameter", params, true)) {
+  while (consume(TokenKind::dot)) {
+    if (!peek(TokenKind::identifier)) {
+      emitError(getCurrentLocation(), "Expected identifier after '.' in event type");
       return nullptr;
     }
+    eventType.push_back('.');
+    eventType.append(peek().spelling.str());
+    advance();
   }
 
-  llvm::SmallVector<std::unique_ptr<Expr>, 4> conditions;
-  if (consume(TokenKind::kw_when)) {
-    if (!expect(TokenKind::l_paren)) return nullptr;
+  llvm::SmallVector<std::pair<std::string, std::string>, 4> params;
+  if (!expect(TokenKind::l_brace)) return nullptr;
+  while (!peek(TokenKind::r_brace) && !peek(TokenKind::eof)) {
+    if (peek(TokenKind::comma)) {
+      advance();
+      continue;
+    }
+    Token fieldTok = peek();
+    if (!expect(TokenKind::identifier)) return nullptr;
+    std::string fieldName = fieldTok.spelling.str();
+    std::string fieldType = "token";
+    if (consume(TokenKind::colon)) {
+      if (!peek(TokenKind::identifier)) {
+        emitError(getCurrentLocation(), "Expected field type");
+        return nullptr;
+      }
+      fieldType = peek().spelling.str();
+      advance();
+    }
+    params.emplace_back(std::move(fieldName), std::move(fieldType));
+    consume(TokenKind::comma);
+    consume(TokenKind::semicolon);
+  }
+  if (!expect(TokenKind::r_brace)) return nullptr;
 
-    if (!exprParser.parseExpressionList(TokenKind::r_paren, conditions)) {
+  llvm::SmallVector<std::unique_ptr<Expr>, 4> conditions;
+  if (consume(TokenKind::kw_if)) {
+    auto guard = exprParser.parseExpression();
+    if (!guard) {
+      synchronize();
       return nullptr;
     }
+    conditions.push_back(std::move(guard));
+  }
+
+  if (!expect(TokenKind::fat_arrow)) return nullptr;
+
+  llvm::SmallVector<std::unique_ptr<Stmt>, 8> body;
+  if (peek(TokenKind::l_brace)) {
+    if (!stmtParser.parseStatementBlock(body)) {
+      return nullptr;
+    }
+  } else {
+    auto expr = exprParser.parseExpression();
+    if (!expr) {
+      synchronize();
+      return nullptr;
+    }
+    auto retLoc = expr->getLocation();
+    auto ret = std::make_unique<ReturnStmt>(retLoc, std::move(expr));
+    body.push_back(std::move(ret));
   }
 
   llvm::SmallVector<std::unique_ptr<Expr>, 4> contextExprs;
-  if (consume(TokenKind::kw_with)) {
-    if (!expect(TokenKind::l_paren)) return nullptr;
-
-    if (!exprParser.parseExpressionList(TokenKind::r_paren, contextExprs)) {
-      return nullptr;
-    }
-  }
-
-  if (!expect(TokenKind::l_brace)) return nullptr;
-
-  llvm::SmallVector<std::unique_ptr<Stmt>, 8> body;
-  if (!stmtParser.parseStatementBlock(body)) {
-    return nullptr;
-  }
-
-  if (!expect(TokenKind::r_brace)) return nullptr;
-
   auto paramRefs = makeStringRefPairs(params);
   return std::make_unique<OnEventDecl>(loc, eventType, paramRefs, conditions,
                                       contextExprs, body);

@@ -10,6 +10,7 @@
 //! - [`OperationEmitter`]: Individual operation emission
 //! - [`CodegenOptions`]: Code generation configuration
 
+pub mod artifact;
 pub mod backend;
 pub mod emitter;
 pub mod operations;

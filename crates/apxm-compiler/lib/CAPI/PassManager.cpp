@@ -38,13 +38,15 @@ bool apxm_pass_manager_run(ApxmPassManager* pm, ApxmModule* module) {
   return mlir::succeeded(pm->pass_manager->run(*module->module));
 }
 
+void apxm_pass_manager_add_inline(ApxmPassManager* pm);
+
 bool apxm_pass_manager_has_pass(ApxmPassManager* pm, const char* pass_name) {
   if (!pm || !pass_name) return false;
 
   // Simple implementation - in real system would use pass registry
   static const char* known_passes[] = {
     "normalize", "fuse-reasoning", "scheduling",
-    "canonicalizer", "cse", "symbol-dce", "lower-to-async"
+    "canonicalizer", "cse", "symbol-dce", "inline", "lower-to-async"
   };
 
   for (auto name : known_passes) {
@@ -82,6 +84,10 @@ bool apxm_pass_manager_add_pass_by_name(ApxmPassManager* pm, const char* pass_na
     apxm_pass_manager_add_symbol_dce(pm);
     return true;
   }
+  if (strcmp(pass_name, "inline") == 0) {
+    apxm_pass_manager_add_inline(pm);
+    return true;
+  }
   if (strcmp(pass_name, "lower-to-async") == 0) {
     apxm_pass_manager_add_lower_to_async(pm);
     return true;
@@ -114,6 +120,10 @@ void apxm_pass_manager_add_cse(ApxmPassManager* pm) {
 
 void apxm_pass_manager_add_symbol_dce(ApxmPassManager* pm) {
   if (pm) pm->pass_manager->addPass(mlir::createSymbolDCEPass());
+}
+
+void apxm_pass_manager_add_inline(ApxmPassManager* pm) {
+  if (pm) pm->pass_manager->addPass(mlir::createInlinerPass());
 }
 
 // Lowering Passes

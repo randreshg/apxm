@@ -82,3 +82,44 @@ mlir::ais::MemorySpace MLIRGen::toMemorySpace(llvm::StringRef tier) const {
       .Case("episodic", mlir::ais::MemorySpace::Episodic)
       .Default(mlir::ais::MemorySpace::STM);
 }
+
+bool MLIRGen::isFlowSymbol(llvm::StringRef name) const {
+  return flowSymbols.contains(name);
+}
+
+mlir::FunctionType MLIRGen::getFlowFunctionType(llvm::StringRef name) const {
+  if (auto it = flowTypes.find(name); it != flowTypes.end())
+    return it->second;
+  return {};
+}
+
+mlir::Value MLIRGen::generateFlowCall(llvm::StringRef callee, CallExpr *expr, mlir::Location loc) {
+  auto funcType = getFlowFunctionType(callee);
+  if (!funcType) {
+    emitError(loc, (llvm::Twine("Unknown flow: ") + callee).str());
+    return nullptr;
+  }
+
+  llvm::SmallVector<mlir::Value, 4> operands;
+  for (const auto &argExpr : expr->getArgs()) {
+    auto value = generateExpression(argExpr.get());
+    if (!value)
+      return nullptr;
+    operands.push_back(value);
+  }
+
+  if (operands.size() != funcType.getNumInputs()) {
+    emitError(loc,
+              (llvm::Twine("Incorrect number of arguments for flow '") + callee + "'").str());
+    return nullptr;
+  }
+
+  auto calleeAttr = mlir::SymbolRefAttr::get(&context, callee);
+  auto call =
+      builder.create<mlir::func::CallOp>(loc, calleeAttr, funcType.getResults(), operands);
+  if (funcType.getNumResults() == 0) {
+    emitError(loc, (llvm::Twine("Flow '") + callee + "' does not return a value").str());
+    return nullptr;
+  }
+  return call.getResult(0);
+}

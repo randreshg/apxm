@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 # core
 apxm-core = { version = "0.0.1", path = "../apxm-core" }
+apxm-artifact = { version = "0.1.0", path = "../apxm-artifact" }
 
 # FFI
 libc = "0.2.178"

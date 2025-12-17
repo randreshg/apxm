@@ -45,9 +45,9 @@ std::unique_ptr<Stmt> StatementParser::parseLetStmt() {
   Location loc = getCurrentLocation();
   if (!expect(TokenKind::kw_let)) return nullptr;
 
+  Token nameTok = peek();
   if (!expect(TokenKind::identifier)) return nullptr;
-  llvm::StringRef varName = peek().spelling;
-  advance();
+  llvm::StringRef varName = nameTok.spelling;
 
   std::optional<llvm::StringRef> typeAnnotation;
   if (consume(TokenKind::colon)) {
@@ -137,9 +137,9 @@ std::unique_ptr<Stmt> StatementParser::parseLoopStmt() {
 
   if (!expect(TokenKind::l_paren)) return nullptr;
 
+  Token iterTok = peek();
   if (!expect(TokenKind::identifier)) return nullptr;
-  llvm::StringRef varName = peek().spelling;
-  advance();
+  llvm::StringRef varName = iterTok.spelling;
 
   if (!expect(TokenKind::kw_in)) return nullptr;
 

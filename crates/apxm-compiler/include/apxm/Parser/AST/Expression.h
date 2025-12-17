@@ -44,9 +44,7 @@ class StringLiteralExpr final : public Expr {
 
 public:
   StringLiteralExpr(Location loc, llvm::StringRef value)
-      : Expr(Kind::StringLiteralExpr, loc), value(value.str()) {
-    assert(!value.empty() && "String literal cannot be empty");
-  }
+      : Expr(Kind::StringLiteralExpr, loc), value(value.str()) {}
 
   llvm::StringRef getValue() const noexcept { return value; }
 

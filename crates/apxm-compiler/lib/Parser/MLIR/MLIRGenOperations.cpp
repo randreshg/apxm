@@ -68,6 +68,10 @@ mlir::Value MLIRGenOperations::generateCallExpr(MLIRGen &gen, CallExpr *expr) {
   case CallKind::Unknown: break;
   }
 
+  if (gen.isFlowSymbol(callee)) {
+    return gen.generateFlowCall(callee, expr, loc);
+  }
+
   // Default: capability invocation
   llvm::StringRef params = expr->getArgs().empty() ? "{}" : "{\"args\":[]}";
   auto i64Type = gen.builder.getI64Type();

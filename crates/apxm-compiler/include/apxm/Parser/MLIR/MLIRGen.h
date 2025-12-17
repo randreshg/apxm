@@ -22,6 +22,7 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/SourceMgr.h"
 #include <memory>
 
@@ -47,6 +48,8 @@ private:
   using SymbolTable = llvm::ScopedHashTable<llvm::StringRef, mlir::Value>;
   SymbolTable symbolTable;
   llvm::StringMap<mlir::ais::MemorySpace> memorySpaces;
+  llvm::StringSet<> flowSymbols;
+  llvm::StringMap<mlir::FunctionType> flowTypes;
 
   //===--------------------------------------------------------------------===//
   // Declaration Generation
@@ -134,6 +137,9 @@ private:
   [[nodiscard]] mlir::Value generateMemoryAccess(llvm::StringRef store, mlir::Location loc);
   [[nodiscard]] std::string stringifyMetadataExpr(Expr *expr) const;
   [[nodiscard]] bool blockHasReturn(llvm::ArrayRef<std::unique_ptr<Stmt>> body) const;
+  [[nodiscard]] bool isFlowSymbol(llvm::StringRef name) const;
+  [[nodiscard]] mlir::FunctionType getFlowFunctionType(llvm::StringRef name) const;
+  mlir::Value generateFlowCall(llvm::StringRef callee, CallExpr *expr, mlir::Location loc);
 
   friend class MLIRGenStatements;
   friend class MLIRGenOperations;

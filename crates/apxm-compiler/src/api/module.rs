@@ -7,7 +7,9 @@
 //! and types defined in the imported module to be used in the current module.
 
 use crate::api::Context;
+use crate::codegen::artifact::parse_wire_dag;
 use crate::ffi;
+use apxm_artifact::{Artifact, ArtifactMetadata};
 use apxm_core::error::builder::ErrorBuilder;
 use apxm_core::error::codes::ErrorCode;
 use apxm_core::error::compiler::{CompilerError, Result};
@@ -15,7 +17,9 @@ use apxm_core::types::CodegenOptions;
 use std::ffi::CString;
 use std::fs;
 use std::marker::PhantomData;
+use std::os::raw::c_char;
 use std::path::Path;
+use std::ptr;
 
 pub(crate) fn invalid_input_error(message: impl Into<String>) -> CompilerError {
     CompilerError::InvalidInput(Box::new(ErrorBuilder::generic(
@@ -173,6 +177,78 @@ impl Module {
     pub fn as_ptr(&self) -> *mut ffi::ApxmModule {
         self.raw
     }
+
+    pub fn generate_artifact_bytes(&self) -> Result<Vec<u8>> {
+        self.generate_artifact_bytes_with_name(None)
+    }
+
+    pub fn generate_artifact_bytes_with_name(&self, module_name: Option<&str>) -> Result<Vec<u8>> {
+        let payload = self.emit_artifact_payload(module_name)?;
+        let dag = parse_wire_dag(&payload)?;
+        let metadata = ArtifactMetadata::new(dag.metadata.name.clone(), crate::VERSION);
+        Artifact::new(metadata, dag)
+            .to_bytes()
+            .map_err(|err| invalid_input_error(err.to_string()))
+    }
+
+    pub fn generate_artifact_to_path<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let bytes = self.generate_artifact_bytes()?;
+        std::fs::write(path, &bytes).map_err(CompilerError::Io)
+    }
+
+    fn emit_artifact_payload(&self, module_name: Option<&str>) -> Result<Vec<u8>> {
+        let module_name_cstr = module_name
+            .map(|name| {
+                CString::new(name)
+                    .map_err(|e| invalid_input_error(format!("Invalid module name: {e}")))
+            })
+            .transpose()?;
+
+        let c_options = ffi::ApxmArtifactOptions {
+            module_name: module_name_cstr
+                .as_ref()
+                .map(|c| c.as_ptr())
+                .unwrap_or(ptr::null()),
+            emit_debug_json: false,
+            target_version: ptr::null(),
+        };
+
+        let raw = ffi::handle_null_result(
+            unsafe { ffi::apxm_codegen_emit_artifact(self.raw, &c_options) },
+            "artifact generation",
+        )?;
+
+        unsafe { copy_artifact_buffer(raw) }
+    }
+}
+
+unsafe fn copy_artifact_buffer(ptr: *mut c_char) -> Result<Vec<u8>> {
+    struct BufferGuard(*mut c_char);
+
+    impl Drop for BufferGuard {
+        fn drop(&mut self) {
+            if !self.0.is_null() {
+                unsafe { ffi::apxm_codegen_free(self.0) };
+            }
+        }
+    }
+
+    let guard = BufferGuard(ptr);
+    if guard.0.is_null() {
+        return Err(invalid_input_error("Artifact emitter returned null buffer"));
+    }
+
+    let mut len_buf = [0u8; 8];
+    unsafe {
+        len_buf.copy_from_slice(std::slice::from_raw_parts(guard.0 as *const u8, 8));
+    }
+    let len = u64::from_le_bytes(len_buf) as usize;
+
+    let data = unsafe {
+        let data_ptr = guard.0.add(std::mem::size_of::<u64>()) as *const u8;
+        std::slice::from_raw_parts(data_ptr, len)
+    };
+    Ok(data.to_vec())
 }
 
 impl Drop for Module {

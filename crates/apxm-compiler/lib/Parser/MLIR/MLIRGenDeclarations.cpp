@@ -57,6 +57,18 @@ mlir::LogicalResult MLIRGen::generateAgentDecl(mlir::ModuleOp module, AgentDecl 
   auto agentOp =
       builder.create<mlir::ais::AgentOp>(agentLoc, builder.getStringAttr(agent->getName()));
 
+  flowSymbols.clear();
+  flowTypes.clear();
+  for (const auto &flowDecl : agent->getFlowDecls()) {
+    flowSymbols.insert(flowDecl->getName().str());
+    llvm::SmallVector<mlir::Type, 4> argTypes;
+    for (const auto &param : flowDecl->getParams()) {
+      argTypes.push_back(getMLIRType(param.second));
+    }
+    mlir::Type resultType = getMLIRType(flowDecl->getReturnType());
+    flowTypes[flowDecl->getName()] = builder.getFunctionType(argTypes, resultType);
+  }
+
   auto makeDictAttr = [&](llvm::ArrayRef<mlir::NamedAttribute> attrs) {
     return mlir::DictionaryAttr::get(&context, attrs);
   };
@@ -343,18 +355,22 @@ mlir::LogicalResult MLIRGen::generateFlowDecl(mlir::ModuleOp module, FlowDecl *f
   // Ensure functions are always inserted at module scope
   builder.setInsertionPointToEnd(module.getBody());
 
-  // Build function type
-  llvm::SmallVector<mlir::Type, 4> argTypes;
-  for (const auto &[paramName, paramType] : flow->getParams()) {
-    argTypes.push_back(getMLIRType(paramType));
+  mlir::FunctionType funcType;
+  if (auto it = flowTypes.find(flow->getName()); it != flowTypes.end()) {
+    funcType = it->second;
+  } else {
+    llvm::SmallVector<mlir::Type, 4> argTypes;
+    for (const auto &[paramName, paramType] : flow->getParams()) {
+      argTypes.push_back(getMLIRType(paramType));
+    }
+    mlir::Type resultType = getMLIRType(flow->getReturnType());
+    funcType = builder.getFunctionType(argTypes, resultType);
   }
 
-  mlir::Type resultType = getMLIRType(flow->getReturnType());
-  auto funcType = builder.getFunctionType(argTypes, resultType);
+  mlir::Type resultType = funcType.getNumResults() ? funcType.getResult(0) : builder.getNoneType();
 
   // Create function
   auto funcOp = builder.create<mlir::func::FuncOp>(loc, flow->getName(), funcType);
-  funcOp.setPrivate();
 
   // Create entry block
   auto &entryBlock = *funcOp.addEntryBlock();
