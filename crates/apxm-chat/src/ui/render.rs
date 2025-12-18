@@ -3,101 +3,69 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 
-use crate::storage::Message;
+use crate::{commands, storage::Message};
 
 use super::app::{AppState, FocusTarget, ViewMode};
 
 pub fn render(f: &mut Frame<'_>, app: &AppState) {
     let size = f.size();
-    let left_width = if app.left_sidebar_visible { 26 } else { 0 };
     let right_width = if app.right_sidebar_visible { 34 } else { 0 };
 
-    let layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(left_width),
-            Constraint::Min(40),
-            Constraint::Length(right_width),
-        ])
-        .split(size);
+    let chunks = if app.right_sidebar_visible && right_width > 0 {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(50), Constraint::Length(right_width)])
+            .split(size)
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(50)])
+            .split(size)
+    };
 
-    if app.left_sidebar_visible && layout[0].width > 0 {
-        render_sessions(f, app, layout[0]);
+    render_center(f, app, chunks[0]);
+
+    if app.right_sidebar_visible && chunks.len() > 1 {
+        render_specialist(f, app, chunks[1]);
     }
-
-    render_center(f, app, layout[1]);
-
-    if app.right_sidebar_visible && layout[2].width > 0 {
-        render_specialist(f, app, layout[2]);
-    }
-}
-
-fn render_sessions(f: &mut Frame<'_>, app: &AppState, area: Rect) {
-    let block = Block::default()
-        .title("Sessions")
-        .borders(Borders::RIGHT)
-        .border_style(Style::default().fg(Color::DarkGray));
-
-    let items: Vec<ListItem> = app
-        .sessions
-        .iter()
-        .map(|info| {
-            let subtitle = info.updated_at.format("%m-%d %H:%M").to_string();
-            ListItem::new(vec![
-                Line::from(vec![Span::styled(
-                    short_id(&info.id),
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                )]),
-                Line::from(vec![Span::styled(
-                    format!("{} messages", info.message_count),
-                    Style::default().fg(Color::Gray),
-                )]),
-                Line::from(vec![Span::styled(
-                    subtitle,
-                    Style::default().fg(Color::DarkGray),
-                )]),
-            ])
-        })
-        .collect();
-
-    let mut state = ListState::default();
-    if !items.is_empty() {
-        state.select(Some(app.selected_session.min(items.len() - 1)));
-    }
-
-    let list = List::new(items)
-        .block(block)
-        .highlight_style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("  › ");
-
-    f.render_stateful_widget(list, area, &mut state);
 }
 
 fn render_center(f: &mut Frame<'_>, app: &AppState, area: Rect) {
     let input_height = (app.input.line_count() as u16).clamp(3, 8) + 2;
+    let slash_matches = commands::slash_suggestions(app.input.as_str());
+    let show_suggestions = !slash_matches.is_empty();
+
+    let mut constraints = vec![
+        Constraint::Length(3),
+        Constraint::Min(5),
+        Constraint::Length(input_height),
+    ];
+    if show_suggestions {
+        let suggestion_height = (slash_matches.len() as u16 * 2).max(2).min(10);
+        constraints.push(Constraint::Length(suggestion_height));
+    }
+    constraints.push(Constraint::Length(1));
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(5),
-            Constraint::Length(input_height),
-            Constraint::Length(1),
-        ])
+        .constraints(constraints)
         .split(area);
 
-    render_header(f, app, chunks[0]);
-    render_chat(f, app, chunks[1]);
-    render_input(f, app, chunks[2]);
-    render_status(f, app, chunks[3]);
+    let mut idx = 0;
+    render_header(f, app, chunks[idx]);
+    idx += 1;
+    render_chat(f, app, chunks[idx]);
+    idx += 1;
+    render_input(f, app, chunks[idx]);
+    idx += 1;
+    if show_suggestions {
+        render_slash_suggestions(f, &slash_matches, chunks[idx]);
+        idx += 1;
+    }
+    render_status(f, app, chunks[idx]);
 }
 
 fn render_header(f: &mut Frame<'_>, app: &AppState, area: Rect) {
@@ -192,6 +160,35 @@ fn render_status(f: &mut Frame<'_>, app: &AppState, area: Rect) {
     }
 
     let paragraph = Paragraph::new(Line::from(segments));
+    f.render_widget(paragraph, area);
+}
+
+fn render_slash_suggestions(f: &mut Frame<'_>, entries: &[&commands::SlashMetadata], area: Rect) {
+    if entries.is_empty() {
+        return;
+    }
+
+    let mut lines = Vec::new();
+    for (idx, entry) in entries.iter().enumerate() {
+        if idx > 0 {
+            lines.push(Line::from(""));
+        }
+        lines.push(Line::from(Span::styled(
+            entry.usage,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(Span::raw(format!("  {}", entry.description))));
+    }
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray))
+        .title("Slash commands");
+    let paragraph = Paragraph::new(Text::from(lines))
+        .block(block)
+        .wrap(Wrap { trim: true });
     f.render_widget(paragraph, area);
 }
 
@@ -375,6 +372,7 @@ fn format_message(message: &Message) -> Vec<Line<'static>> {
     ]);
     lines.push(header);
     lines.extend(format_markdown(&message.content));
+    lines.push(Line::from(""));
     lines
 }
 

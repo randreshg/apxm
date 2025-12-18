@@ -46,6 +46,91 @@ pub enum ConfigAction {
     List,
 }
 
+/// Metadata describing a slash command for UI suggestions.
+#[derive(Debug, Clone)]
+pub struct SlashMetadata {
+    /// Canonical usage syntax (e.g. "/help").
+    pub usage: &'static str,
+    /// Short description for the UI.
+    pub description: &'static str,
+    /// Keywords/aliases used for prefix matching.
+    pub keywords: &'static [&'static str],
+}
+
+/// All slash command definitions used for autocomplete.
+pub const SLASH_COMMANDS: &[SlashMetadata] = &[
+    SlashMetadata {
+        usage: "/help",
+        description: "Show all available slash commands",
+        keywords: &["help", "h", "?"],
+    },
+    SlashMetadata {
+        usage: "/model [name]",
+        description: "Show or switch the default LLM model",
+        keywords: &["model", "m"],
+    },
+    SlashMetadata {
+        usage: "/config list",
+        description: "List chat configuration values",
+        keywords: &["config", "cfg"],
+    },
+    SlashMetadata {
+        usage: "/config get <key>",
+        description: "Inspect a specific config key",
+        keywords: &["config", "cfg"],
+    },
+    SlashMetadata {
+        usage: "/config set <key> <value>",
+        description: "(Future) persist an override",
+        keywords: &["config", "cfg"],
+    },
+    SlashMetadata {
+        usage: "/sessions",
+        description: "List stored sessions",
+        keywords: &["sessions", "ls"],
+    },
+    SlashMetadata {
+        usage: "/load <session-id>",
+        description: "Load an existing session by ID",
+        keywords: &["load", "l"],
+    },
+    SlashMetadata {
+        usage: "/clear",
+        description: "Clear the conversation view",
+        keywords: &["clear", "cls"],
+    },
+    SlashMetadata {
+        usage: "/exit",
+        description: "Exit the chat UI",
+        keywords: &["exit", "quit", "q"],
+    },
+];
+
+/// Return matching slash-command metadata for the current composer text.
+pub fn slash_suggestions(input: &str) -> Vec<&'static SlashMetadata> {
+    if !input.trim_start().starts_with('/') {
+        return Vec::new();
+    }
+
+    let query = input.trim_start_matches('/');
+    let prefix = query.split_whitespace().next().unwrap_or("").to_lowercase();
+
+    let mut matches: Vec<&SlashMetadata> = SLASH_COMMANDS
+        .iter()
+        .filter(|meta| {
+            if prefix.is_empty() {
+                return true;
+            }
+            meta.keywords
+                .iter()
+                .any(|kw| kw.starts_with(prefix.as_str()))
+        })
+        .collect();
+
+    matches.truncate(5);
+    matches
+}
+
 impl SlashCommand {
     /// Parse input into a slash command
     pub fn parse(input: &str) -> Option<Self> {
