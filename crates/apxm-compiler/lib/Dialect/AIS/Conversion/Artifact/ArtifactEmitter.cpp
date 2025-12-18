@@ -413,6 +413,10 @@ LogicalResult emitNode(Operation *op, DagBuildState &state, ArtifactDag &dag) {
     node.attributes.emplace_back(emitKey.str(), convertAttribute(named.getValue()));
   }
 
+  if (isa<ais::PlanOp, ais::RsnOp>(op)) {
+    node.attributes.emplace_back("inner_plan_supported", ArtifactValue::boolean(true));
+  }
+
   for (Value operand : op->getOperands()) {
     uint64_t tokenId = state.getTokenId(operand);
     node.inputTokens.push_back(tokenId);

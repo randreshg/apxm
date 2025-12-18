@@ -1,5 +1,6 @@
 //! Memory system configuration
 
+use apxm_core::log_warn;
 use apxm_core::paths::ApxmPaths;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
@@ -120,7 +121,11 @@ fn default_ltm_path() -> PathBuf {
     if let Ok(paths) = ApxmPaths::discover() {
         let storage_dir = paths.project_dir().join("storage").join("ltm");
         if let Err(err) = fs::create_dir_all(&storage_dir) {
-            tracing::warn!(error = %err, "Failed to create .apxm/storage/ltm directory");
+            log_warn!(
+                "memory::config",
+                error = %err,
+                "Failed to create .apxm/storage/ltm directory"
+            );
         }
         let file_name = format!("run-{}.db", Uuid::now_v7());
         return storage_dir.join(file_name);

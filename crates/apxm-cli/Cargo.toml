@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 # workspace
+apxm-chat = { path = "../apxm-chat" }
 apxm-compiler = { version = "0.0.1", path = "../apxm-compiler" }
 apxm-core = { version = "0.0.1", path = "../apxm-core" }
 apxm-config = { path = "../apxm-config" }
@@ -31,3 +32,4 @@ tokio = { version = "1.48.0", features = ["full"] }
 # Logging
 tracing = "0.1.43"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
+dirs = "5.0"

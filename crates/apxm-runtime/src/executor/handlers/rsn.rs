@@ -8,6 +8,8 @@
 
 use super::{
     ExecutionContext, Node, Result, Value, get_optional_string_attribute, get_string_attribute,
+    inner_plan::{InnerPlanDsl, InnerPlanOptions, execute_inner_plan},
+    llm_error,
 };
 use crate::aam::{Goal as AamGoal, GoalId, GoalStatus, TransitionLabel};
 use apxm_core::error::RuntimeError;
@@ -26,6 +28,11 @@ pub struct StructuredRsnOutput {
     /// New goals to add
     #[serde(default)]
     pub new_goals: Vec<Goal>,
+
+    /// Optional inner plan emitted by the model
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inner_plan: Option<InnerPlanDsl>,
 
     /// The main result value
     pub result: Value,
@@ -64,8 +71,8 @@ fn default_priority() -> u32 {
 ///   "result": "The reasoning result"
 /// }
 /// ```
-pub async fn execute(ctx: &ExecutionContext, node: &Node, _inputs: Vec<Value>) -> Result<Value> {
-    let prompt = get_string_attribute(node, "prompt")
+pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -> Result<Value> {
+    let base_prompt = get_string_attribute(node, "prompt")
         .or_else(|_| get_string_attribute(node, "template_str"))?;
     let model = get_optional_string_attribute(node, "model")?;
     let system_prompt = get_optional_string_attribute(node, "system_prompt")?;
@@ -74,8 +81,36 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, _inputs: Vec<Value>) -
         .get("max_retries")
         .and_then(|v| v.as_u64())
         .unwrap_or(3) as u32;
+    let supports_inner_plan = node
+        .attributes
+        .get("inner_plan_supported")
+        .and_then(|v| v.as_boolean())
+        .unwrap_or(false);
+    let enable_inner_plan = node
+        .attributes
+        .get("enable_inner_plan")
+        .and_then(|v| v.as_boolean())
+        .unwrap_or(supports_inner_plan);
+    let bind_outputs = node
+        .attributes
+        .get("bind_inner_plan_outputs")
+        .and_then(|v| v.as_boolean())
+        .unwrap_or(true);
 
     // Build LLM request
+    let mut prompt = base_prompt.clone();
+    if !inputs.is_empty() {
+        let mut ctx_lines = Vec::new();
+        for (idx, value) in inputs.iter().enumerate() {
+            let rendered = value
+                .to_json()
+                .map(|j| j.to_string())
+                .unwrap_or_else(|_| value.to_string());
+            ctx_lines.push(format!("Context {}: {}", idx + 1, rendered));
+        }
+        prompt = format!("{}\n\n{}", base_prompt, ctx_lines.join("\n"));
+    }
+
     let mut request = LLMRequest::new(prompt.clone());
 
     if let Some(sys) = system_prompt {
@@ -111,7 +146,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, _inputs: Vec<Value>) -
             tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms)).await;
         }
 
-        match execute_rsn_once(ctx, node, &request).await {
+        match execute_rsn_once(ctx, node, &request, enable_inner_plan, bind_outputs).await {
             Ok(value) => return Ok(value),
             Err(e) => {
                 last_error = Some(e);
@@ -136,18 +171,22 @@ async fn execute_rsn_once(
     ctx: &ExecutionContext,
     node: &Node,
     request: &LLMRequest,
+    enable_inner_plan: bool,
+    bind_outputs: bool,
 ) -> Result<Value> {
     // Execute LLM request through registry
     let response = ctx
         .llm_registry
         .generate(request.clone())
         .await
-        .map_err(|e| RuntimeError::LLM {
-            message: e.to_string(),
-            backend: None,
-        })?;
+        .map_err(|e| llm_error(ctx, "RSN", request, e))?;
 
     let content = response.content;
+    tracing::info!(
+        execution_id = %ctx.execution_id,
+        raw_response = %content,
+        "RSN model response"
+    );
 
     // Try to parse as structured output
     if let Ok(structured) = parse_structured_output(&content) {
@@ -202,6 +241,44 @@ async fn execute_rsn_once(
                     status: GoalStatus::Active,
                 };
                 ctx.aam.add_goal(aam_goal, label.clone());
+            }
+        }
+
+        if enable_inner_plan {
+            if let Some(inner_plan) = structured.inner_plan.clone() {
+                tracing::info!(
+                    execution_id = %ctx.execution_id,
+                    "RSN provided inner plan DSL"
+                );
+
+                let inserted_nodes = execute_inner_plan(
+                    ctx,
+                    node,
+                    &inner_plan,
+                    InnerPlanOptions {
+                        bind_outer_outputs: bind_outputs,
+                    },
+                )
+                .await?;
+
+                if inserted_nodes > 0 {
+                    ctx.memory
+                        .write(
+                            crate::memory::MemorySpace::Episodic,
+                            format!("inner_plan_spliced:{}", ctx.execution_id),
+                            Value::String(format!(
+                                "RSN inner plan merged into DAG with {} nodes",
+                                inserted_nodes
+                            )),
+                        )
+                        .await
+                        .ok();
+                }
+            } else {
+                tracing::debug!(
+                    execution_id = %ctx.execution_id,
+                    "RSN inner plan enabled but model omitted DSL"
+                );
             }
         }
 
@@ -301,5 +378,18 @@ That's all."#;
         let content = "```json\n{\"test\": 123}\n```";
         let extracted = extract_json_from_markdown(content).unwrap();
         assert_eq!(extracted, "{\"test\": 123}");
+    }
+
+    #[test]
+    fn test_parse_output_with_inner_plan() {
+        let json = r#"{
+            "belief_updates": {},
+            "new_goals": [],
+            "inner_plan": {"dsl": "agent InnerPlan { }"},
+            "result": "ok"
+        }"#;
+
+        let output = parse_structured_output(json).unwrap();
+        assert!(output.inner_plan.is_some());
     }
 }

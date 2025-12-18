@@ -44,7 +44,6 @@ priority-queue = "1.3"
 
 [features]
 default = ["dashmap", "fxhash"]
-compiler = []
 dashmap = ["dep:dashmap"]
 fxhash = ["dep:fxhash"]
 smallvec = ["dep:smallvec"]

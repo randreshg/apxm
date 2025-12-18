@@ -316,9 +316,16 @@ pub fn detect_llvm_version(prefix: &Path) -> Option<String> {
             .filter(|o| o.status.success())
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .and_then(|v| v.trim().split('.').next().map(String::from))
-            .inspect(|version| log_debug!("Detected LLVM version from llvm-config: {}", version))
+            .inspect(|version| {
+                log_debug!(
+                    "build::llvm",
+                    "Detected LLVM version from llvm-config: {}",
+                    version
+                )
+            })
             .or_else(|| {
                 log_debug!(
+                    "build::llvm",
                     "Failed to get LLVM version from llvm-config, falling back to library scan",
                 );
                 None
@@ -358,7 +365,13 @@ fn find_llvm_version_from_libraries(prefix: &Path) -> Option<String> {
             })
         })
         .max_by(|a, b| a.cmp(b))
-        .inspect(|version| log_debug!("Detected LLVM version from libraries: {}", version))
+        .inspect(|version| {
+            log_debug!(
+                "build::llvm",
+                "Detected LLVM version from libraries: {}",
+                version
+            )
+        })
 }
 
 /// Find versioned MLIR shared library with version suffix.

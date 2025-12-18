@@ -43,7 +43,7 @@ impl DataflowScheduler {
         &self,
         dag: ExecutionDag,
         executor: Arc<ExecutorEngine>,
-        ctx: ExecutionContext,
+        mut ctx: ExecutionContext,
     ) -> RuntimeResult<(std::collections::HashMap<u64, Value>, ExecutionStats)> {
         let start = Instant::now();
 
@@ -54,6 +54,10 @@ impl DataflowScheduler {
         let (state, workers) =
             SchedulerState::new(dag, self.config.clone(), self.metrics.clone(), start)?;
         let state = Arc::new(state);
+
+        ctx.dag_splicer = Arc::new(super::splicing::SchedulerDagSplicer::new(Arc::clone(
+            &state,
+        )));
 
         // Spawn watchdog for deadlock detection
         spawn_watchdog(Arc::clone(&state));

@@ -6,6 +6,7 @@
 
 use crate::backends::{LLMBackend, LLMRequest, LLMResponse};
 use anyhow::{Context, Result};
+use apxm_core::log_debug;
 use apxm_core::types::{FinishReason, ModelCapabilities, ModelInfo, TokenUsage};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -99,7 +100,8 @@ impl LLMBackend for AnthropicBackend {
         let body = self.build_request_body(&request);
         let url = format!("{}/messages", self.base_url);
 
-        tracing::debug!(
+        log_debug!(
+            "models::anthropic",
             model = %self.model,
             url = %url,
             "Sending request to Anthropic"

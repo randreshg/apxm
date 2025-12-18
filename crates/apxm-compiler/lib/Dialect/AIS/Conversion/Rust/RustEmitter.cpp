@@ -247,6 +247,12 @@ LogicalResult emitNode(Operation *op, DagBuildState &state,
        << "\".to_string(), " << valueExpr << ");\n";
   }
 
+  // Indicate operations that can host dynamically generated inner plans.
+  if (isa<ais::PlanOp, ais::RsnOp>(op)) {
+    os.indent(indentSize + options.indentSize)
+       << "node.set_attribute(\"inner_plan_supported\".to_string(), Value::Bool(true));\n";
+  }
+
   // Inputs
   for (Value operand : op->getOperands()) {
     uint64_t tokenId = state.getTokenId(operand);

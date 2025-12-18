@@ -56,4 +56,9 @@ impl Linker {
             execution,
         })
     }
+
+    /// Get the LLM registry from the runtime
+    pub fn runtime_llm_registry(&self) -> std::sync::Arc<apxm_models::registry::LLMRegistry> {
+        self.runtime.llm_registry()
+    }
 }

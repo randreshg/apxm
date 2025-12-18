@@ -9,6 +9,7 @@
 
 use super::{
     ExecutionContext, Node, Result, Value, get_optional_string_attribute, get_string_attribute,
+    llm_error,
 };
 use apxm_core::error::RuntimeError;
 use apxm_models::backends::request::LLMRequest;
@@ -151,10 +152,7 @@ async fn execute_reflect_once(ctx: &ExecutionContext, request: &LLMRequest) -> R
         .llm_registry
         .generate(request.clone())
         .await
-        .map_err(|e| RuntimeError::LLM {
-            message: e.to_string(),
-            backend: None,
-        })?;
+        .map_err(|e| llm_error(ctx, "REFLECT", request, e))?;
 
     let content = response.content;
 

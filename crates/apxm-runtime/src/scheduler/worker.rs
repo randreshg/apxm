@@ -322,8 +322,20 @@ async fn publish_outputs(state: &SchedulerState, outputs: &[TokenId], value: Val
     for &token_id in outputs {
         // Mark token as ready with value
         if let Some(mut token) = state.tokens.get_mut(&token_id) {
+            if token.ready {
+                tracing::debug!(
+                    token_id = token_id,
+                    "Token already ready; skipping duplicate publish"
+                );
+                continue;
+            }
             token.ready = true;
             token.value = Some(value.clone());
+        } else {
+            let mut token_state = TokenState::new();
+            token_state.ready = true;
+            token_state.value = Some(value.clone());
+            state.tokens.insert(token_id, token_state);
         }
 
         // Propagate readiness to consumers

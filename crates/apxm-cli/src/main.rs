@@ -1,8 +1,12 @@
 //! APXM CLI - Command-line interface for Agent Programming eXecution Model.
 
 use clap::{Parser, Subcommand};
+use dirs::home_dir;
+use std::fs::OpenOptions;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::{Arc, Mutex, OnceLock};
 
 mod commands;
 
@@ -55,8 +59,8 @@ pub enum Command {
     /// Start interactive chat interface.
     ///
     /// Launches a chat-like interface for interacting with APXM agents,
-    /// allowing natural language conversations.
-    //Chat(commands::ChatArgs),
+    /// allowing natural language conversations that are translated to DSL and executed.
+    Chat(commands::ChatArgs),
 
     /// Start interactive REPL.
     ///
@@ -95,12 +99,14 @@ fn print_cli_error(e: &CliError) {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    init_file_logger();
     let cli = Cli::parse();
 
     // Execute command
     let result = match cli.command {
         Command::Compile(args) => commands::compile::execute(args),
         Command::Run(args) => commands::run::execute(args, cli.config).await,
+        Command::Chat(args) => commands::chat::execute(args, cli.config).await,
         Command::Version => {
             print_version();
             Ok(())
@@ -111,6 +117,51 @@ async fn main() -> ExitCode {
         print_cli_error(&e);
         ExitCode::from(e.exit_code() as u8)
     })
+}
+
+fn init_file_logger() {
+    static INIT: OnceLock<()> = OnceLock::new();
+    INIT.get_or_init(|| {
+        if let Some(writer) = make_log_writer() {
+            let _ = tracing_subscriber::fmt()
+                .with_ansi(false)
+                .with_target(true)
+                .with_level(true)
+                .with_writer(move || LogWriter {
+                    inner: writer.clone(),
+                })
+                .try_init();
+        }
+    });
+}
+
+fn make_log_writer() -> Option<Arc<Mutex<std::fs::File>>> {
+    let home = home_dir()?;
+    let logs_dir = home.join(".apxm").join("logs");
+    std::fs::create_dir_all(&logs_dir).ok()?;
+    let file_path = logs_dir.join("apxm.log");
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file_path)
+        .ok()?;
+    Some(Arc::new(Mutex::new(file)))
+}
+
+struct LogWriter {
+    inner: Arc<Mutex<std::fs::File>>,
+}
+
+impl Write for LogWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut guard = self.inner.lock().unwrap();
+        guard.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let mut guard = self.inner.lock().unwrap();
+        guard.flush()
+    }
 }
 
 /// Print version information.

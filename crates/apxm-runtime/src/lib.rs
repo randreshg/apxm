@@ -35,7 +35,7 @@ pub use aam::{
     effects::{AamComponent, OperationEffects, operation_effects},
 };
 pub use capability::CapabilitySystem;
-pub use executor::{ExecutionContext, ExecutorEngine};
+pub use executor::{ExecutionContext, ExecutorEngine, InnerPlanLinker, NoOpLinker};
 pub use memory::{MemoryConfig, MemorySpace, MemorySystem};
 pub use observability::MetricsCollector;
 pub use runtime::{Runtime, RuntimeConfig, RuntimeExecutionResult};

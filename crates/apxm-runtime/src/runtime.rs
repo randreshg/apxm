@@ -3,11 +3,12 @@
 use crate::{
     aam::Aam,
     capability::CapabilitySystem,
-    executor::{ExecutionContext, ExecutionResult, ExecutorEngine},
+    executor::{ExecutionContext, ExecutionResult, ExecutorEngine, InnerPlanLinker, NoOpLinker},
     memory::{MemoryConfig, MemorySystem},
     scheduler::{DataflowScheduler, SchedulerConfig},
 };
 use apxm_artifact::Artifact;
+use apxm_core::log_info;
 use apxm_core::{
     error::RuntimeError,
     types::{
@@ -35,8 +36,6 @@ pub struct RuntimeConfig {
     pub memory_config: MemoryConfig,
     /// Scheduler configuration
     pub scheduler_config: SchedulerConfig,
-    /// Enable tracing (default: true)
-    pub enable_tracing: bool,
 }
 
 impl Default for RuntimeConfig {
@@ -44,7 +43,6 @@ impl Default for RuntimeConfig {
         Self {
             memory_config: MemoryConfig::default(),
             scheduler_config: SchedulerConfig::default(),
-            enable_tracing: true,
         }
     }
 }
@@ -55,7 +53,6 @@ impl RuntimeConfig {
         Self {
             memory_config: MemoryConfig::in_memory_ltm(),
             scheduler_config: SchedulerConfig::default(),
-            enable_tracing: false,
         }
     }
 
@@ -77,21 +74,13 @@ pub struct Runtime {
     capability_system: Arc<CapabilitySystem>,
     aam: Aam,
     scheduler: DataflowScheduler,
+    inner_plan_linker: Arc<dyn InnerPlanLinker>,
 }
 
 impl Runtime {
     /// Create a new runtime with the given configuration
     pub async fn new(config: RuntimeConfig) -> Result<Self, RuntimeError> {
-        // Initialize tracing if enabled
-        if config.enable_tracing {
-            tracing_subscriber::fmt()
-                .with_target(false)
-                .with_level(true)
-                .try_init()
-                .ok(); // Ignore if already initialized
-        }
-
-        tracing::info!("Initializing APxM Runtime");
+        log_info!("runtime", "Initializing APxM Runtime");
 
         // Initialize memory system
         let memory = Arc::new(
@@ -110,7 +99,7 @@ impl Runtime {
         // Initialize scheduler
         let scheduler = DataflowScheduler::new(config.scheduler_config.clone());
 
-        tracing::info!("APxM Runtime initialized successfully");
+        log_info!("runtime", "APxM Runtime initialized successfully");
 
         Ok(Self {
             config,
@@ -119,7 +108,13 @@ impl Runtime {
             capability_system,
             aam,
             scheduler,
+            inner_plan_linker: Arc::new(NoOpLinker),
         })
+    }
+
+    /// Attach a custom inner plan linker implementation to the runtime.
+    pub fn set_inner_plan_linker(&mut self, linker: Arc<dyn InnerPlanLinker>) {
+        self.inner_plan_linker = linker;
     }
 
     /// Execute a DAG with parallel dataflow execution
@@ -128,18 +123,20 @@ impl Runtime {
     /// If you need inner DAG support, wrap the Runtime in Arc and use
     /// `execute_with_inner_support()` instead.
     pub async fn execute(&self, dag: ExecutionDag) -> Result<RuntimeExecutionResult, RuntimeError> {
-        tracing::info!(
+        log_info!(
+            "runtime",
             nodes = dag.nodes.len(),
             "Executing DAG with parallel scheduler"
         );
 
         // Create execution context
-        let context = ExecutionContext::new(
+        let mut context = ExecutionContext::new(
             Arc::clone(&self.memory),
             Arc::clone(&self.llm_registry),
             Arc::clone(&self.capability_system),
             self.aam.clone(),
         );
+        context.inner_plan_linker = Arc::clone(&self.inner_plan_linker);
 
         // Create executor
         let executor = Arc::new(ExecutorEngine::new(context.clone()));
@@ -173,14 +170,19 @@ impl Runtime {
         &self,
         dag: ExecutionDag,
     ) -> Result<ExecutionResult, RuntimeError> {
-        tracing::info!(nodes = dag.nodes.len(), "Executing DAG sequentially");
+        log_info!(
+            "runtime",
+            nodes = dag.nodes.len(),
+            "Executing DAG sequentially"
+        );
 
-        let context = ExecutionContext::new(
+        let mut context = ExecutionContext::new(
             Arc::clone(&self.memory),
             Arc::clone(&self.llm_registry),
             Arc::clone(&self.capability_system),
             self.aam.clone(),
         );
+        context.inner_plan_linker = Arc::clone(&self.inner_plan_linker);
 
         let executor = ExecutorEngine::new(context);
         executor.execute_dag(dag).await
@@ -194,6 +196,11 @@ impl Runtime {
     /// Get LLM registry reference
     pub fn llm_registry(&self) -> &LLMRegistry {
         &self.llm_registry
+    }
+
+    /// Get LLM registry as Arc (clones the Arc)
+    pub fn llm_registry_arc(&self) -> Arc<LLMRegistry> {
+        Arc::clone(&self.llm_registry)
     }
 
     /// Get capability system reference
@@ -213,12 +220,14 @@ impl Runtime {
 
     /// Create a new execution context
     pub fn create_context(&self) -> ExecutionContext {
-        ExecutionContext::new(
+        let mut ctx = ExecutionContext::new(
             Arc::clone(&self.memory),
             Arc::clone(&self.llm_registry),
             Arc::clone(&self.capability_system),
             self.aam.clone(),
-        )
+        );
+        ctx.inner_plan_linker = Arc::clone(&self.inner_plan_linker);
+        ctx
     }
 }
 

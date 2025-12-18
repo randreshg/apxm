@@ -46,6 +46,20 @@ pub struct ChatConfig {
 
     /// Optional default model identifier.
     pub default_model: Option<String>,
+
+    /// Path to session storage directory.
+    #[serde(default)]
+    pub session_storage: Option<PathBuf>,
+
+    /// Maximum context tokens for chat sessions.
+    #[serde(default = "default_max_context_tokens")]
+    pub max_context_tokens: usize,
+
+    /// Model to use for planning (defaults to default_model if not specified).
+    pub planning_model: Option<String>,
+
+    /// System prompt for chat sessions.
+    pub system_prompt: Option<String>,
 }
 
 /// Definition of an LLM backend.
@@ -125,6 +139,10 @@ pub struct ExecPolicyConfig {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_max_context_tokens() -> usize {
+    8192
 }
 
 impl ApXmConfig {

@@ -5,12 +5,13 @@
 use crate::backends::{LLMBackend, LLMRequest, LLMResponse};
 use anyhow::{Context, Result};
 use apxm_core::types::{FinishReason, ModelCapabilities, ModelInfo, TokenUsage};
+use apxm_core::{log_debug, log_error};
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
 
-const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1";
-const DEFAULT_MODEL: &str = "gemini-1.5-pro";
+const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
+const DEFAULT_MODEL: &str = "gemini-flash-latest";
 
 /// Google AI LLM backend.
 pub struct GoogleBackend {
@@ -47,25 +48,33 @@ impl GoogleBackend {
 
     /// Build request body for Google AI API.
     fn build_request_body(&self, request: &LLMRequest) -> serde_json::Value {
-        let prompt_text = if let Some(system) = &request.system_prompt {
-            format!("{}\n\n{}", system, request.prompt)
-        } else {
-            request.prompt.clone()
-        };
+        let contents = vec![json!({
+            "role": "user",
+            "parts": [{ "text": request.prompt }]
+        })];
 
-        json!({
-            "contents": [{
-                "parts": [{
-                    "text": prompt_text
-                }]
-            }],
+        let mut body = json!({
+            "contents": contents,
             "generationConfig": {
                 "temperature": request.temperature,
                 "maxOutputTokens": request.max_tokens.unwrap_or(2048),
                 "topP": request.top_p.unwrap_or(0.95),
                 "stopSequences": request.stop_sequences,
             }
-        })
+        });
+
+        if let Some(system) = &request.system_prompt {
+            body.as_object_mut()
+                .expect("generation payload must be object")
+                .insert(
+                    "systemInstruction".to_string(),
+                    json!({
+                        "parts": [{ "text": system }]
+                    }),
+                );
+        }
+
+        body
     }
 
     /// Parse Google API response.
@@ -97,12 +106,10 @@ impl LLMBackend for GoogleBackend {
         request.validate()?;
 
         let body = self.build_request_body(&request);
-        let url = format!(
-            "{}/models/{}:generateContent?key={}",
-            self.base_url, self.model, self.api_key
-        );
+        let url = format!("{}/models/{}:generateContent", self.base_url, self.model);
 
-        tracing::debug!(
+        log_debug!(
+            "models::google",
             model = %self.model,
             "Sending request to Google AI"
         );
@@ -111,6 +118,7 @@ impl LLMBackend for GoogleBackend {
             .client
             .post(&url)
             .header("Content-Type", "application/json")
+            .header("x-goog-api-key", &self.api_key)
             .json(&body)
             .send()
             .await
@@ -122,6 +130,13 @@ impl LLMBackend for GoogleBackend {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
+            log_error!(
+                "models::google",
+                status = %status,
+                body = %error_text,
+                model = %self.model,
+                "Google API request failed"
+            );
             anyhow::bail!("Google API error (status {}): {}", status, error_text);
         }
 
@@ -142,14 +157,12 @@ impl LLMBackend for GoogleBackend {
     }
 
     async fn health_check(&self) -> Result<()> {
-        let url = format!(
-            "{}/models/{}?key={}",
-            self.base_url, self.model, self.api_key
-        );
+        let url = format!("{}/models/{}", self.base_url, self.model);
 
         let response = self
             .client
             .get(&url)
+            .header("x-goog-api-key", &self.api_key)
             .send()
             .await
             .context("Failed to connect to Google")?;

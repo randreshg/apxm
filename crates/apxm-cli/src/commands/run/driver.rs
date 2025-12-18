@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use apxm_config::ApXmConfig;
 use apxm_core::error::cli::{CliError, CliResult};
 use apxm_core::log_info;
+use apxm_core::types::values::Value;
 use apxm_linker::error::LinkerError;
 use apxm_linker::{LinkResult, Linker, LinkerConfig};
 
@@ -73,7 +74,29 @@ pub async fn execute(args: RunArgs, config: Option<PathBuf>) -> CliResult<()> {
         log_info!("run", "Wrote Rust source to {}", path.display());
     }
 
+    render_execution_results(&execution.results);
+
     Ok(())
+}
+
+fn render_execution_results(results: &std::collections::HashMap<u64, Value>) {
+    if results.is_empty() {
+        log_info!("run", "No exit tokens produced by the program");
+        return;
+    }
+
+    println!("Execution results ({} tokens):", results.len());
+
+    let mut entries: Vec<_> = results.iter().collect();
+    entries.sort_by_key(|(token_id, _)| *token_id);
+
+    for (token_id, value) in entries {
+        let rendered = match value.to_json() {
+            Ok(json) => json.to_string(),
+            Err(_) => value.to_string(),
+        };
+        println!("  [token {}] {}", token_id, rendered);
+    }
 }
 
 fn linker_error_to_cli(err: LinkerError) -> CliError {

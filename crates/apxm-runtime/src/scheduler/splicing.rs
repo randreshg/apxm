@@ -11,8 +11,10 @@
 
 use apxm_core::{
     error::RuntimeError,
-    types::{TokenId, execution::ExecutionDag},
+    log_debug, log_info, log_trace,
+    types::{TokenId, Value, execution::ExecutionDag},
 };
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -20,6 +22,7 @@ use super::internal_state::{OpState, TokenState};
 use super::queue::Priority;
 use super::state::SchedulerState;
 use crate::aam::effects::operation_effects;
+use crate::executor::dag_splicer::{DagSplicer, SpliceResult};
 
 /// Configuration for splicing an inner DAG into a running execution
 pub struct SpliceConfig {
@@ -69,7 +72,8 @@ impl SchedulerState {
         &self,
         config: SpliceConfig,
     ) -> Result<HashMap<TokenId, TokenId>, RuntimeError> {
-        tracing::info!(
+        log_info!(
+            "scheduler::splice",
             inner_nodes = config.inner_dag.nodes.len(),
             inner_edges = config.inner_dag.edges.len(),
             connections = config.token_connections.len(),
@@ -95,7 +99,8 @@ impl SchedulerState {
                 + 1
         });
 
-        tracing::debug!(
+        log_debug!(
+            "scheduler::splice",
             node_offset = node_offset,
             token_offset = token_offset,
             "Calculated ID offsets for splicing"
@@ -103,28 +108,23 @@ impl SchedulerState {
 
         // Build token remapping
         let mut token_remap = HashMap::new();
-        for (inner_token_id, _outer_token_id) in &config.token_connections {
-            // Tokens that are connected to outer plan keep their connection
-            // (we'll handle this separately)
-            token_remap.insert(*inner_token_id, *inner_token_id);
+        for (inner_token_id, outer_token_id) in &config.token_connections {
+            token_remap.insert(*inner_token_id, *outer_token_id);
         }
 
-        // Remap all other inner DAG token IDs
+        let mut remap_token = |token_id: TokenId| -> TokenId {
+            *token_remap
+                .entry(token_id)
+                .or_insert_with(|| token_id + token_offset)
+        };
+
+        // Remap all inner DAG token IDs
         for node in &config.inner_dag.nodes {
             for &token_id in node.output_tokens.iter() {
-                if !token_remap.contains_key(&token_id) {
-                    token_remap.insert(token_id, token_id + token_offset);
-                }
+                remap_token(token_id);
             }
             for &token_id in node.input_tokens.iter() {
-                if !token_remap.contains_key(&token_id) {
-                    // Check if this token is connected to outer plan
-                    if let Some(&outer_token_id) = config.token_connections.get(&token_id) {
-                        token_remap.insert(token_id, outer_token_id);
-                    } else {
-                        token_remap.insert(token_id, token_id + token_offset);
-                    }
-                }
+                remap_token(token_id);
             }
         }
 
@@ -132,6 +132,9 @@ impl SchedulerState {
         let mut ready_nodes = Vec::new();
 
         for node in &config.inner_dag.nodes {
+            let original_inputs = node.input_tokens.clone();
+            let original_outputs = node.output_tokens.clone();
+
             let mut node = node.clone();
             // Remap node ID
             let old_node_id = node.id;
@@ -166,7 +169,10 @@ impl SchedulerState {
             self.priorities.insert(node.id, priority);
 
             // Initialize output tokens
-            for &token_id in &node.output_tokens {
+            for (&original, &token_id) in original_outputs.iter().zip(node.output_tokens.iter()) {
+                if config.token_connections.contains_key(&original) {
+                    continue;
+                }
                 if !self.tokens.contains_key(&token_id) {
                     self.tokens.insert(token_id, TokenState::new());
                 }
@@ -174,40 +180,31 @@ impl SchedulerState {
 
             // Register as consumer for input tokens and check readiness
             let mut all_inputs_ready = true;
-            for &token_id in &node.input_tokens {
-                // If token is from outer plan connection, it should already exist
-                if let Some(outer_token_id) = config.token_connections.get(&token_id) {
-                    // Check if the outer token is ready
-                    if let Some(token_state) = self.tokens.get(outer_token_id) {
-                        if !token_state.ready {
-                            all_inputs_ready = false;
-                        }
-                    } else {
+            for (original_token, &token_id) in original_inputs.iter().zip(node.input_tokens.iter())
+            {
+                if config.token_connections.contains_key(original_token) {
+                    let Some(mut token_state) = self.tokens.get_mut(&token_id) else {
                         return Err(RuntimeError::Scheduler {
                             message: format!(
                                 "Token connection references non-existent token: {}",
-                                outer_token_id
+                                token_id
                             ),
                         });
+                    };
+                    token_state.consumers.push(node.id);
+                    if !token_state.ready {
+                        all_inputs_ready = false;
                     }
                 } else {
-                    // Token should be produced by another inner DAG node
-                    self.tokens
-                        .entry(token_id)
-                        .or_insert_with(|| {
-                            let mut ts = TokenState::new();
-                            // If this is an entry node with no producer in inner DAG,
-                            // mark as ready with null value
-                            ts.ready = false;
-                            ts
-                        })
-                        .consumers
-                        .push(node.id);
-
-                    if let Some(token_state) = self.tokens.get(&token_id) {
-                        if !token_state.ready {
-                            all_inputs_ready = false;
-                        }
+                    let mut entry = self.tokens.entry(token_id).or_insert_with(|| {
+                        let mut ts = TokenState::new();
+                        ts.ready = true;
+                        ts.value = Some(Value::Null);
+                        ts
+                    });
+                    entry.consumers.push(node.id);
+                    if !entry.ready {
+                        all_inputs_ready = false;
                     }
                 }
             }
@@ -217,7 +214,8 @@ impl SchedulerState {
                 ready_nodes.push((node.id, priority));
             }
 
-            tracing::trace!(
+            log_trace!(
+                "scheduler::splice",
                 old_node_id = old_node_id,
                 new_node_id = node.id,
                 op_type = ?node.op_type,
@@ -250,11 +248,45 @@ impl SchedulerState {
     }
 }
 
+/// Concrete implementation of the DagSplicer trait backed by a SchedulerState.
+pub struct SchedulerDagSplicer {
+    state: Arc<SchedulerState>,
+}
+
+impl SchedulerDagSplicer {
+    pub fn new(state: Arc<SchedulerState>) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl DagSplicer for SchedulerDagSplicer {
+    async fn splice_dag(
+        &self,
+        inner_dag: ExecutionDag,
+        token_connections: HashMap<TokenId, TokenId>,
+    ) -> SpliceResult {
+        let config = SpliceConfig {
+            inner_dag,
+            token_connections,
+            node_id_offset: None,
+            token_id_offset: None,
+        };
+
+        self.state.splice_dag(config)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use apxm_core::types::execution::DagMetadata;
+    use crate::observability::MetricsCollector;
+    use crate::scheduler::config::SchedulerConfig;
+    use crate::scheduler::state::SchedulerState;
+    use apxm_core::types::{Node, Value, execution::DagMetadata, operations::AISOperationType};
     use std::collections::HashMap;
+    use std::sync::Arc;
+    use std::time::Instant;
 
     #[test]
     fn test_splice_config_creation() {
@@ -275,5 +307,61 @@ mod tests {
 
         assert_eq!(config.node_id_offset, Some(100));
         assert_eq!(config.token_id_offset, Some(200));
+    }
+
+    #[test]
+    fn test_splice_dag_connects_outer_token() {
+        let mut outer_dag = ExecutionDag::new();
+
+        let mut producer = Node::new(1, AISOperationType::ConstStr);
+        producer.output_tokens = vec![1];
+        producer
+            .attributes
+            .insert("value".into(), Value::String("seed".into()));
+
+        let mut consumer = Node::new(2, AISOperationType::Return);
+        consumer.input_tokens = vec![1];
+
+        outer_dag.nodes.push(producer);
+        outer_dag.nodes.push(consumer);
+        outer_dag.entry_nodes = vec![1];
+        outer_dag.exit_nodes = vec![2];
+
+        let cfg = SchedulerConfig::default();
+        let metrics = Arc::new(MetricsCollector::default());
+        let (state, _) = SchedulerState::new(outer_dag, cfg, metrics, Instant::now()).unwrap();
+        let state = Arc::new(state);
+
+        let mut inner_dag = ExecutionDag::new();
+        let mut inner = Node::new(5, AISOperationType::Rsn);
+        inner.input_tokens = vec![10];
+        inner.output_tokens = vec![11];
+        inner_dag.nodes.push(inner);
+        inner_dag.entry_nodes = vec![5];
+        inner_dag.exit_nodes = vec![5];
+
+        let config = SpliceConfig {
+            inner_dag,
+            token_connections: HashMap::from([(10u64, 1u64)]),
+            node_id_offset: None,
+            token_id_offset: None,
+        };
+
+        let remap = state.splice_dag(config).expect("splice succeeds");
+        assert_eq!(remap.get(&10), Some(&1));
+
+        let inserted_id = state
+            .nodes
+            .iter()
+            .filter_map(|entry| {
+                let id = *entry.key();
+                let node = entry.value();
+                (id > 2 && matches!(node.op_type, AISOperationType::Rsn)).then_some(id)
+            })
+            .next()
+            .expect("inserted node present");
+
+        let token_state = state.tokens.get(&1).expect("outer token exists");
+        assert!(token_state.consumers.iter().any(|&id| id == inserted_id));
     }
 }

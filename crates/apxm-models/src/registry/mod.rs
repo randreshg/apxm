@@ -185,7 +185,11 @@ impl LLMRegistry {
                     }
                 }
 
-                // All attempts exhausted
+                tracing::error!(
+                    backend = %backend_name,
+                    error = ?e,
+                    "LLM backend request failed"
+                );
                 Err(e).context(format!(
                     "Request failed on '{}' with no successful fallback",
                     backend_name

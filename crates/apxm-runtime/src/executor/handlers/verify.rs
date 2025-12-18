@@ -1,6 +1,6 @@
 //! VERIFY operation - Verification with LLM
 
-use super::{ExecutionContext, Node, Result, Value, get_input, get_string_attribute};
+use super::{ExecutionContext, Node, Result, Value, get_input, get_string_attribute, llm_error};
 use apxm_models::backends::request::LLMRequest;
 
 pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -> Result<Value> {
@@ -17,12 +17,11 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     );
 
     let request = LLMRequest::new(verification_prompt);
-    let response = ctx.llm_registry.generate(request).await.map_err(|e| {
-        apxm_core::error::RuntimeError::LLM {
-            message: e.to_string(),
-            backend: None,
-        }
-    })?;
+    let response = ctx
+        .llm_registry
+        .generate(request.clone())
+        .await
+        .map_err(|e| llm_error(ctx, "VERIFY", &request, e))?;
 
     let is_verified = response.content.to_lowercase().contains("true");
     Ok(Value::Bool(is_verified))

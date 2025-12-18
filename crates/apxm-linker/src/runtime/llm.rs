@@ -17,7 +17,7 @@ pub async fn configure_llm_registry(
             LinkerError::Config(format!("Unknown provider '{}': {e}", provider_name))
         })?;
 
-        let api_key = resolve_api_key(backend)?;
+        let api_key = resolve_api_key(provider_id.clone(), backend)?;
         let backend_config: Option<JsonValue> = build_backend_config(backend)?;
 
         let provider = Provider::new(provider_id, &api_key, backend_config)
@@ -45,7 +45,7 @@ pub async fn configure_llm_registry(
     Ok(())
 }
 
-fn resolve_api_key(config: &LlmBackendConfig) -> Result<String, LinkerError> {
+fn resolve_api_key(provider: ProviderId, config: &LlmBackendConfig) -> Result<String, LinkerError> {
     match config.api_key.as_deref() {
         Some(key) if key.starts_with("env:") => {
             let env_name = &key["env:".len()..];
@@ -57,6 +57,7 @@ fn resolve_api_key(config: &LlmBackendConfig) -> Result<String, LinkerError> {
             })
         }
         Some(key) if !key.is_empty() => Ok(key.to_string()),
+        _ if matches!(provider, ProviderId::Ollama) => Ok(String::new()),
         _ => Err(LinkerError::Config(format!(
             "Missing API key for backend '{}'. Set `api_key` or use `env:VAR`.",
             config.name
