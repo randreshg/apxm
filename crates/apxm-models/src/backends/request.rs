@@ -129,13 +129,13 @@ impl LLMRequest {
             ));
         }
 
-        if let Some(top_p) = self.top_p {
-            if !(0.0..=1.0).contains(&top_p) {
-                return Err(anyhow::anyhow!(
-                    "top_p must be between 0.0 and 1.0, got {}",
-                    top_p
-                ));
-            }
+        if let Some(top_p) = self.top_p
+            && !(0.0..=1.0).contains(&top_p)
+        {
+            return Err(anyhow::anyhow!(
+                "top_p must be between 0.0 and 1.0, got {}",
+                top_p
+            ));
         }
 
         Ok(())

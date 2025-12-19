@@ -22,7 +22,7 @@ use tokio::time::interval;
 
 use crate::{ChatSession, ChatStreamEvent, error::ChatResult};
 
-use app::{AppAction, AppState, FocusTarget};
+use app::{AppAction, AppState};
 use frame_requester::FrameRequester;
 use render::render;
 
@@ -115,10 +115,8 @@ async fn process_event(event: CrosstermEvent, app: &mut AppState) -> ChatResult<
             AppAction::StartStreaming(rx) => Ok(EventOutcome::StartStream(rx)),
         },
         CrosstermEvent::Paste(data) => {
-            if matches!(app.focus, FocusTarget::Chat) {
-                app.input.insert_str(&data);
-                app.request_frame.schedule_frame();
-            }
+            app.input.insert_str(&data);
+            app.request_frame.schedule_frame();
             Ok(EventOutcome::Continue)
         }
         CrosstermEvent::Resize(_, _) => {

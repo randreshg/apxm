@@ -343,6 +343,12 @@ impl GoalId {
     }
 }
 
+impl Default for GoalId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl std::fmt::Display for GoalId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
@@ -409,7 +415,7 @@ mod tests {
 
         let recent = aam.recent_transitions(2);
         assert_eq!(recent.len(), 2);
-        assert!(recent[1].belief_changes.get("user").is_some());
+        assert!(recent[1].belief_changes.contains_key("user"));
     }
 
     #[test]
@@ -423,7 +429,7 @@ mod tests {
         };
         let record = aam.add_goal(goal.clone(), TransitionLabel::custom("goal"));
         assert!(
-            matches!(record.goal_changes.get(0), Some(GoalChange::Added(g)) if g.id == goal.id)
+            matches!(record.goal_changes.first(), Some(GoalChange::Added(g)) if g.id == goal.id)
         );
     }
 }

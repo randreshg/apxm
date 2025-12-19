@@ -248,8 +248,7 @@ mod tests {
             .success_rate("test")
             .ok_or_else(|| "missing success rate for 'test'".to_string())
             .map_err(|e| {
-                Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
-                    as Box<dyn std::error::Error>
+                Box::new(std::io::Error::other(e)) as Box<dyn std::error::Error>
             })?;
         assert!(rate > 0.99, "unexpected success_rate: {}", rate);
 

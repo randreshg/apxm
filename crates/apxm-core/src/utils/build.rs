@@ -143,10 +143,10 @@ pub fn locate_library(config: &LibraryConfig) -> Result<LinkSpec> {
     let mut candidates = gather_prefix_candidates(&config.env_vars);
 
     // Try to find mlir-tblgen in PATH as a fallback
-    if let Ok(path) = which::which("mlir-tblgen") {
-        if let Some(prefix) = path.parent().and_then(|p| p.parent()) {
-            candidates.push(prefix.to_path_buf());
-        }
+    if let Ok(path) = which::which("mlir-tblgen")
+        && let Some(prefix) = path.parent().and_then(|p| p.parent())
+    {
+        candidates.push(prefix.to_path_buf());
     }
 
     let library_path = candidates
@@ -254,18 +254,16 @@ fn build_link_spec(library_path: &Path, config: &LibraryConfig) -> Result<LinkSp
 /// Emit cargo directives for the provided LinkSpec.
 pub fn emit_link_directives(spec: &LinkSpec, out_dir: &Path) -> Result<()> {
     // Create symlink if requested (Unix only)
-    if cfg!(unix) {
-        if let Some((src, dst_name)) = &spec.symlink {
-            let dst = out_dir.join(dst_name);
-            if !dst.exists() {
-                std::os::unix::fs::symlink(src, &dst).with_context(|| {
-                    format!(
-                        "Failed to create symlink {} -> {}",
-                        dst.display(),
-                        src.display()
-                    )
-                })?;
-            }
+    if cfg!(unix) && let Some((src, dst_name)) = &spec.symlink {
+        let dst = out_dir.join(dst_name);
+        if !dst.exists() {
+            std::os::unix::fs::symlink(src, &dst).with_context(|| {
+                format!(
+                    "Failed to create symlink {} -> {}",
+                    dst.display(),
+                    src.display()
+                )
+            })?;
         }
     }
 

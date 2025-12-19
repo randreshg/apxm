@@ -8,10 +8,11 @@
 
 use super::{
     ExecutionContext, Node, Result, Value, get_optional_string_attribute, get_string_attribute,
-    inner_plan::{InnerPlanDsl, InnerPlanOptions, execute_inner_plan},
+    inner_plan::{InnerPlanOptions, execute_inner_plan},
     llm_error,
 };
 use crate::aam::{Goal as AamGoal, GoalId, GoalStatus, TransitionLabel};
+use apxm_core::InnerPlanDsl;
 use apxm_core::error::RuntimeError;
 use apxm_models::backends::request::LLMRequest;
 use serde::de::Error;
@@ -116,13 +117,13 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     if let Some(sys) = system_prompt {
         request = request.with_system_prompt(sys);
     } else {
-        // Use system prompt from apxm-prompts
+        // Load system prompt from template
         let system_prompt = apxm_prompts::render_prompt("rsn_system", &serde_json::json!({}))
-            .unwrap_or_else(|_| {
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "Failed to load rsn_system template, using fallback");
                 "You are a helpful AI assistant. When providing structured responses, \
                  use JSON format with fields: belief_updates (object), new_goals (array), \
-                 and result (any type)."
-                    .to_string()
+                 and result (any type).".to_string()
             });
         request = request.with_system_prompt(system_prompt);
     }
@@ -303,10 +304,10 @@ fn parse_structured_output(
     }
 
     // Try to extract JSON from markdown code block
-    if let Some(json_str) = extract_json_from_markdown(trimmed) {
-        if let Ok(output) = serde_json::from_str::<StructuredRsnOutput>(&json_str) {
-            return Ok(output);
-        }
+    if let Some(json_str) = extract_json_from_markdown(trimmed)
+        && let Ok(output) = serde_json::from_str::<StructuredRsnOutput>(&json_str)
+    {
+        return Ok(output);
     }
 
     // If all parsing fails, return error
@@ -318,19 +319,19 @@ fn parse_structured_output(
 /// Extract JSON from markdown code block
 fn extract_json_from_markdown(content: &str) -> Option<String> {
     // Look for ```json ... ``` or ``` ... ```
-    if let Some(start) = content.find("```json") {
-        if let Some(end) = content[start + 7..].find("```") {
-            return Some(content[start + 7..start + 7 + end].trim().to_string());
-        }
+    if let Some(start) = content.find("```json")
+        && let Some(end) = content[start + 7..].find("```")
+    {
+        return Some(content[start + 7..start + 7 + end].trim().to_string());
     }
 
-    if let Some(start) = content.find("```") {
-        if let Some(end) = content[start + 3..].find("```") {
-            let extracted = content[start + 3..start + 3 + end].trim();
-            // Only return if it looks like JSON
-            if extracted.starts_with('{') || extracted.starts_with('[') {
-                return Some(extracted.to_string());
-            }
+    if let Some(start) = content.find("```")
+        && let Some(end) = content[start + 3..].find("```")
+    {
+        let extracted = content[start + 3..start + 3 + end].trim();
+        // Only return if it looks like JSON
+        if extracted.starts_with('{') || extracted.starts_with('[') {
+            return Some(extracted.to_string());
         }
     }
 

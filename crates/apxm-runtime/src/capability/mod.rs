@@ -84,6 +84,24 @@ impl CapabilitySystem {
         }
     }
 
+    /// Get read-only access to the capability registry
+    ///
+    /// This allows inspection of registered capabilities without
+    /// modification access.
+    pub fn registry(&self) -> &CapabilityRegistry {
+        &self.registry
+    }
+
+    /// List all registered capability names
+    ///
+    /// This is useful for:
+    /// - Validating DSL before compilation
+    /// - Showing available capabilities to users
+    /// - Passing to LLM for constrained generation
+    pub fn list_capability_names(&self) -> Vec<String> {
+        self.registry.list_names()
+    }
+
     /// Register a capability
     ///
     /// # Arguments
@@ -220,11 +238,6 @@ impl CapabilitySystem {
     /// Get capability metadata
     pub fn get_metadata(&self, name: &str) -> Option<CapabilityMetadata> {
         self.registry.get(name).map(|cap| cap.metadata().clone())
-    }
-
-    /// Get access to the registry
-    pub fn registry(&self) -> &CapabilityRegistry {
-        &self.registry
     }
 }
 

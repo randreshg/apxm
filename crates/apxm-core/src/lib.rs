@@ -5,6 +5,7 @@
 pub mod error;
 pub mod logging;
 pub mod paths;
+pub mod plan;
 pub mod types;
 pub mod utils;
 
@@ -16,6 +17,8 @@ pub use error::{
     runtime::RuntimeError,
     security::SecurityError,
 };
+
+pub use plan::{InnerPlanDsl, Plan, PlanStep};
 
 pub use types::{
     AISOperation, AISOperationType, DependencyType, Edge, Node, NodeId, NodeMetadata, Number,

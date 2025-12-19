@@ -51,7 +51,9 @@ impl ChatConfig {
                     .map(|backend| backend.name.clone())
             })
             .ok_or_else(|| {
-                ChatError::Config("No LLM backend configured. Please configure at least one backend in .apxm/config.toml".to_string())
+                ChatError::Config(
+                    "No LLM backend configured. Add at least one `[[llm_backends]]` entry in `.apxm/config.toml` (see README.md Configuration section).".to_string()
+                )
             })?;
 
         // Get planning model from config (defaults to default_model)

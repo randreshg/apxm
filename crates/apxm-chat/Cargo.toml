@@ -8,6 +8,7 @@ edition.workspace = true
 apxm-config = { path = "../apxm-config" }
 apxm-prompts = { path = "../apxm-prompts" }
 apxm-linker = { path = "../apxm-linker" }
+apxm-compiler = { path = "../apxm-compiler" }
 apxm-models = { path = "../apxm-models" }
 apxm-storage = { path = "../apxm-storage" }
 apxm-core = { path = "../apxm-core" }

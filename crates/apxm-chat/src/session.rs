@@ -5,11 +5,13 @@ use crate::{
     config::ChatConfig,
     error::{ChatError, ChatResult},
     storage::{Message, SessionInfo, SessionStorage},
-    translator::{OuterPlan, Translator},
+    translator::Translator,
 };
+use apxm_core::Plan;
 use apxm_linker::{Linker, LinkerConfig, error::LinkerError};
 use chrono::Utc;
 use std::path::Path;
+use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
@@ -22,7 +24,7 @@ pub struct ChatSession {
     storage: SessionStorage,
 
     /// Linker for DSL compilation and execution
-    linker: Linker,
+    linker: Arc<Linker>,
 
     /// Translator for NL → DSL
     translator: Translator,
@@ -42,8 +44,8 @@ pub struct ChatSession {
 pub struct ChatResponse {
     /// Final assistant message content
     pub content: String,
-    /// Outer plan emitted by the translator
-    pub outer_plan: Option<OuterPlan>,
+    /// Plan emitted by the translator
+    pub plan: Option<Plan>,
     /// AIS/DSL source that was executed
     pub dsl_code: Option<String>,
     /// Execution outputs rendered to strings
@@ -56,7 +58,7 @@ impl ChatResponse {
     fn from_text(content: String) -> Self {
         Self {
             content,
-            outer_plan: None,
+            plan: None,
             dsl_code: None,
             execution_results: Vec::new(),
             compiler_messages: Vec::new(),
@@ -70,7 +72,7 @@ pub enum ChatStreamEvent {
     /// High-level status message for progress updates
     Status(String),
     /// Updated planning graph emitted by the translator
-    Plan(OuterPlan),
+    Plan(Plan),
     /// Compiler or linker message for the diagnostics pane
     CompilerMessage(String),
     /// Chunk of assistant output text for incremental rendering
@@ -92,7 +94,7 @@ impl ChatSession {
 
         // Create linker
         let linker_config = LinkerConfig::from_apxm_config(config.apxm_config.clone());
-        let linker = Linker::new(linker_config).await?;
+        let linker = Arc::new(Linker::new(linker_config).await?);
 
         // Create translator with LLM registry from linker
         let registry = linker.runtime_llm_registry();
@@ -100,8 +102,22 @@ impl ChatSession {
             .planning_model
             .clone()
             .unwrap_or_else(|| config.default_model.clone());
-        let translator =
-            Translator::new(registry, planning_model, Some(config.default_model.clone()));
+
+        // Get available capabilities from runtime for validation
+        let available_capabilities = linker.runtime_capabilities();
+        tracing::debug!(
+            capability_count = available_capabilities.len(),
+            capabilities = ?available_capabilities,
+            "Passing runtime capabilities to translator for DSL validation"
+        );
+
+        let translator = Translator::new(
+            registry,
+            planning_model,
+            Some(config.default_model.clone()),
+            Some(available_capabilities),
+            Some(Arc::clone(&linker)),
+        );
 
         let system_prompt = config.system_prompt.clone();
         let messages = Vec::new();
@@ -145,7 +161,7 @@ impl ChatSession {
 
         // Create linker
         let linker_config = LinkerConfig::from_apxm_config(config.apxm_config.clone());
-        let linker = Linker::new(linker_config).await?;
+        let linker = Arc::new(Linker::new(linker_config).await?);
 
         // Create translator
         let registry = linker.runtime_llm_registry();
@@ -153,8 +169,22 @@ impl ChatSession {
             .planning_model
             .clone()
             .unwrap_or_else(|| config.default_model.clone());
-        let translator =
-            Translator::new(registry, planning_model, Some(config.default_model.clone()));
+
+        // Get available capabilities from runtime for validation
+        let available_capabilities = linker.runtime_capabilities();
+        tracing::debug!(
+            capability_count = available_capabilities.len(),
+            capabilities = ?available_capabilities,
+            "Passing runtime capabilities to translator for DSL validation (session load)"
+        );
+
+        let translator = Translator::new(
+            registry,
+            planning_model,
+            Some(config.default_model.clone()),
+            Some(available_capabilities),
+            Some(Arc::clone(&linker)),
+        );
 
         let system_prompt = config.system_prompt.clone();
 
@@ -219,83 +249,113 @@ impl ChatSession {
         input: &str,
         stream: Option<&UnboundedSender<ChatStreamEvent>>,
     ) -> ChatResult<ChatResponse> {
+        // Validate input length to prevent resource exhaustion
+        const MAX_INPUT_LENGTH: usize = 100_000; // 100KB limit
+        if input.len() > MAX_INPUT_LENGTH {
+            let error = ChatError::Config(format!(
+                "Input exceeds maximum allowed size ({} bytes > {} bytes)",
+                input.len(),
+                MAX_INPUT_LENGTH
+            ));
+            emit_stream(stream, ChatStreamEvent::Error(error.to_string()));
+            return Err(error);
+        }
+
+        if input.trim().is_empty() {
+            let error = ChatError::Config("Input cannot be empty".to_string());
+            emit_stream(stream, ChatStreamEvent::Error(error.to_string()));
+            return Err(error);
+        }
+
         emit_stream(
             stream,
-            ChatStreamEvent::Status("Planning request".to_string()),
+            ChatStreamEvent::Status("Planning request...".to_string()),
         );
 
         let context_with_system = self.context_with_system_prompt();
+
+        emit_stream(
+            stream,
+            ChatStreamEvent::CompilerMessage("Generating structured plan from request".to_string()),
+        );
+
         let translation = match self.translator.translate(input, &context_with_system).await {
             Ok(plan) => plan,
             Err(err) => {
-                emit_stream(stream, ChatStreamEvent::Error(err.to_string()));
+                let error_msg = format!(
+                    "Translation failed: {}\n\nThis usually means:\n\
+                     1. The LLM returned invalid JSON for the plan, or\n\
+                     2. The DSL model couldn't generate valid syntax.\n\
+                     Check your LLM backend configuration and try again.",
+                    err
+                );
+                emit_stream(stream, ChatStreamEvent::Error(error_msg.clone()));
+                emit_stream(stream, ChatStreamEvent::CompilerMessage(error_msg.clone()));
                 return Err(err);
             }
         };
 
         emit_stream(
             stream,
-            ChatStreamEvent::Plan(translation.outer_plan.clone()),
+            ChatStreamEvent::CompilerMessage(format!(
+                "Plan generated successfully: {}",
+                translation.plan.result
+            )),
         );
 
-        let plan_snapshot = translation.outer_plan.clone();
+        emit_stream(
+            stream,
+            ChatStreamEvent::Plan(translation.plan.clone()),
+        );
+
+        let plan_snapshot = translation.plan.clone();
         let mut current_dsl = translation.dsl_code.clone();
         let max_attempts = 3;
 
+        emit_stream(
+            stream,
+            ChatStreamEvent::Status("Compiling and executing DSL...".to_string()),
+        );
+
         for attempt in 0..max_attempts {
-            emit_stream(
-                stream,
-                ChatStreamEvent::CompilerMessage("Writing DSL artifact".to_string()),
-            );
+            let attempt_msg = if attempt == 0 {
+                "Compiling DSL to executable artifact".to_string()
+            } else {
+                format!(
+                    "Retry {}/{}: Recompiling with fixes",
+                    attempt + 1,
+                    max_attempts
+                )
+            };
+
+            emit_stream(stream, ChatStreamEvent::CompilerMessage(attempt_msg));
+
+            // Create secure temporary file for DSL compilation
             let tmp_dir = self.config.session_storage_path.join("tmp");
             std::fs::create_dir_all(&tmp_dir)?;
-            let timestamp = Utc::now().timestamp();
-            let temp_path = tmp_dir.join(format!("chat_{}_{}_{}.ais", self.id, timestamp, attempt));
+
+            // Use timestamp and random component for uniqueness and avoid collisions
+            let timestamp = Utc::now().timestamp_nanos_opt().unwrap_or(0);
+            let random_suffix = uuid::Uuid::now_v7();
+            let temp_path = tmp_dir.join(format!(
+                "chat_{}_{}_{}_{}.ais",
+                self.id, timestamp, attempt, random_suffix
+            ));
+
             std::fs::write(&temp_path, &current_dsl)?;
 
             emit_stream(
                 stream,
-                ChatStreamEvent::Status("Executing plan".to_string()),
+                ChatStreamEvent::Status(format!(
+                    "Executing plan (attempt {}/{})",
+                    attempt + 1,
+                    max_attempts
+                )),
             );
 
             match self.linker.run(&temp_path, false).await {
                 Ok(result) => {
-                    let response = if result.execution.results.is_empty() {
-                        format!(
-                            "Plan: {}
-
-DSL executed successfully ({} nodes in {}ms)",
-                            plan_snapshot.result.as_str(),
-                            result.execution.stats.executed_nodes,
-                            result.execution.stats.duration_ms
-                        )
-                    } else {
-                        let mut output = format!(
-                            "Plan: {}
-
-",
-                            plan_snapshot.result.as_str()
-                        );
-                        output.push_str(
-                            "Results:
-",
-                        );
-                        let mut entries: Vec<_> = result.execution.results.iter().collect();
-                        entries.sort_by_key(|(token_id, _)| *token_id);
-                        for (token_id, value) in entries {
-                            let rendered = match value.to_json() {
-                                Ok(json) => json.to_string(),
-                                Err(_) => value.to_string(),
-                            };
-                            output.push_str(&format!(
-                                "  [token {}] {}
-",
-                                token_id, rendered
-                            ));
-                        }
-                        output
-                    };
-
+                    // Build execution entries (stringified) from runtime results (if any)
                     let mut execution_entries = Vec::new();
                     if !result.execution.results.is_empty() {
                         let mut entries: Vec<_> = result.execution.results.iter().collect();
@@ -309,62 +369,228 @@ DSL executed successfully ({} nodes in {}ms)",
                         }
                     }
 
-                    let mut compiler_messages = vec![format!(
-                        "Executed {} nodes in {}ms",
-                        result.execution.stats.executed_nodes, result.execution.stats.duration_ms
-                    )];
-                    compiler_messages
-                        .push(format!("Temporary DSL saved to {}", temp_path.display()));
+                    // Build diagnostic messages for the specialist panel
+                    let mut compiler_messages = vec![
+                        format!("✓ Compilation successful"),
+                        format!(
+                            "✓ Executed {} nodes in {}ms",
+                            result.execution.stats.executed_nodes,
+                            result.execution.stats.duration_ms
+                        ),
+                    ];
+
+                    if attempt > 0 {
+                        compiler_messages
+                            .push(format!("ℹ Succeeded after {} retry(ies)", attempt + 1));
+                    }
+
+                    // Construct the user-facing response:
+                    // - If runtime produced exit outputs, present them as before.
+                    // - If no exit outputs were produced, present a diagnostic-rich payload:
+                    //   include plan summary, generated DSL, execution stats, partial outputs,
+                    //   and compiler/linker messages so the user can inspect what happened.
+                    let response = if !result.execution.results.is_empty() {
+                        let mut output = String::new();
+                        let mut entries: Vec<_> = result.execution.results.iter().collect();
+                        entries.sort_by_key(|(token_id, _)| *token_id);
+
+                        // Only show the actual results, not token IDs (compact)
+                        for (_, value) in entries {
+                            let rendered = match value.to_json() {
+                                Ok(json) => {
+                                    // Try to pretty-print JSON
+                                    if let Ok(pretty) = serde_json::to_string_pretty(&json) {
+                                        pretty
+                                    } else {
+                                        json.to_string()
+                                    }
+                                }
+                                Err(_) => value.to_string(),
+                            };
+                            if !output.is_empty() {
+                                output.push_str("\n\n");
+                            }
+                            output.push_str(&rendered);
+                        }
+                        output
+                    } else {
+                        // Diagnostic mode: no exit tokens produced
+                        let mut out = String::new();
+
+                        // Plan summary
+                        let plan_result = plan_snapshot.result.trim();
+                        if plan_result.is_empty() {
+                            out.push_str("Plan summary:\n\n");
+                        } else {
+                            out.push_str(&format!("Plan: {}\n\n", plan_result));
+                        }
+
+                        // Show generated DSL so the user can inspect what was run
+                        out.push_str("=== Generated DSL ===\n");
+                        out.push_str(&current_dsl);
+                        out.push_str("\n\n");
+
+                        // Execution summary
+                        out.push_str("=== Execution ===\n");
+                        out.push_str("No exit tokens were produced by the program.\n\n");
+                        out.push_str(&format!(
+                            "Executed nodes: {}\nDuration: {}ms\n\n",
+                            result.execution.stats.executed_nodes,
+                            result.execution.stats.duration_ms
+                        ));
+
+                        // If there are any partial outputs (node-level values), show them
+                        if !execution_entries.is_empty() {
+                            out.push_str("=== Partial / Unmapped Outputs ===\n");
+                            for e in &execution_entries {
+                                out.push_str(&format!("- {}\n", e));
+                            }
+                            out.push_str("\n");
+                        }
+
+                        // Compiler / linker messages
+                        if !compiler_messages.is_empty() {
+                            out.push_str("=== Compiler / Linker Messages ===\n");
+                            out.push_str(&compiler_messages.join("\n"));
+                            out.push_str("\n");
+                        }
+
+                        // Guidance for the user
+                        out.push_str(
+                            "\nHint: The program may have produced values that were not mapped\n",
+                        );
+                        out.push_str(
+                            "to the outer plan's exit tokens, or inner-plan linking may be\n",
+                        );
+                        out.push_str(
+                            "unsupported in this runtime. Inspect the DSL and compiler messages\n",
+                        );
+                        out.push_str("above to determine the correct next step.\n");
+
+                        out
+                    };
 
                     let _ = std::fs::remove_file(&temp_path);
 
-                    emit_stream(
-                        stream,
-                        ChatStreamEvent::CompilerMessage("Execution finished".to_string()),
-                    );
+                    // Emit a clear compiler message for the specialist panel.
+                    // If there were no exit tokens, this helps surface the condition.
+                    if result.execution.results.is_empty() {
+                        emit_stream(
+                            stream,
+                            ChatStreamEvent::CompilerMessage(
+                                "✗ No exit tokens produced by program (see diagnostics)"
+                                    .to_string(),
+                            ),
+                        );
+                    } else {
+                        emit_stream(
+                            stream,
+                            ChatStreamEvent::CompilerMessage(
+                                "✓ Execution completed successfully".to_string(),
+                            ),
+                        );
+                    }
 
+                    // Save messages to conversation history
                     self.add_message("user", input).await?;
                     self.add_message("assistant", &response).await?;
 
                     let chat_response = ChatResponse {
                         content: response.clone(),
-                        outer_plan: Some(plan_snapshot.clone()),
+                        plan: Some(plan_snapshot.clone()),
                         dsl_code: Some(current_dsl.clone()),
                         execution_results: execution_entries,
                         compiler_messages,
                     };
 
-                    emit_stream(
-                        stream,
-                        ChatStreamEvent::Status("Streaming response".to_string()),
-                    );
-                    for chunk in response.split_inclusive(|c: char| c == ' ' || c == '\n') {
+                    // Stream the clean response to the chat
+                    emit_stream(stream, ChatStreamEvent::Status("Ready".to_string()));
+
+                    // Stream response naturally (word by word for better UX)
+                    for chunk in response.split_inclusive(|c: char| [' ', '\n'].contains(&c)) {
                         if !chunk.is_empty() {
                             emit_stream(stream, ChatStreamEvent::Chunk(chunk.to_string()));
                         }
                     }
+
                     emit_stream(stream, ChatStreamEvent::Finished(chat_response.clone()));
 
                     return Ok(chat_response);
                 }
                 Err(err) => {
+                    // Clean up temp file even on error (prevent accumulation)
                     let _ = std::fs::remove_file(&temp_path);
                     tracing::warn!(attempt = attempt + 1, error = %err, "Linker run failed");
+
+                    // Preserve full error details from compiler
+                    let error_details = err.to_string();
+
+                    // Emit detailed compiler error (no information loss)
+                    emit_stream(
+                        stream,
+                        ChatStreamEvent::CompilerMessage(format!(
+                            "✗ Compilation error:\n{}\n\nTip: Check DSL syntax and dependencies",
+                            error_details
+                        )),
+                    );
+
                     if attempt + 1 < max_attempts && matches!(err, LinkerError::Compiler(_)) {
                         emit_stream(
                             stream,
-                            ChatStreamEvent::Status(
-                                "Compiler rejected DSL. Retrying...".to_string(),
-                            ),
+                            ChatStreamEvent::Status(format!(
+                                "Fixing errors (attempt {}/{})...",
+                                attempt + 2,
+                                max_attempts
+                            )),
                         );
-                        let feedback = err.to_string();
+                        emit_stream(
+                            stream,
+                            ChatStreamEvent::CompilerMessage(format!(
+                                "ℹ Retrying with error feedback..."
+                            )),
+                        );
+
+                        // Provide full compiler error to LLM for fixing
+                        let detailed_feedback = format!(
+                            "The generated DSL failed to compile/execute with this error:\n\n{}\n\n\
+                            Please regenerate the DSL addressing this error while maintaining:\n\
+                            1. Correct syntax (semicolons, parentheses in if conditions)\n\
+                            2. Linear flow with no circular dependencies\n\
+                            3. Valid capability names and operation types\n\
+                            4. Simple, minimal implementation",
+                            error_details
+                        );
+
                         current_dsl = self
                             .translator
-                            .regenerate_dsl_with_feedback(input, &plan_snapshot, &feedback)
+                            .regenerate_dsl_with_feedback(input, &plan_snapshot, &detailed_feedback)
                             .await?;
                         continue;
                     } else {
-                        emit_stream(stream, ChatStreamEvent::Error(err.to_string()));
+                        // Final failure - provide clear error with full details
+                        let final_error = format!(
+                            "Failed to generate valid DSL after {} attempts.\n\n\
+                            Compiler error:\n{}\n\n\
+                            Suggestions:\n\
+                            • Simplify your request\n\
+                            • Break into smaller steps\n\
+                            • Check Compiler panel for full details",
+                            attempt + 1,
+                            error_details
+                        );
+
+                        emit_stream(stream, ChatStreamEvent::Error(final_error.clone()));
+
+                        // Full error details with generated DSL in compiler panel
+                        emit_stream(
+                            stream,
+                            ChatStreamEvent::CompilerMessage(format!(
+                                "✗ Complete error log:\n{}\n\n=== Generated DSL ===\n{}",
+                                error_details,
+                                current_dsl
+                            )),
+                        );
+
                         return Err(err.into());
                     }
                 }
@@ -485,7 +711,7 @@ DSL executed successfully ({} nodes in {}ms)",
     /// Reinitialize linker (after config change)
     pub async fn reinit_linker(&mut self) -> ChatResult<()> {
         let linker_config = LinkerConfig::from_apxm_config(self.config.apxm_config.clone());
-        self.linker = Linker::new(linker_config).await?;
+        self.linker = Arc::new(Linker::new(linker_config).await?);
 
         // Also recreate translator with new registry
         let registry = self.linker.runtime_llm_registry();
@@ -494,10 +720,21 @@ DSL executed successfully ({} nodes in {}ms)",
             .planning_model
             .clone()
             .unwrap_or_else(|| self.config.default_model.clone());
+
+        // Get available capabilities from runtime for validation
+        let available_capabilities = self.linker.runtime_capabilities();
+        tracing::debug!(
+            capability_count = available_capabilities.len(),
+            capabilities = ?available_capabilities,
+            "Passing runtime capabilities to translator for DSL validation (reinit_linker)"
+        );
+
         self.translator = Translator::new(
             registry,
             planning_model,
             Some(self.config.default_model.clone()),
+            Some(available_capabilities),
+            Some(Arc::clone(&self.linker)),
         );
 
         Ok(())

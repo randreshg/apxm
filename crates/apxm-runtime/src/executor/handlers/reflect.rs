@@ -102,12 +102,12 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, _inputs: Vec<Value>) -
         request = request.with_model(m);
     }
 
-    // Use system prompt from apxm-prompts
+    // Load system prompt from template
     let system_prompt = apxm_prompts::render_prompt("reflect_system", &serde_json::json!({}))
-        .unwrap_or_else(|_| {
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "Failed to load reflect_system template, using fallback");
             "You are an expert at analyzing execution patterns and extracting insights. \
-             Always respond in valid JSON format with structured analysis."
-                .to_string()
+             Always respond in valid JSON format with structured analysis.".to_string()
         });
     request = request.with_system_prompt(system_prompt);
 
@@ -198,10 +198,10 @@ fn parse_reflection_output(
     }
 
     // Try to extract JSON from markdown
-    if let Some(json_str) = extract_json_from_markdown(trimmed) {
-        if let Ok(output) = serde_json::from_str::<ReflectionOutput>(&json_str) {
-            return Ok(output);
-        }
+    if let Some(json_str) = extract_json_from_markdown(trimmed)
+        && let Ok(output) = serde_json::from_str::<ReflectionOutput>(&json_str)
+    {
+        return Ok(output);
     }
 
     Err(serde_json::Error::custom(
@@ -211,18 +211,18 @@ fn parse_reflection_output(
 
 /// Extract JSON from markdown code block
 fn extract_json_from_markdown(content: &str) -> Option<String> {
-    if let Some(start) = content.find("```json") {
-        if let Some(end) = content[start + 7..].find("```") {
-            return Some(content[start + 7..start + 7 + end].trim().to_string());
-        }
+    if let Some(start) = content.find("```json")
+        && let Some(end) = content[start + 7..].find("```")
+    {
+        return Some(content[start + 7..start + 7 + end].trim().to_string());
     }
 
-    if let Some(start) = content.find("```") {
-        if let Some(end) = content[start + 3..].find("```") {
-            let extracted = content[start + 3..start + 3 + end].trim();
-            if extracted.starts_with('{') || extracted.starts_with('[') {
-                return Some(extracted.to_string());
-            }
+    if let Some(start) = content.find("```")
+        && let Some(end) = content[start + 3..].find("```")
+    {
+        let extracted = content[start + 3..start + 3 + end].trim();
+        if extracted.starts_with('{') || extracted.starts_with('[') {
+            return Some(extracted.to_string());
         }
     }
 

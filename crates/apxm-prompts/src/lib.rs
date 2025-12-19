@@ -94,6 +94,10 @@ fn render_from_env<T: Serialize>(
 fn build_environment() -> Environment<'static> {
     let mut env = configured_env();
 
+    // Collect registration state so we can fail loudly if anything goes wrong.
+    let mut registration_failures: Vec<String> = Vec::new();
+    let mut added_names: Vec<String> = Vec::new();
+
     for file in PROMPTS_DIR.files() {
         let path = file.path();
         let name = template_key(path);
@@ -105,23 +109,59 @@ fn build_environment() -> Environment<'static> {
                     "Prompt template is not valid UTF-8: name={:?} path={:?} err={}",
                     name, path, e
                 );
+                // Log for debugging and record as a failure so initialization is fatal.
                 log_error!("prompts", "{}", msg);
+                registration_failures.push(msg);
                 continue;
             }
         };
 
         // Leak name and source to `'static` so MiniJinja's Environment can store references.
-        let name_static: &'static str = Box::leak(name.into_boxed_str());
+        let name_static: &'static str = Box::leak(name.clone().into_boxed_str());
         let source_static: &'static str = Box::leak(source.into_boxed_str());
 
-        // Duplicate names and template parse/compile failures are logged and skipped.
-        if let Err(e) = env.add_template(name_static, source_static) {
-            let msg = format!(
-                "Failed to register prompt template: path={:?} err={}",
-                path, e
-            );
-            log_error!("prompts", "{}", msg);
+        // Attempt to register the template. Record any failure.
+        match env.add_template(name_static, source_static) {
+            Ok(()) => {
+                added_names.push(name);
+            }
+            Err(e) => {
+                let msg = format!(
+                    "Failed to register prompt template: path={:?} err={}",
+                    path, e
+                );
+                log_error!("prompts", "{}", msg);
+                registration_failures.push(msg);
+            }
         }
+    }
+
+    // Ensure every embedded file was successfully registered. Compute missing names deterministically.
+    let mut missing: Vec<String> = Vec::new();
+    for file in PROMPTS_DIR.files() {
+        let key = template_key(file.path());
+        if !added_names.iter().any(|n| n == &key) {
+            missing.push(key);
+        }
+    }
+
+    // If there were any failures or missing templates, fail fast with a clear diagnostic.
+    if !registration_failures.is_empty() || !missing.is_empty() {
+        let mut err = String::from("Prompt template registration failed during initialization.");
+        if !registration_failures.is_empty() {
+            err.push_str("\nRegistration errors:");
+            for f in registration_failures {
+                err.push_str(&format!("\n  - {}", f));
+            }
+        }
+        if !missing.is_empty() {
+            err.push_str("\nMissing templates (expected embedded files not registered):");
+            for m in missing {
+                err.push_str(&format!("\n  - {}", m));
+            }
+        }
+        // Panic at startup so template issues are caught immediately and deterministically.
+        panic!("{}", err);
     }
 
     env

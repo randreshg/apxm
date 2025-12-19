@@ -5,6 +5,10 @@ use unicode_width::UnicodeWidthChar;
 pub struct InputBuffer {
     content: String,
     cursor: usize,
+    /// Index of the currently selected slash suggestion (when the input starts with '/').
+    /// This is an optional index into the suggestion list; `None` if no suggestion is selected
+    /// or if the composer does not currently look like a slash command.
+    pub slash_selected: Option<usize>,
 }
 
 impl InputBuffer {
@@ -25,12 +29,26 @@ impl InputBuffer {
         let mut text = String::new();
         std::mem::swap(&mut self.content, &mut text);
         self.cursor = 0;
+        // Clear any slash selection when the buffer is taken
+        self.slash_selected = None;
         text
     }
 
     pub fn insert_char(&mut self, ch: char) {
         self.content.insert(self.cursor, ch);
         self.cursor += ch.len_utf8();
+
+        // Maintain slash suggestion state:
+        // - If the content (ignoring leading whitespace) starts with '/', ensure we
+        //   have a selection index (default to 0 if none).
+        // - Otherwise clear any slash selection.
+        if self.content.trim_start().starts_with('/') {
+            if self.slash_selected.is_none() {
+                self.slash_selected = Some(0);
+            }
+        } else {
+            self.slash_selected = None;
+        }
     }
 
     pub fn insert_str(&mut self, text: &str) {
@@ -43,6 +61,20 @@ impl InputBuffer {
         self.insert_char('\n');
     }
 
+    /// Replace the entire buffer content and move the cursor to the end.
+    /// Also sets or clears the slash selection depending on the new content.
+    pub fn set_text(&mut self, text: &str) {
+        self.content.clear();
+        self.content.push_str(text);
+        self.cursor = self.content.len();
+
+        if self.content.trim_start().starts_with('/') {
+            self.slash_selected = Some(0);
+        } else {
+            self.slash_selected = None;
+        }
+    }
+
     pub fn backspace(&mut self) {
         if self.cursor == 0 {
             return;
@@ -51,6 +83,11 @@ impl InputBuffer {
         if len > 0 {
             self.cursor -= len;
             self.content.drain(self.cursor..self.cursor + len);
+        }
+
+        // If the buffer no longer looks like a slash command, clear selection.
+        if !self.content.trim_start().starts_with('/') {
+            self.slash_selected = None;
         }
     }
 
@@ -62,6 +99,60 @@ impl InputBuffer {
         if len > 0 {
             self.content.drain(self.cursor..self.cursor + len);
         }
+
+        // If the buffer no longer looks like a slash command, clear selection.
+        if !self.content.trim_start().starts_with('/') {
+            self.slash_selected = None;
+        }
+    }
+
+    /// Move the slash suggestion selection to the next index (wrapping).
+    /// `max` is the number of available suggestions.
+    pub fn slash_select_next(&mut self, max: usize) {
+        if max == 0 {
+            self.slash_selected = None;
+            return;
+        }
+        if !self.content.trim_start().starts_with('/') {
+            self.slash_selected = None;
+            return;
+        }
+        self.slash_selected = Some(match self.slash_selected {
+            None => 0,
+            Some(i) => ((i + 1) % max) as usize,
+        });
+    }
+
+    /// Move the slash suggestion selection to the previous index (wrapping).
+    pub fn slash_select_prev(&mut self, max: usize) {
+        if max == 0 {
+            self.slash_selected = None;
+            return;
+        }
+        if !self.content.trim_start().starts_with('/') {
+            self.slash_selected = None;
+            return;
+        }
+        self.slash_selected = Some(match self.slash_selected {
+            None => 0,
+            Some(i) => {
+                if i == 0 {
+                    max.saturating_sub(1)
+                } else {
+                    i - 1
+                }
+            }
+        });
+    }
+
+    /// Return the currently selected suggestion index (if any).
+    pub fn slash_selected_index(&self) -> Option<usize> {
+        self.slash_selected
+    }
+
+    /// Reset the slash selection explicitly.
+    pub fn reset_slash_selection(&mut self) {
+        self.slash_selected = None;
     }
 
     pub fn move_left(&mut self) {

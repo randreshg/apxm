@@ -64,29 +64,29 @@ pub fn resolve(
     }
 
     // Priority 2: Model-based routing
-    if let Some(ref model) = criteria.model {
-        if let Some(backend_name) = find_backend_for_model(backends, model) {
-            return Ok(backend_name);
-        }
+    if let Some(ref model) = criteria.model
+        && let Some(backend_name) = find_backend_for_model(backends, model)
+    {
+        return Ok(backend_name);
     }
 
     // Priority 3: Operation-specific default
-    if let Some(ref operation) = criteria.operation {
-        if let Some(entry) = operation_defaults.get(operation) {
-            let backend_name = entry.value().clone();
-            if backends.contains_key(&backend_name) {
-                return Ok(backend_name);
-            }
+    if let Some(ref operation) = criteria.operation
+        && let Some(entry) = operation_defaults.get(operation)
+    {
+        let backend_name = entry.value().clone();
+        if backends.contains_key(&backend_name) {
+            return Ok(backend_name);
         }
     }
 
     // Priority 4: Global default backend
     {
         let default = default_backend.read();
-        if let Some(ref backend_name) = *default {
-            if backends.contains_key(backend_name) {
-                return Ok(backend_name.clone());
-            }
+        if let Some(ref backend_name) = *default
+            && backends.contains_key(backend_name)
+        {
+            return Ok(backend_name.clone());
         }
     }
 

@@ -15,7 +15,7 @@ pub use config::ChatConfig;
 pub use error::{ChatError, ChatResult};
 pub use session::{ChatResponse, ChatSession, ChatStreamEvent};
 pub use storage::{Message, SessionInfo, SessionStorage};
-pub use translator::{OuterPlan, PlanStep, TranslationResult, Translator};
+pub use translator::{TranslationResult, Translator};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

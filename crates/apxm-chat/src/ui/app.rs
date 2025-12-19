@@ -9,9 +9,8 @@ use tokio::{
 
 use crate::{
     ChatResponse, ChatSession, ChatStreamEvent,
-    config::ChatConfig,
     error::{ChatError, ChatResult},
-    storage::{Message, SessionInfo},
+    storage::Message,
 };
 
 use super::{frame_requester::FrameRequester, input::InputBuffer};
@@ -23,69 +22,8 @@ pub enum AppAction {
     Quit,
 }
 
-/// Focus targets for keyboard navigation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FocusTarget {
-    Sessions,
-    Chat,
-    Specialist,
-}
-
-impl FocusTarget {
-    pub fn next(self) -> Self {
-        match self {
-            FocusTarget::Sessions => FocusTarget::Chat,
-            FocusTarget::Chat => FocusTarget::Specialist,
-            FocusTarget::Specialist => FocusTarget::Sessions,
-        }
-    }
-}
-
-/// Specialized views for the right sidebar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ViewMode {
-    Minimal,
-    Compiler,
-    Dag,
-    Aam,
-    Full,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct AamState {
-    pub goals: Vec<String>,
-    pub beliefs: Vec<String>,
-    pub episodic_memory: Vec<String>,
-    pub capabilities: Vec<String>,
-}
-
-impl AamState {
-    fn from_plan(plan: &crate::translator::OuterPlan) -> Self {
-        let goals = vec![plan.result.clone()];
-        let beliefs = plan
-            .plan
-            .iter()
-            .map(|step| format!("Dependency: {}", step.description))
-            .collect();
-        let capabilities = plan
-            .plan
-            .iter()
-            .map(|step| {
-                format!(
-                    "Capability: {} (priority {})",
-                    step.description, step.priority
-                )
-            })
-            .collect();
-        let episodic_memory = vec!["Awaiting execution traces".to_string()];
-        Self {
-            goals,
-            beliefs,
-            episodic_memory,
-            capabilities,
-        }
-    }
-}
+// Removed: FocusTarget and ViewMode enums - no longer using sidebars/tabs
+// Chat is always focused, specialist data viewed via slash commands
 
 #[derive(Debug, Default, Clone)]
 pub struct StreamingState {
@@ -95,18 +33,16 @@ pub struct StreamingState {
 
 #[derive(Debug, Default, Clone)]
 pub struct SpecializedState {
-    pub plan: Option<crate::translator::OuterPlan>,
+    pub plan: Option<apxm_core::Plan>,
     pub compiler_log: Vec<String>,
     pub execution_results: Vec<String>,
-    pub aam: AamState,
     pub dsl_code: Option<String>,
 }
 
 impl SpecializedState {
     pub fn apply_response(&mut self, response: &ChatResponse) {
-        if let Some(plan) = &response.outer_plan {
+        if let Some(plan) = &response.plan {
             self.plan = Some(plan.clone());
-            self.aam = AamState::from_plan(plan);
         }
         self.compiler_log = response.compiler_messages.clone();
         self.execution_results = response.execution_results.clone();
@@ -114,21 +50,62 @@ impl SpecializedState {
     }
 }
 
+fn sanitize_compiler_message(msg: &str) -> String {
+    // Minimal sanitizer for compiler messages shown in the UI:
+    // - Trim leading/trailing whitespace
+    // - Replace control characters with spaces
+    // - Truncate extremely long messages to keep UI responsive
+    let mut s = msg.trim().to_string();
+
+    // Replace control characters (except newline) with spaces
+    s = s
+        .chars()
+        .map(|c| {
+            if (c as u32) < 0x20 && c != '\n' && c != '\t' {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+
+    // Collapse repeated whitespace into single spaces for compactness
+    let mut out = String::with_capacity(s.len());
+    let mut last_was_space = false;
+    for ch in s.chars() {
+        if ch.is_whitespace() {
+            if !last_was_space {
+                out.push(' ');
+                last_was_space = true;
+            }
+        } else {
+            out.push(ch);
+            last_was_space = false;
+        }
+    }
+
+    // Truncate to a safe length (keep front and end summary)
+    const MAX_LEN: usize = 1024;
+    if out.len() > MAX_LEN {
+        let prefix = &out[..800];
+        let suffix = &out[out.len().saturating_sub(200)..];
+        format!("{} ... {}", prefix.trim_end(), suffix.trim_start())
+    } else {
+        out.trim().to_string()
+    }
+}
+
 pub struct AppState {
     session: Arc<Mutex<ChatSession>>,
-    pub config: ChatConfig,
     pub messages: Vec<Message>,
-    pub sessions: Vec<SessionInfo>,
-    pub selected_session: usize,
-    pub view_mode: ViewMode,
-    pub focus: FocusTarget,
-    pub left_sidebar_visible: bool,
-    pub right_sidebar_visible: bool,
+    // Removed: sessions list, selected_session, session_scroll (no left sidebar)
+    // Removed: view_mode (no tabs)
+    // Removed: focus (always on chat)
+    // Removed: left_sidebar_visible, right_sidebar_visible (no sidebars)
     pub chat_scroll: u16,
-    pub session_scroll: usize,
     pub input: InputBuffer,
     pub streaming: Option<StreamingState>,
-    pub specialized: SpecializedState,
+    pub specialized: SpecializedState, // For slash commands like /plan, /compiler
     pub is_processing: bool,
     pub status_line: Option<String>,
     pub request_frame: FrameRequester,
@@ -139,37 +116,18 @@ pub struct AppState {
 
 impl AppState {
     pub async fn new(session: ChatSession, request_frame: FrameRequester) -> ChatResult<Self> {
-        let config = session.config().clone();
         let current_session_id = session.id().to_string();
         let messages = session.messages().to_vec();
-        let mut sessions = Vec::new();
-        let mut status_line = None;
-        match ChatSession::list_sessions(&config.session_storage_path).await {
-            Ok(list) => sessions = list,
-            Err(err) => status_line = Some(format!("Failed to list sessions: {err}")),
-        }
-        let selected_session = sessions
-            .iter()
-            .position(|info| info.id == current_session_id)
-            .unwrap_or(0);
 
         Ok(Self {
             session: Arc::new(Mutex::new(session)),
-            config,
             messages,
-            sessions,
-            selected_session,
-            view_mode: ViewMode::Full,
-            focus: FocusTarget::Chat,
-            left_sidebar_visible: true,
-            right_sidebar_visible: true,
             chat_scroll: 0,
-            session_scroll: selected_session.saturating_sub(1),
             input: InputBuffer::default(),
             streaming: None,
             specialized: SpecializedState::default(),
             is_processing: false,
-            status_line,
+            status_line: None,
             request_frame,
             pending_history_reload: false,
             current_session_id,
@@ -183,77 +141,50 @@ impl AppState {
     }
 
     pub async fn handle_key(&mut self, key: KeyEvent) -> ChatResult<AppAction> {
+        // Quit on Ctrl+C, Ctrl+D, or Ctrl+Q
         if Self::is_quit_combo(&key) {
             return Ok(AppAction::Quit);
         }
 
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            match key.code {
-                KeyCode::Char('b') => {
-                    self.toggle_left_sidebar();
-                    return Ok(AppAction::None);
-                }
-                KeyCode::Char('p') => {
-                    self.toggle_right_sidebar();
-                    return Ok(AppAction::None);
-                }
-                KeyCode::Char('n') => {
-                    self.create_new_session().await?;
-                    return Ok(AppAction::None);
-                }
-                KeyCode::Char('r') => {
-                    self.refresh_sessions().await?;
-                    return Ok(AppAction::None);
-                }
-                KeyCode::Char('l') => {
-                    self.input.clear();
-                    self.request_frame.schedule_frame();
-                    return Ok(AppAction::None);
-                }
-                KeyCode::Char('1') => {
-                    self.view_mode = ViewMode::Minimal;
-                    self.request_frame.schedule_frame();
-                    return Ok(AppAction::None);
-                }
-                KeyCode::Char('2') => {
-                    self.view_mode = ViewMode::Compiler;
-                    self.request_frame.schedule_frame();
-                    return Ok(AppAction::None);
-                }
-                KeyCode::Char('3') => {
-                    self.view_mode = ViewMode::Dag;
-                    self.request_frame.schedule_frame();
-                    return Ok(AppAction::None);
-                }
-                KeyCode::Char('4') => {
-                    self.view_mode = ViewMode::Aam;
-                    self.request_frame.schedule_frame();
-                    return Ok(AppAction::None);
-                }
-                KeyCode::Char('5') => {
-                    self.view_mode = ViewMode::Full;
-                    self.request_frame.schedule_frame();
-                    return Ok(AppAction::None);
-                }
-                _ => {}
-            }
+        // Ctrl+L - Clear input buffer
+        if key.code == KeyCode::Char('l') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.input.clear();
+            self.request_frame.schedule_frame();
+            return Ok(AppAction::None);
         }
 
+        // Handle input keys
         match key.code {
-            KeyCode::Tab => {
-                self.focus = self.focus.next();
-                self.request_frame.schedule_frame();
-            }
             KeyCode::Enter => {
-                if key
-                    .modifiers
-                    .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT)
-                {
+                // Shift+Enter or Alt+Enter - Insert newline (multi-line input)
+                if key.modifiers.intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) {
                     self.input.insert_newline();
                     self.request_frame.schedule_frame();
-                } else if matches!(self.focus, FocusTarget::Sessions) {
-                    self.load_selected_session().await?;
+                } else if self.input.as_str().trim_start().starts_with('/') {
+                    // Slash command autocomplete: if suggestions exist, accept selected one
+                    let suggestions = crate::commands::slash_suggestions(self.input.as_str());
+                    if !suggestions.is_empty() {
+                        let sel = self.input.slash_selected_index().unwrap_or(0);
+                        let sel = sel.min(suggestions.len() - 1);
+                        let chosen = suggestions[sel].usage;
+                        self.input.set_text(&format!("{} ", chosen));
+                        self.input.reset_slash_selection();
+                        self.request_frame.schedule_frame();
+                        return Ok(AppAction::None);
+                    }
+                    // No suggestions - submit as normal
+                    match self.submit_input().await {
+                        Ok(Some(rx)) => return Ok(AppAction::StartStreaming(rx)),
+                        Ok(None) => {}
+                        Err(ChatError::Command(cmd)) if cmd == "exit" => {
+                            return Ok(AppAction::Quit);
+                        }
+                        Err(err) => {
+                            self.set_status(format!("Error: {err}"));
+                        }
+                    }
                 } else {
+                    // Normal message submission
                     match self.submit_input().await {
                         Ok(Some(rx)) => return Ok(AppAction::StartStreaming(rx)),
                         Ok(None) => {}
@@ -267,77 +198,71 @@ impl AppState {
                 }
             }
             KeyCode::Backspace => {
-                if matches!(self.focus, FocusTarget::Chat) {
-                    self.input.backspace();
-                    self.request_frame.schedule_frame();
-                }
+                self.input.backspace();
+                self.request_frame.schedule_frame();
             }
             KeyCode::Delete => {
-                if matches!(self.focus, FocusTarget::Chat) {
-                    self.input.delete();
-                    self.request_frame.schedule_frame();
-                }
+                self.input.delete();
+                self.request_frame.schedule_frame();
             }
             KeyCode::Left => {
-                if matches!(self.focus, FocusTarget::Chat) {
-                    self.input.move_left();
-                    self.request_frame.schedule_frame();
-                }
+                self.input.move_left();
+                self.request_frame.schedule_frame();
             }
             KeyCode::Right => {
-                if matches!(self.focus, FocusTarget::Chat) {
-                    self.input.move_right();
-                    self.request_frame.schedule_frame();
-                }
+                self.input.move_right();
+                self.request_frame.schedule_frame();
             }
-            KeyCode::Up => match self.focus {
-                FocusTarget::Sessions => {
-                    self.move_session_selection(-1);
-                }
-                FocusTarget::Chat => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) {
+            KeyCode::Up => {
+                // Slash command suggestion navigation
+                if self.input.as_str().trim_start().starts_with('/') {
+                    let suggestions = crate::commands::slash_suggestions(self.input.as_str());
+                    if !suggestions.is_empty() {
+                        self.input.slash_select_prev(suggestions.len());
+                        self.request_frame.schedule_frame();
+                    } else if key.modifiers.contains(KeyModifiers::CONTROL) {
                         self.scroll_chat(-1);
                     } else {
                         self.input.move_up();
                         self.request_frame.schedule_frame();
                     }
-                }
-                FocusTarget::Specialist => {
+                } else if key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.scroll_chat(-1);
+                } else {
+                    self.input.move_up();
+                    self.request_frame.schedule_frame();
                 }
-            },
-            KeyCode::Down => match self.focus {
-                FocusTarget::Sessions => {
-                    self.move_session_selection(1);
-                }
-                FocusTarget::Chat => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) {
+            }
+            KeyCode::Down => {
+                // Slash command suggestion navigation
+                if self.input.as_str().trim_start().starts_with('/') {
+                    let suggestions = crate::commands::slash_suggestions(self.input.as_str());
+                    if !suggestions.is_empty() {
+                        self.input.slash_select_next(suggestions.len());
+                        self.request_frame.schedule_frame();
+                    } else if key.modifiers.contains(KeyModifiers::CONTROL) {
                         self.scroll_chat(1);
                     } else {
                         self.input.move_down();
                         self.request_frame.schedule_frame();
                     }
-                }
-                FocusTarget::Specialist => {
+                } else if key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.scroll_chat(1);
-                }
-            },
-            KeyCode::Home => {
-                if matches!(self.focus, FocusTarget::Chat) {
-                    self.input.move_to_start_of_line();
+                } else {
+                    self.input.move_down();
                     self.request_frame.schedule_frame();
                 }
+            }
+            KeyCode::Home => {
+                self.input.move_to_start_of_line();
+                self.request_frame.schedule_frame();
             }
             KeyCode::End => {
-                if matches!(self.focus, FocusTarget::Chat) {
-                    self.input.move_to_end_of_line();
-                    self.request_frame.schedule_frame();
-                }
+                self.input.move_to_end_of_line();
+                self.request_frame.schedule_frame();
             }
             KeyCode::Char(ch) => {
-                if matches!(self.focus, FocusTarget::Chat)
-                    && !key.modifiers.contains(KeyModifiers::CONTROL)
-                {
+                if !key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.input.insert_char(ch);
                     self.request_frame.schedule_frame();
                 }
@@ -358,10 +283,42 @@ impl AppState {
             }
             ChatStreamEvent::Plan(plan) => {
                 self.specialized.plan = Some(plan.clone());
-                self.specialized.aam = AamState::from_plan(&plan);
+                // AAM state will be populated from execution results, not plan
             }
             ChatStreamEvent::CompilerMessage(msg) => {
-                self.specialized.compiler_log.push(msg);
+                // Sanitize compiler message first.
+                let clean = sanitize_compiler_message(&msg);
+
+                // Truncate long lines and limit number of lines per message to avoid
+                // overlapping the chat input or overflowing the UI.
+                const MAX_LINE_LEN: usize = 120;
+                const MAX_LINES_PER_MSG: usize = 20;
+
+                let mut truncated = String::new();
+                for (i, line) in clean.lines().enumerate() {
+                    if i >= MAX_LINES_PER_MSG {
+                        truncated.push_str("... (truncated)\n");
+                        break;
+                    }
+                    if line.len() > MAX_LINE_LEN {
+                        // Truncate long lines while preserving start and ellipsis.
+                        truncated.push_str(&format!("{}...\n", &line[..MAX_LINE_LEN]));
+                    } else {
+                        truncated.push_str(line);
+                        truncated.push('\n');
+                    }
+                }
+
+                let entry = truncated.trim_end().to_string();
+                self.specialized.compiler_log.push(entry);
+
+                // Limit total log entries to prevent memory growth and excessive UI height.
+                const MAX_LOG_ENTRIES: usize = 100;
+                if self.specialized.compiler_log.len() > MAX_LOG_ENTRIES {
+                    self.specialized
+                        .compiler_log
+                        .drain(0..(self.specialized.compiler_log.len() - MAX_LOG_ENTRIES));
+                }
             }
             ChatStreamEvent::Chunk(chunk) => {
                 let stream = self.streaming.get_or_insert_with(StreamingState::default);
@@ -375,9 +332,28 @@ impl AppState {
                 self.set_status("Response ready");
             }
             ChatStreamEvent::Error(msg) => {
+                // Limit exposure of error details in the main UI and surface only a short,
+                // sanitized summary. Push the full diagnostic (sanitized) into the
+                // compiler log where users can inspect it in the diagnostics panel.
                 self.streaming = None;
                 self.is_processing = false;
-                self.set_status(format!("Error: {msg}"));
+
+                // Full details go to compiler_log (sanitized for UI safety).
+                self.specialized
+                    .compiler_log
+                    .push(format!("✗ Full error: {}", sanitize_compiler_message(&msg)));
+
+                // Short summary shown in status line to avoid leaking sensitive details.
+                let summary = msg.lines().next().unwrap_or("").trim();
+                let display = if summary.is_empty() {
+                    "Request failed".to_string()
+                } else if summary.len() > 120 {
+                    format!("{}...", &summary[..120])
+                } else {
+                    summary.to_string()
+                };
+
+                self.set_status(format!("Error: {} (see diagnostics)", display));
             }
         }
         self.request_frame.schedule_frame();
@@ -385,7 +361,7 @@ impl AppState {
 
     pub fn on_tick(&mut self) -> bool {
         self.tick = self.tick.wrapping_add(1);
-        self.streaming.is_some() && self.tick % 4 == 0
+        self.streaming.is_some() && self.tick.is_multiple_of(4)
     }
 
     pub fn tick_count(&self) -> u16 {
@@ -405,22 +381,6 @@ impl AppState {
         let session = self.session.lock().await;
         self.current_session_id = session.id().to_string();
         self.messages = session.messages().to_vec();
-        Ok(())
-    }
-
-    pub async fn refresh_sessions(&mut self) -> ChatResult<()> {
-        match ChatSession::list_sessions(&self.config.session_storage_path).await {
-            Ok(list) => self.sessions = list,
-            Err(err) => self.set_status(format!("Failed to list sessions: {err}")),
-        }
-        if let Some(idx) = self
-            .sessions
-            .iter()
-            .position(|info| info.id == self.current_session_id)
-        {
-            self.selected_session = idx;
-        }
-        self.request_frame.schedule_frame();
         Ok(())
     }
 
@@ -474,44 +434,6 @@ impl AppState {
         Ok(Some(rx))
     }
 
-    async fn create_new_session(&mut self) -> ChatResult<()> {
-        if self.is_processing {
-            self.set_status("Finish the current request before starting a new session");
-            return Ok(());
-        }
-
-        let session = ChatSession::new(self.config.clone()).await?;
-        self.current_session_id = session.id().to_string();
-        self.messages = session.messages().to_vec();
-        self.session = Arc::new(Mutex::new(session));
-        self.refresh_sessions().await?;
-        self.set_status("Started new session");
-        Ok(())
-    }
-
-    async fn load_selected_session(&mut self) -> ChatResult<()> {
-        if self.sessions.is_empty() {
-            return Ok(());
-        }
-        let idx = self.selected_session.min(self.sessions.len() - 1);
-        let id = self.sessions[idx].id.clone();
-        self.load_session(&id).await
-    }
-
-    async fn load_session(&mut self, id: &str) -> ChatResult<()> {
-        if self.is_processing {
-            self.set_status("Please wait for the current response to finish");
-            return Ok(());
-        }
-        let session = ChatSession::load(id, self.config.clone()).await?;
-        self.current_session_id = session.id().to_string();
-        self.messages = session.messages().to_vec();
-        self.session = Arc::new(Mutex::new(session));
-        self.refresh_sessions().await?;
-        self.set_status(format!("Loaded session {}", &id[..id.len().min(8)]));
-        Ok(())
-    }
-
     fn append_user_message(&mut self, text: &str) {
         self.messages.push(Message {
             role: "user".to_string(),
@@ -527,32 +449,6 @@ impl AppState {
             content: text,
             timestamp: Utc::now(),
         });
-        self.request_frame.schedule_frame();
-    }
-
-    fn toggle_left_sidebar(&mut self) {
-        self.left_sidebar_visible = !self.left_sidebar_visible;
-        self.request_frame.schedule_frame();
-    }
-
-    fn toggle_right_sidebar(&mut self) {
-        self.right_sidebar_visible = !self.right_sidebar_visible;
-        self.request_frame.schedule_frame();
-    }
-
-    fn move_session_selection(&mut self, delta: i32) {
-        if self.sessions.is_empty() {
-            return;
-        }
-        let len = self.sessions.len() as i32;
-        let mut new_idx = self.selected_session as i32 + delta;
-        new_idx = new_idx.clamp(0, len - 1);
-        self.selected_session = new_idx as usize;
-        if self.selected_session < self.session_scroll {
-            self.session_scroll = self.selected_session;
-        } else if self.selected_session > self.session_scroll + 5 {
-            self.session_scroll = self.selected_session - 5;
-        }
         self.request_frame.schedule_frame();
     }
 

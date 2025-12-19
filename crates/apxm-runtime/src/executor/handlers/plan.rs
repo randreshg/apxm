@@ -9,39 +9,17 @@
 
 use super::{
     ExecutionContext, Node, Result, Value, get_optional_string_attribute, get_string_attribute,
-    inner_plan::{InnerPlanDsl, InnerPlanOptions, execute_inner_plan},
+    inner_plan::{InnerPlanOptions, execute_inner_plan},
     llm_error,
 };
 use crate::aam::{Goal as AamGoal, GoalId, GoalStatus, TransitionLabel};
-use apxm_core::error::RuntimeError;
+use apxm_core::{InnerPlanDsl, Plan, error::RuntimeError};
 use apxm_models::backends::request::LLMRequest;
 use serde::de::Error;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Structured plan output
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlanOutput {
-    /// The generated plan (steps or strategy)
-    pub plan: Vec<PlanStep>,
-
-    /// Optional inner plan (DSL to be compiled and executed)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub inner_plan: Option<InnerPlanDsl>,
-
-    /// Result/summary of the plan
-    pub result: String,
-}
-
-/// A single step in a plan
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlanStep {
-    pub description: String,
-    #[serde(default)]
-    pub priority: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dependencies: Option<Vec<String>>,
-}
+// Note: Plan, PlanStep, and InnerPlanDsl are now imported from apxm_core
+// This ensures consistency across the entire system (chat, runtime, compiler)
 
 /// Execute PLAN operation - LLM-based planning with inner/outer plan support
 ///
@@ -90,76 +68,64 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
 
     // Retrieve context from memory if specified
     let mut context_info = String::new();
-    if let Some(key) = context_key {
-        if let Ok(Some(value)) = ctx.memory.read(crate::memory::MemorySpace::Ltm, &key).await {
-            context_info = format!("\n\nContext: {:?}", value);
-        }
+    if let Some(key) = context_key
+        && let Ok(Some(value)) = ctx
+            .memory
+            .read(crate::memory::MemorySpace::Ltm, &key)
+            .await
+    {
+        context_info = format!("\n\nContext: {:?}", value);
     }
 
     // Build planning prompt using apxm-prompts
+    // The plan_system template expects a "text" field containing the full user request
+    let user_text = if context_info.is_empty() {
+        format!("Goal: {}", goal)
+    } else {
+        format!("Goal: {}\n\nContext: {}", goal, context_info)
+    };
+
     let prompt_context = serde_json::json!({
-        "goal": goal,
-        "context": context_info,
+        "text": user_text
     });
 
-    let planning_prompt = if enable_inner_plan {
-        apxm_prompts::render_prompt("plan_multi_level", &prompt_context).unwrap_or_else(|_| {
+    let user_prompt = apxm_prompts::render_prompt("plan_system", &prompt_context)
+        .unwrap_or_else(|_| {
             format!(
-                "Create a detailed multi-level plan to achieve the following goal:\n\n{}\
-                     {}\n\nProvide both:\n\
-                     1. High-level strategy (outer plan)\n\
-                     2. Detailed sub-tasks (can become inner plan)\n\n\
-                     Respond in JSON format with: plan (array of steps) and result (summary).",
-                goal, context_info
+                "Create a detailed plan to achieve the following:\n\n{}\n\n\
+                 Respond in JSON format with: plan (array of steps with description and priority) and result (summary).",
+                user_text
             )
-        })
-    } else {
-        apxm_prompts::render_prompt("plan_system", &prompt_context)
-            .unwrap_or_else(|_| {
-                format!(
-                    "Create a detailed plan to achieve the following goal:\n\n{}\
-                     {}\n\nRespond in JSON format with: plan (array of steps with description and priority) and result (summary).",
-                    goal, context_info
-                )
-            })
-    };
+        });
 
-    // Combine goal and context into planning_prompt for the LLM
-    let final_prompt = format!("Goal: {}\n\n{}", goal, planning_prompt);
-
-    // Build LLM request
-    let mut request = LLMRequest::new(final_prompt);
-
-    if let Some(m) = &model {
-        request = request.with_model(m.clone());
-    }
-
-    // Use system prompt from apxm-prompts
-    let system_prompt = if enable_inner_plan {
-        apxm_prompts::render_prompt("plan_multi_level", &serde_json::json!({})).unwrap_or_else(
-            |_| {
-                "You are an expert planning assistant. Generate structured, actionable plans. \
-                 Always respond in valid JSON format."
-                    .to_string()
-            },
-        )
-    } else {
-        apxm_prompts::render_prompt("plan_system", &serde_json::json!({})).unwrap_or_else(|_| {
+    // Load system prompt from template
+    let system_prompt = apxm_prompts::render_prompt("plan_outer_system", &serde_json::json!({}))
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "Failed to load plan_outer_system template, using fallback");
             "You are an expert planning assistant. Generate structured, actionable plans. \
-                 Always respond in valid JSON format."
-                .to_string()
-        })
-    };
-    request = request.with_system_prompt(system_prompt);
+             Always respond in valid JSON format with 'plan' (array of steps) and 'result' (summary).".to_string()
+        });
 
-    // Execute with retries
+    // Execute with retries and progressive temperature increase
+    // Temperatures: 0.7 → 0.8 → 0.9 → 1.0 (increase variability on retries)
     let mut last_error = None;
     for attempt in 0..=3 {
+        // Build request with progressive temperature
+        let temperature = 0.7 + (attempt as f64 * 0.1);
+        let mut request = LLMRequest::new(user_prompt.clone())
+            .with_system_prompt(system_prompt.to_string())
+            .with_temperature(temperature);
+
+        if let Some(m) = &model {
+            request = request.with_model(m.clone());
+        }
+
         if attempt > 0 {
-            tracing::warn!(
+            tracing::info!(
                 execution_id = %ctx.execution_id,
                 attempt = attempt,
-                "Retrying PLAN operation"
+                temperature = temperature,
+                "Retrying PLAN with increased temperature"
             );
 
             let backoff_ms = 100 * 2_u64.pow(attempt - 1);
@@ -183,6 +149,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
                 tracing::debug!(
                     execution_id = %ctx.execution_id,
                     attempt = attempt,
+                    temperature = temperature,
                     error = %last_error.as_ref().unwrap(),
                     "PLAN attempt failed"
                 );
@@ -222,12 +189,12 @@ async fn execute_plan_once(
     );
 
     // Try to parse as structured plan
-    if let Ok(mut plan_output) = parse_plan_output(&content) {
+    if let Ok(mut plan) = parse_plan_output(&content) {
         if enable_inner_plan {
-            match generate_inner_plan(ctx, node, &plan_output, original_goal, model_override).await
+            match generate_inner_plan(ctx, node, &plan, original_goal, model_override).await
             {
                 Ok(Some(dsl)) => {
-                    plan_output.inner_plan = Some(InnerPlanDsl { dsl });
+                    plan.inner_plan = Some(InnerPlanDsl { dsl });
                 }
                 Ok(None) => {
                     tracing::warn!(
@@ -246,7 +213,7 @@ async fn execute_plan_once(
         }
 
         // Store plan in memory
-        let plan_json = serde_json::to_value(&plan_output.plan)
+        let plan_json = serde_json::to_value(&plan.steps)
             .map_err(|e| RuntimeError::Serialization(format!("Failed to serialize plan: {}", e)))?;
         let plan_value: Value = plan_json
             .try_into()
@@ -275,9 +242,9 @@ async fn execute_plan_once(
 
         let plan_goal = AamGoal {
             id: GoalId::new(),
-            description: plan_output.result.clone(),
-            priority: plan_output
-                .plan
+            description: plan.result.clone(),
+            priority: plan
+                .steps
                 .iter()
                 .map(|step| step.priority)
                 .max()
@@ -287,34 +254,60 @@ async fn execute_plan_once(
         ctx.aam.add_goal(plan_goal, transition_label.clone());
 
         // If inner plan exists and enabled, execute it
-        if enable_inner_plan {
-            if let Some(inner_plan) = plan_output.inner_plan.clone() {
-                tracing::info!(
-                    execution_id = %ctx.execution_id,
-                    "Linking inner plan DAG"
-                );
+        if enable_inner_plan && let Some(inner_plan) = plan.inner_plan.clone() {
+            tracing::info!(
+                execution_id = %ctx.execution_id,
+                "Linking inner plan DAG"
+            );
 
-                let inserted_nodes = execute_inner_plan(
-                    ctx,
-                    node,
-                    &inner_plan,
-                    InnerPlanOptions {
-                        bind_outer_outputs: bind_outputs,
-                    },
-                )
-                .await?;
+            match execute_inner_plan(
+                ctx,
+                node,
+                &inner_plan,
+                InnerPlanOptions {
+                    bind_outer_outputs: bind_outputs,
+                },
+            )
+            .await
+            {
+                Ok(inserted_nodes) => {
+                    tracing::info!(
+                        execution_id = %ctx.execution_id,
+                        nodes_inserted = inserted_nodes,
+                        "Inner plan successfully linked and spliced into DAG"
+                    );
 
-                ctx.memory
-                    .write(
-                        crate::memory::MemorySpace::Episodic,
-                        format!("inner_plan_spliced:{}", ctx.execution_id),
-                        Value::String(format!(
-                            "Inner plan merged into DAG with {} nodes",
-                            inserted_nodes
-                        )),
-                    )
-                    .await
-                    .ok();
+                    ctx.memory
+                        .write(
+                            crate::memory::MemorySpace::Episodic,
+                            format!("inner_plan_spliced:{}", ctx.execution_id),
+                            Value::String(format!(
+                                "Inner plan merged into DAG with {} nodes",
+                                inserted_nodes
+                            )),
+                        )
+                        .await
+                        .ok();
+                }
+                Err(err) => {
+                    let err_msg = err.to_string();
+                    if err_msg.contains("not supported") || err_msg.contains("No linker configured") {
+                        tracing::warn!(
+                            execution_id = %ctx.execution_id,
+                            "Inner plan linking not supported - continuing without inner plan execution. \
+                             To enable, ensure CompilerInnerPlanLinker is attached to runtime."
+                        );
+                        // Continue execution without inner plan - not a fatal error
+                    } else {
+                        // Other errors are fatal
+                        tracing::error!(
+                            execution_id = %ctx.execution_id,
+                            error = %err,
+                            "Inner plan execution failed"
+                        );
+                        return Err(err);
+                    }
+                }
             }
         }
 
@@ -323,8 +316,8 @@ async fn execute_plan_once(
         result_obj.insert(
             "plan".to_string(),
             Value::Array(
-                plan_output
-                    .plan
+                plan
+                    .steps
                     .iter()
                     .map(|step| {
                         let mut step_obj = HashMap::new();
@@ -338,11 +331,11 @@ async fn execute_plan_once(
                                 step.priority as i64,
                             )),
                         );
-                        if let Some(deps) = &step.dependencies {
+                        if !step.dependencies.is_empty() {
                             step_obj.insert(
                                 "dependencies".to_string(),
                                 Value::Array(
-                                    deps.iter().map(|d| Value::String(d.clone())).collect(),
+                                    step.dependencies.iter().map(|d| Value::String(d.clone())).collect(),
                                 ),
                             );
                         }
@@ -351,7 +344,7 @@ async fn execute_plan_once(
                     .collect(),
             ),
         );
-        result_obj.insert("result".to_string(), Value::String(plan_output.result));
+        result_obj.insert("result".to_string(), Value::String(plan.result));
 
         Ok(Value::Object(result_obj))
     } else {
@@ -360,20 +353,20 @@ async fn execute_plan_once(
     }
 }
 
-/// Parse plan output from LLM response
-fn parse_plan_output(content: &str) -> std::result::Result<PlanOutput, serde_json::Error> {
+/// Parse plan from LLM response
+fn parse_plan_output(content: &str) -> std::result::Result<Plan, serde_json::Error> {
     let trimmed = content.trim();
 
     // Try direct parse
-    if let Ok(output) = serde_json::from_str::<PlanOutput>(trimmed) {
+    if let Ok(output) = serde_json::from_str::<Plan>(trimmed) {
         return Ok(output);
     }
 
     // Try to extract JSON from markdown
-    if let Some(json_str) = extract_json_from_markdown(trimmed) {
-        if let Ok(output) = serde_json::from_str::<PlanOutput>(&json_str) {
-            return Ok(output);
-        }
+    if let Some(json_str) = extract_json_from_markdown(trimmed)
+        && let Ok(output) = serde_json::from_str::<Plan>(&json_str)
+    {
+        return Ok(output);
     }
 
     Err(serde_json::Error::custom("Failed to parse plan output"))
@@ -381,18 +374,18 @@ fn parse_plan_output(content: &str) -> std::result::Result<PlanOutput, serde_jso
 
 /// Extract JSON from markdown code block
 fn extract_json_from_markdown(content: &str) -> Option<String> {
-    if let Some(start) = content.find("```json") {
-        if let Some(end) = content[start + 7..].find("```") {
-            return Some(content[start + 7..start + 7 + end].trim().to_string());
-        }
+    if let Some(start) = content.find("```json")
+        && let Some(end) = content[start + 7..].find("```")
+    {
+        return Some(content[start + 7..start + 7 + end].trim().to_string());
     }
 
-    if let Some(start) = content.find("```") {
-        if let Some(end) = content[start + 3..].find("```") {
-            let extracted = content[start + 3..start + 3 + end].trim();
-            if extracted.starts_with('{') || extracted.starts_with('[') {
-                return Some(extracted.to_string());
-            }
+    if let Some(start) = content.find("```")
+        && let Some(end) = content[start + 3..].find("```")
+    {
+        let extracted = content[start + 3..start + 3 + end].trim();
+        if extracted.starts_with('{') || extracted.starts_with('[') {
+            return Some(extracted.to_string());
         }
     }
 
@@ -402,14 +395,14 @@ fn extract_json_from_markdown(content: &str) -> Option<String> {
 async fn generate_inner_plan(
     ctx: &ExecutionContext,
     _node: &Node,
-    plan_output: &PlanOutput,
+    plan: &Plan,
     goal: &str,
     model_override: Option<&str>,
 ) -> Result<Option<String>> {
     let prompt_context = serde_json::json!({
         "goal": goal,
-        "plan": plan_output.plan,
-        "result": plan_output.result,
+        "plan": plan.steps,
+        "result": plan.result,
     });
 
     let user_prompt = apxm_prompts::render_prompt("inner_plan", &prompt_context).map_err(|e| {
@@ -419,7 +412,18 @@ async fn generate_inner_plan(
         }
     })?;
 
-    let mut request = LLMRequest::new(user_prompt);
+    // Load system prompt for DSL generation from template
+    let system_prompt = apxm_prompts::render_prompt("plan_inner_system", &serde_json::json!({}))
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "Failed to load plan_inner_system template, using fallback");
+            "You are an APXM DSL code generator. Generate ONLY valid APXM DSL code - \
+             no markdown fences, no explanations, no comments outside the code. \
+             The output must be syntactically correct and compilable.".to_string()
+        });
+
+    let mut request = LLMRequest::new(user_prompt)
+        .with_system_prompt(system_prompt);
+
     if let Some(model_name) = model_override {
         request = request.with_model(model_name.to_string());
     }
@@ -460,9 +464,9 @@ mod tests {
         }"#;
 
         let output = parse_plan_output(json).unwrap();
-        assert_eq!(output.plan.len(), 2);
-        assert_eq!(output.plan[0].description, "Step 1");
-        assert_eq!(output.plan[1].priority, 80);
+        assert_eq!(output.steps.len(), 2);
+        assert_eq!(output.steps[0].description, "Step 1");
+        assert_eq!(output.steps[1].priority, 80);
         assert_eq!(output.result, "Plan created successfully");
     }
 
@@ -482,7 +486,7 @@ mod tests {
 Done."#;
 
         let output = parse_plan_output(content).unwrap();
-        assert_eq!(output.plan.len(), 1);
-        assert_eq!(output.plan[0].description, "Analyze");
+        assert_eq!(output.steps.len(), 1);
+        assert_eq!(output.steps[0].description, "Analyze");
     }
 }

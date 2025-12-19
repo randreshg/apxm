@@ -35,6 +35,18 @@ impl ReadySet {
         }
     }
 
+    /// Insert or update a pending input count for a node.
+    ///
+    /// This helper is intended for dynamic graph updates (e.g. DAG splicing)
+    /// so callers can register a node with its initial missing-inputs count.
+    /// If `count` is zero, the node is not inserted (it should be enqueued instead).
+    pub(crate) fn insert_pending(&self, node_id: NodeId, count: usize) {
+        if count == 0 {
+            return;
+        }
+        self.pending_inputs.insert(node_id, count);
+    }
+
     /// Initialize readiness tracking for all nodes in the graph.
     ///
     /// Returns the set of immediately ready nodes (those with no pending inputs).

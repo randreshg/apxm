@@ -30,21 +30,12 @@ pub struct RuntimeExecutionResult {
 }
 
 /// Runtime configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RuntimeConfig {
     /// Memory system configuration
     pub memory_config: MemoryConfig,
     /// Scheduler configuration
     pub scheduler_config: SchedulerConfig,
-}
-
-impl Default for RuntimeConfig {
-    fn default() -> Self {
-        Self {
-            memory_config: MemoryConfig::default(),
-            scheduler_config: SchedulerConfig::default(),
-        }
-    }
 }
 
 impl RuntimeConfig {

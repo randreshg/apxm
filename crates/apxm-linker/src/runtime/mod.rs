@@ -40,4 +40,22 @@ impl RuntimeExecutor {
     pub fn llm_registry(&self) -> Arc<apxm_models::registry::LLMRegistry> {
         self.runtime.llm_registry_arc()
     }
+
+    /// Get list of available capability names
+    ///
+    /// Returns the names of all capabilities registered in the runtime.
+    /// Useful for validation, UI display, and constraining LLM generation.
+    pub fn capability_names(&self) -> Vec<String> {
+        self.runtime
+            .capability_system()
+            .list_capability_names()
+    }
+
+    /// Get capability system reference (for advanced usage)
+    ///
+    /// Provides direct access to the capability system for
+    /// advanced operations like capability inspection or registration.
+    pub fn capability_system(&self) -> &apxm_runtime::capability::CapabilitySystem {
+        self.runtime.capability_system()
+    }
 }

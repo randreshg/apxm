@@ -138,7 +138,7 @@ impl SchedulerState {
             let mut node = node.clone();
             // Remap node ID
             let old_node_id = node.id;
-            node.id = node.id + node_offset;
+            node.id += node_offset;
 
             // Remap input tokens
             node.input_tokens = node
@@ -180,6 +180,7 @@ impl SchedulerState {
 
             // Register as consumer for input tokens and check readiness
             let mut all_inputs_ready = true;
+            let mut missing_count: usize = 0;
             for (original_token, &token_id) in original_inputs.iter().zip(node.input_tokens.iter())
             {
                 if config.token_connections.contains_key(original_token) {
@@ -194,6 +195,7 @@ impl SchedulerState {
                     token_state.consumers.push(node.id);
                     if !token_state.ready {
                         all_inputs_ready = false;
+                        missing_count = missing_count.saturating_add(1);
                     }
                 } else {
                     let mut entry = self.tokens.entry(token_id).or_insert_with(|| {
@@ -205,13 +207,19 @@ impl SchedulerState {
                     entry.consumers.push(node.id);
                     if !entry.ready {
                         all_inputs_ready = false;
+                        missing_count = missing_count.saturating_add(1);
                     }
                 }
             }
 
-            // If all inputs are ready, mark for scheduling
+            // If all inputs are ready, mark for scheduling; otherwise register pending count so
+            // the ReadySet can decrement and enqueue this node when inputs arrive.
             if all_inputs_ready {
                 ready_nodes.push((node.id, priority));
+            } else {
+                // Use ReadySet helper to register the number of missing inputs for this spliced node.
+                // This ensures on_token_ready will find and decrement the pending count.
+                self.ready_set.insert_pending(node.id, missing_count);
             }
 
             log_trace!(
@@ -362,6 +370,6 @@ mod tests {
             .expect("inserted node present");
 
         let token_state = state.tokens.get(&1).expect("outer token exists");
-        assert!(token_state.consumers.iter().any(|&id| id == inserted_id));
+        assert!(token_state.consumers.contains(&inserted_id));
     }
 }

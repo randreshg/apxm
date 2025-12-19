@@ -72,10 +72,10 @@ impl SqliteBackend {
             max_connections.unwrap_or(8).max(1)
         };
 
-        if !in_memory {
-            if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-                std::fs::create_dir_all(parent).map_err(|e| mem_err("create_dir_all", e))?;
-            }
+        if !in_memory
+            && let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(parent).map_err(|e| mem_err("create_dir_all", e))?;
         }
 
         let mut options = SqliteConnectOptions::new()

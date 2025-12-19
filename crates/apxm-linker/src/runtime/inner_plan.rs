@@ -52,6 +52,17 @@ impl InnerPlanLinker for CompilerInnerPlanLinker {
 
         let dag = artifact.into_dag();
 
+        // Validate the inner DAG before returning it to the runtime.
+        // This ensures we catch cycles or inconsistent token/node references
+        // early and return a clear error instead of allowing the scheduler
+        // to detect a deadlock at runtime.
+        if let Err(e) = dag.validate() {
+            return Err(RuntimeError::State(format!(
+                "Inner plan DAG validation failed: {}",
+                e
+            )));
+        }
+
         log_info!(
             "linker::inner_plan",
             source = %source_name,

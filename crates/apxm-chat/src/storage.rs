@@ -91,10 +91,10 @@ impl SessionStorage {
         let results = self.backend.search("session:", 1000).await?;
 
         for result in results {
-            if let Value::String(json) = result.value {
-                if let Ok(info) = serde_json::from_str::<SessionInfo>(&json) {
-                    sessions.push(info);
-                }
+            if let Value::String(json) = result.value
+                && let Ok(info) = serde_json::from_str::<SessionInfo>(&json)
+            {
+                sessions.push(info);
             }
         }
 

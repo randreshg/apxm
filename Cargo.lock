@@ -112,6 +112,7 @@ name = "apxm-chat"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "apxm-compiler",
  "apxm-config",
  "apxm-core",
  "apxm-linker",
@@ -226,10 +227,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "apxm-lsp"
-version = "0.0.1"
-
-[[package]]
 name = "apxm-models"
 version = "0.0.1"
 dependencies = [
@@ -269,10 +266,6 @@ dependencies = [
  "serde_json",
  "tracing",
 ]
-
-[[package]]
-name = "apxm-repl"
-version = "0.0.1"
 
 [[package]]
 name = "apxm-runtime"

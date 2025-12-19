@@ -350,10 +350,13 @@ async fn publish_outputs(state: &SchedulerState, outputs: &[TokenId], value: Val
 }
 
 /// Decrement remaining count and notify if complete.
+///
+/// Use the previous atomic value returned by fetch_sub to avoid underflow
+/// and reliably detect the transition to zero.
 #[inline]
 fn finish_one(state: &SchedulerState) {
-    let remaining = state.remaining.fetch_sub(1, Ordering::Relaxed) - 1;
-    if remaining == 0 {
+    let prev = state.remaining.fetch_sub(1, Ordering::Relaxed);
+    if prev == 1 {
         state.notify_done.notify_waiters();
     }
 }

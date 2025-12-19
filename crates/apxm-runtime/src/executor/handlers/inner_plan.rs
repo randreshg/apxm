@@ -1,20 +1,15 @@
 //! Shared helpers for compiling and splicing inner plans emitted at runtime.
 
 use super::{ExecutionContext, Result};
-use apxm_core::types::execution::Node;
 use apxm_core::{
+    InnerPlanDsl,
     error::RuntimeError,
-    types::{TokenId, execution::ExecutionDag},
+    types::{TokenId, execution::{ExecutionDag, Node}},
 };
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-/// Raw DSL returned by the model describing an inner plan.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InnerPlanDsl {
-    /// APxM DSL source code to be compiled into a DAG.
-    pub dsl: String,
-}
+// Note: InnerPlanDsl is now imported from apxm_core
+// This ensures consistency across the entire system
 
 /// Options controlling how the inner plan should be spliced into the outer DAG.
 #[derive(Debug, Clone, Copy)]

@@ -108,17 +108,17 @@ impl OutputParser {
         let array_re = Regex::new(r"\[[\s\S]*\]").context("Failed to create array regex")?;
 
         // Try object first
-        if let Some(captures) = object_re.find(text) {
-            if let Ok(value) = serde_json::from_str::<Value>(captures.as_str()) {
-                return Ok(value);
-            }
+        if let Some(captures) = object_re.find(text)
+            && let Ok(value) = serde_json::from_str::<Value>(captures.as_str())
+        {
+            return Ok(value);
         }
 
         // Try array
-        if let Some(captures) = array_re.find(text) {
-            if let Ok(value) = serde_json::from_str::<Value>(captures.as_str()) {
-                return Ok(value);
-            }
+        if let Some(captures) = array_re.find(text)
+            && let Ok(value) = serde_json::from_str::<Value>(captures.as_str())
+        {
+            return Ok(value);
         }
 
         Err(anyhow::anyhow!("No valid JSON found in text"))

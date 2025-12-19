@@ -164,8 +164,7 @@ mod tests {
         match error.as_error() {
             Some(err) => assert_eq!(err.code, ErrorCode::MLIRVerificationFailed),
             None => {
-                return Err(Box::<dyn std::error::Error>::from(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(Box::<dyn std::error::Error>::from(std::io::Error::other(
                     "expected underlying Error in CompilerError::Verification",
                 )));
             }
