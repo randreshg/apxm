@@ -22,12 +22,13 @@ include(HandleLLVMOptions)
 set(APXM_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(APXM_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
-# The repository layout always provides include/ and lib/ directories.
+# The MLIR directory contains include/ and lib/ (CARTS-style layout).
 # Use the source include tree and a build-tree generated include dir.
-set(APXM_INCLUDE_DIR ${APXM_SOURCE_DIR}/include)
+set(APXM_MLIR_DIR ${APXM_SOURCE_DIR}/mlir)
+set(APXM_INCLUDE_DIR ${APXM_MLIR_DIR}/include)
 set(APXM_GENERATED_INCLUDE_DIR ${APXM_BINARY_DIR}/include)
 
-# Expose LLVM/MLIR include dirs and apxm include dirs without hardcoding file lists.
+# Expose LLVM/MLIR include dirs and AIS include dirs without hardcoding file lists.
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(${APXM_INCLUDE_DIR})
@@ -40,4 +41,4 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-add_subdirectory(lib)
+add_subdirectory(mlir/lib)

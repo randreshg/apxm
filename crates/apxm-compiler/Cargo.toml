@@ -4,9 +4,12 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-# core
-apxm-core = { version = "0.0.1", path = "../apxm-core" }
-apxm-artifact = { version = "0.1.0", path = "../apxm-artifact" }
+# AIS (single source of truth for operations)
+apxm-ais = { version = "0.0.1", path = "../apxm-ais" }
+
+# core (will be phased out)
+apxm-core = { version = "0.0.1", path = "../runtime/apxm-core" }
+apxm-artifact = { version = "0.1.0", path = "../runtime/apxm-artifact" }
 
 # FFI
 libc = "0.2.178"
@@ -25,6 +28,7 @@ tempfile = "3.23.0"
 
 [build-dependencies]
 anyhow = "1.0.100"
-apxm-core = { version = "0.0.1", path = "../apxm-core" }
+apxm-core = { version = "0.0.1", path = "../runtime/apxm-core" }
+apxm-ais = { version = "0.0.1", path = "../apxm-ais" }
 bindgen = "0.72.1"
 tracing = "0.1.43"

@@ -1,6 +1,10 @@
 [workspace]
 members = [
-	"crates/*"
+	"crates/apxm-ais",
+	"crates/apxm-cli",
+	"crates/apxm-compiler",
+	"crates/apxm-driver",
+	"crates/runtime/*"
 ]
 
 resolver = "3"

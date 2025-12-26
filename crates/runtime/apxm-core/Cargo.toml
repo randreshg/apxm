@@ -1,0 +1,29 @@
+[package]
+name = "apxm-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# AIS (Single Source of Truth for operations) - re-export for backward compatibility
+apxm-ais = { version = "0.0.1", path = "../../apxm-ais" }
+anyhow = "1.0.100"
+async-trait = "0.1.89"
+chrono = { version = "0.4.42", features = ["serde"] }
+colored = "3.0.0"
+dashmap = "6.1.0"
+envy = { version = "0.4.2", optional = true }
+priority-queue = "2.7.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_bytes = "0.11.19"
+serde_json = "1.0.145"
+thiserror = "2.0.17"
+toml = "0.9.8"
+tracing = "0.1.43"
+tracing-subscriber = { version = "0.3.22", optional = true, features = ["serde"] }
+uuid = { version = "1.19.0", features = ["v7"] }
+which = "8.0.0"
+dirs = "5.0"
+
+[features]
+tracing-subscriber = ["dep:tracing-subscriber"]
+envy = ["dep:envy"]

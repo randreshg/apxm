@@ -1,0 +1,17 @@
+// APXM Planner Example
+// Demonstrates planning and multi-step reasoning
+
+agent PlannerAgent {
+    // Define goals
+    goals {
+        main_goal(priority: 100, description: "Accomplish the user's request")
+    }
+
+    // Handle planning requests
+    on Message { user, text } if (text != "") => {
+        let understanding = think("Understand the user's goal", text);
+        let plan_result = plan("Create execution plan", understanding);
+        let execution = llm("Execute the plan steps", plan_result);
+        return execution;
+    }
+}

@@ -5,58 +5,62 @@ APXM is a full toolchain for building autonomous agents. It combines:
 - **A high-level DSL** (AIS) for declaring memory, flows, handlers, and tool invocations.
 - **A compiler** that lowers AIS → MLIR → executable artifacts.
 - **A runtime/linker** that wires artifacts to capabilities, an LLM registry, and execution memory.
-- **A conversational UX** for translating natural language into runnable AIS, executing it, and showing diagnostics.
+- **A driver + CLI** for compile/run workflows.
 
 The project is inspired by the “Agent Programming eXecution Model” paper: agents maintain belief/goal structures, compile their plans into deterministic flows, and execute them under a scheduler with long‑term/short‑term memory.
 
 ---
 
+## Docs Map
+
+- `docs/getting_started.md`: setup and toolchain
+- `docs/hello_ais.md`: minimal end-to-end example
+- `docs/architecture.md`: system architecture
+- `docs/contract.md`: compiler/runtime contract
+- `docs/diagrams.md`: flow diagrams
+- `docs/glossary.md`: terminology
+- `docs/testing.md`: test matrix
+
 ## Getting Started
+
+### Quick Setup (Recommended)
 
 ```bash
 git clone https://github.com/miguelcsx/apxm
 cd apxm
-# create and start the mamba env
-cargo install --path crates/apxm-cli # optional; cargo run -p apxm-cli also works
+
+# Create the conda environment (installs MLIR/LLVM toolchain)
+conda env create -f environment.yaml
+conda activate apxm
+source scripts/apxm-activate.sh
+
+# Build the Rust workspace (compiler excluded by default)
+cargo build --workspace --exclude apxm-compiler
 ```
 
-APXM keeps workspace state under `.apxm/` (artifacts, sessions, logs). The CLI expects a config file there (see below).
+### Prerequisites
 
-### CLI Commands
+- **mamba** or **conda** (install [miniforge](https://github.com/conda-forge/miniforge) recommended)
+- **git**
+- **Rust nightly** (managed via `rust-toolchain.toml`)
 
-| Command | Description |
-| ------- | ----------- |
-| `apxm compile <input>` | Compile AIS/MLIR to an artifact (`.apxmobj`) or Rust source. |
-| `apxm run <input>` | Compile + execute an AIS/MLIR file; optionally emit artifacts/Rust. |
-| `apxm chat` | Launch the Codex-style chat TUI to translate English ⇢ AIS ⇢ execution. |
-| `apxm version` | Print versions of the CLI and embedded compiler. |
+### Development Commands
 
-Global flags: `-v/--verbose`, `-q/--quiet`, `-c/--config <file>`, `--no-color`.
-
-Examples:
+Use the Makefile:
 
 ```bash
-# Compile DSL to an artifact
-apxm compile examples/simple_agent.ais -o .apxm/artifacts/simple.apxmobj
-
-# Run a raw MLIR module
-apxm run examples/pipeline.mlir --mlir
-
-# Chat with the orchestrator using project config overrides
-apxm --config .apxm/config.toml chat --model ollama
+make build      # Build project
+make test       # Run tests
+make help       # Show all targets
 ```
+
+APXM keeps workspace state under `.apxm/` (artifacts, sessions, logs). A minimal CLI is available for compile/run workflows.
 
 ---
 
 ## Configuration
 
-APXM reads configuration from (in precedence order):
-
-1. `--config <path>` passed on the CLI
-2. Project-scoped `.apxm/config.toml` (walking up ancestor directories)
-3. Global `~/.apxm/config.toml`
-
-The TOML schema is defined in `crates/apxm-config/src/lib.rs`. A minimal example:
+Runtime and driver configuration live in `crates/apxm-driver`. A minimal example TOML:
 
 ```toml
 [chat]
@@ -83,26 +87,7 @@ Key sections:
 - `[[llm_backends]]`: register providers (OpenAI, Anthropic, Google, Ollama, …). Each entry may specify `model`, `endpoint`, `api_key` (string or `env:VAR`), and arbitrary `options`.
 - `capabilities`, `tools`, `execpolicy`: declare available external actions and sandboxing policies.
 
-At runtime the linker instantiates each backend, registers them with the LLM registry, and sets the default provider to `chat.providers[0]`. Ollama endpoints skip API-key validation; cloud providers must provide `api_key`.
-
----
-
-## Chat Workflow
-
-`apxm chat` launches a three-pane TUI:
-
-- **Left**: session list and key bindings.
-- **Center**: conversation transcript + input box.
-- **Right**: tabbed “specialist” view (plan, compiler diagnostics, AAM state, etc.).
-
-Natural language is sent through the translator:
-
-1. Build a JSON outer-plan using the planning model.
-2. Convert the plan into AIS via the DSL model.
-3. Compile/run the AIS; retry up to 3× if the compiler reports a syntax error (LLM gets the diagnostics as feedback).
-4. Stream the final response/diagnostics to the UI.
-
-All tracing/logging (compiler/linker/runtime) is recorded in `~/.apxm/logs/apxm.log` so the UX stays clean.
+The driver instantiates each backend, registers them with the LLM registry, and sets defaults. Ollama endpoints skip API-key validation; cloud providers must provide `api_key`.
 
 ---
 
@@ -110,44 +95,56 @@ All tracing/logging (compiler/linker/runtime) is recorded in `~/.apxm/logs/apxm.
 
 ```
 crates/
-  apxm-chat       # Chat UX, translator, session store
-  apxm-cli        # CLI entrypoints
+  apxm-ais        # AIS operation definitions + validation
+  apxm-cli        # Minimal compile/run CLI
   apxm-compiler   # MLIR passes + codegen
-  apxm-config     # TOML schema
-  apxm-linker     # Orchestrates compiler/runtime, capability loading
-  apxm-models     # LLM backends/registry
-  apxm-runtime    # Scheduler, memory, execution engine
-  ...
+  apxm-driver     # Compiler+runtime wiring + config
+  runtime/
+    apxm-artifact # Artifact serialization
+    apxm-backends # Runtime subsystem: LLM and storage backends
+    apxm-core     # Shared types + errors
+    apxm-runtime  # Scheduler, memory, execution engine
 examples/         # Sample AIS programs
 .apxm/            # Generated artifacts, sessions, logs (gitignored)
 ```
 
-Refer to `DESIGN_COMPLETE.md` and `ECOSYSTEM_DESIGN.md` for deeper architecture notes.
-
----
-
 ## Frequently Used Commands
 
 ```bash
-# Compile + run with verbose tracing (logs end up in ~/.apxm/logs/apxm.log)
-apxm -v run examples/planning_agent.ais
+# Build runtime and driver
+cargo build -p apxm-runtime -p apxm-driver
 
-# Emit intermediate MLIR for debugging
-apxm compile agent.ais --dump-parsed-mlir parsed.mlir --dump-optimized-mlir optimized.mlir
+# Run runtime examples
+cargo run -p apxm-runtime --example substrate_demo
+cargo run -p apxm-runtime --example ollama_llm_demo
 
-# Chat with a specific model override
-apxm chat --model gemini
+# Enable metrics (LLM tokens + timing) in runtime/driver
+cargo test -p apxm-runtime --features metrics
 
-# List sessions the chat UI will show
-sqlite3 ~/.apxm/sessions/sessions.db 'select id, model, message_count from sessions;'
+# CLI (compile/run)
+cargo run -p apxm-cli --features driver -- compile examples/hello_world.ais
+cargo run -p apxm-cli --features driver -- run examples/hello_world.ais
+
+# CLI diagnostics
+cargo run -p apxm-cli -- doctor
+
+# CLI env exports (after conda activate)
+eval "$(cargo run -p apxm-cli -- activate)"
+
+# Install/update env (mamba)
+cargo run -p apxm-cli -- install
 ```
 
 ---
 
 ## Resources
 
-- `CLI.md`: exhaustive command reference
-- `crates/apxm-runtime/DESIGN_SUMMARY.md`: runtime architecture
-- `papers/` (or the cited APXM paper) for the theoretical background
+- `docs/README.md`: documentation index
+- `docs/getting_started.md`: step-by-step setup guide
+- `docs/CRATES.md`: per-crate documentation index
+- `docs/architecture.md`: system architecture
+- `docs/architecture_summary.md`: architecture summary
+- `docs/quick_reference.md`: quick reference
+- `docs/diagrams.md`: system diagrams
 
 Questions? Open an issue or ping the maintainers on the project chat.

@@ -1,0 +1,11 @@
+// APXM Message Handler Example
+// Demonstrates event-driven agent with message handling
+
+agent MessageHandler {
+    // Handle incoming messages
+    on Message { user, text } if (text != "") => {
+        let analysis = think("Analyze user message", text);
+        let response = llm("Generate helpful response", analysis);
+        return response;
+    }
+}

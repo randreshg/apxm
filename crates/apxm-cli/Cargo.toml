@@ -1,35 +1,24 @@
 [package]
 name = "apxm-cli"
-version.workspace = true
-edition.workspace = true
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+description = "APxM CLI - minimal compile/run wrapper for the driver"
+
+[[bin]]
+name = "apxm"
+path = "src/main.rs"
 
 [dependencies]
-# workspace
-apxm-chat = { path = "../apxm-chat" }
-apxm-compiler = { version = "0.0.1", path = "../apxm-compiler" }
-apxm-core = { version = "0.0.1", path = "../apxm-core" }
-apxm-config = { path = "../apxm-config" }
-apxm-linker = { path = "../apxm-linker" }
-
-# Error handling
-anyhow = "1.0.100"
-thiserror = "2.0.17"
-
-# CLI
-clap = { version = "4.5.53", features = ["derive", "env", "wrap_help"] }
-
-# Utilities
+apxm-core = { path = "../runtime/apxm-core" }
+apxm-driver = { path = "../apxm-driver", optional = true }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1.48", features = ["rt-multi-thread", "macros"], optional = true }
+anyhow = "1.0"
 colored = "3.0.0"
-chrono = "0.4.42"
 
-# Serialization
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.145"
-
-# Async runtime
-tokio = { version = "1.48.0", features = ["full"] }
-
-# Logging
-tracing = "0.1.43"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
-dirs = "5.0"
+[features]
+default = []
+driver = ["dep:apxm-driver", "dep:tokio"]
+metrics = ["driver", "apxm-driver/metrics"]

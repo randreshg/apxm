@@ -1,0 +1,9 @@
+// APXM Hello World Example
+// A minimal agent that demonstrates basic DSL syntax
+
+agent HelloWorld {
+    // Simple reasoning flow
+    flow main {
+        rsn "Generate a friendly greeting" -> greeting
+    }
+}

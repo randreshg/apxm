@@ -5,7 +5,7 @@
 //! - Boolean
 //! - Array
 
-pub use apxm_core::types::operation_definitions::CONST_STR;
+pub use apxm_ais::CONST_STR;
 
 pub fn escape_string(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))

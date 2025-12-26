@@ -1,0 +1,33 @@
+[package]
+name = "apxm-driver"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "APxM Driver - Configuration, linker, and orchestration for compiler/runtime"
+
+[dependencies]
+# Core dependencies
+apxm-core = { path = "../runtime/apxm-core" }
+apxm-compiler = { path = "../apxm-compiler" }
+apxm-runtime = { path = "../runtime/apxm-runtime" }
+apxm-artifact = { path = "../runtime/apxm-artifact" }
+apxm-backends = { path = "../runtime/apxm-backends" }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Async runtime
+tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "time"] }
+async-trait = "0.1"
+
+# Utilities
+thiserror = "2.0"
+dirs = "5.0"
+tempfile = "3.3"
+parking_lot = "0.12"
+tracing = "0.1.43"
+
+[features]
+metrics = ["apxm-runtime/metrics", "apxm-backends/metrics"]
