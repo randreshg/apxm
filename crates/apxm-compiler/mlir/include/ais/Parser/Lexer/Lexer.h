@@ -35,7 +35,9 @@ enum class TokenKind {
   kw_memory,
 
   // Control flow keywords (alphabetical)
+  kw_case,
   kw_catch,
+  kw_default,
   kw_else,
   kw_if,
   kw_in,
@@ -43,6 +45,7 @@ enum class TokenKind {
   kw_loop,
   kw_parallel,
   kw_return,
+  kw_switch,
   kw_try,
 
   // Short operations (alphabetical)
@@ -52,6 +55,7 @@ enum class TokenKind {
   kw_mem,      // Memory access
   kw_plan,     // Planning
   kw_reflect,  // Reflection
+  kw_rsn,      // Reasoning (short form)
   kw_talk,     // Communicate
   kw_think,    // Reasoning
   kw_tool,     // Tool invocation

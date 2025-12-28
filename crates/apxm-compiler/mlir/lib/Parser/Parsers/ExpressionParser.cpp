@@ -25,6 +25,7 @@ bool isOperationIdentifier(TokenKind kind) noexcept {
   case TokenKind::kw_tool:
   case TokenKind::kw_mem:
   case TokenKind::kw_think:
+  case TokenKind::kw_rsn:
   case TokenKind::kw_plan:
   case TokenKind::kw_reflect:
   case TokenKind::kw_verify:
@@ -32,6 +33,22 @@ bool isOperationIdentifier(TokenKind kind) noexcept {
   case TokenKind::kw_talk:
   case TokenKind::kw_wait:
   case TokenKind::kw_merge:
+    return true;
+  default:
+    return false;
+  }
+}
+
+// Check if a token kind is a DSL operation that supports direct string argument
+// e.g., `rsn "prompt"` instead of `rsn("prompt")`
+bool isDSLOperation(TokenKind kind) noexcept {
+  switch (kind) {
+  case TokenKind::kw_rsn:
+  case TokenKind::kw_think:
+  case TokenKind::kw_llm:
+  case TokenKind::kw_reflect:
+  case TokenKind::kw_verify:
+  case TokenKind::kw_plan:
     return true;
   default:
     return false;
@@ -150,7 +167,30 @@ std::unique_ptr<Expr> ExpressionParser::parsePrimaryExpr() {
   Location loc = getCurrentLocation();
   std::unique_ptr<Expr> base;
 
-  if (isOperationIdentifier(peek().kind)) {
+  // Handle DSL operations with direct string/expression argument
+  // e.g., `rsn "prompt"` or `rsn "prefix" + var`
+  if (isDSLOperation(peek().kind)) {
+    llvm::StringRef opName = peek().spelling;
+    advance();
+
+    // Check if next token is a string literal or expression (not parenthesis)
+    // This allows: `rsn "string"` and `rsn "prefix" + var`
+    if (!peek(TokenKind::l_paren) && !peek(TokenKind::semicolon) &&
+        !peek(TokenKind::arrow) && !peek(TokenKind::r_brace)) {
+      // Parse the argument expression
+      auto arg = parseAdditiveExpr();
+      if (!arg) {
+        synchronize();
+        return nullptr;
+      }
+      llvm::SmallVector<std::unique_ptr<Expr>, 1> args;
+      args.push_back(std::move(arg));
+      base = std::make_unique<CallExpr>(loc, opName, args);
+    } else {
+      // No argument - treat as variable (will be handled by postfix for call syntax)
+      base = std::make_unique<VarExpr>(loc, opName);
+    }
+  } else if (isOperationIdentifier(peek().kind)) {
     llvm::StringRef name = peek().spelling;
     advance();
     base = std::make_unique<VarExpr>(loc, name);
@@ -224,6 +264,27 @@ std::unique_ptr<Expr> ExpressionParser::parseArrayExpr() {
 std::unique_ptr<Expr> ExpressionParser::parsePostfixExpr(std::unique_ptr<Expr> base) {
   while (true) {
     if (peek(TokenKind::l_paren)) {
+      // Check if this is a flow call (Agent.flow(args))
+      if (auto *memberAccess = llvm::dyn_cast<MemberAccessExpr>(base.get())) {
+        if (auto *agentVar = llvm::dyn_cast<VarExpr>(memberAccess->getObject())) {
+          // This is Agent.flow(args) - create a FlowCallExpr
+          Location loc = memberAccess->getLocation();
+          llvm::StringRef agentName = agentVar->getName();
+          llvm::StringRef flowName = memberAccess->getMember();
+
+          if (!expect(TokenKind::l_paren)) return nullptr;
+
+          llvm::SmallVector<std::unique_ptr<Expr>, 4> args;
+          if (!parseExpressionList(TokenKind::r_paren, args)) {
+            return nullptr;
+          }
+
+          base = std::make_unique<FlowCallExpr>(loc, agentName, flowName, args);
+          continue;
+        }
+      }
+
+      // Regular function call
       auto *var = llvm::dyn_cast<VarExpr>(base.get());
       if (!var) {
         emitError(getCurrentLocation(), "Call target must be an identifier");

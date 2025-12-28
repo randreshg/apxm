@@ -410,6 +410,57 @@ pub static RETURN: OperationMetadata = OperationMetadata {
     needs_submission: false,
 };
 
+/// Switch operation metadata.
+pub static SWITCH: OperationMetadata = OperationMetadata {
+    name: "switch",
+    fields: &[
+        OperationField {
+            name: "discriminant",
+            required: true,
+            description: "Token to match against case labels",
+        },
+        OperationField {
+            name: "case_labels",
+            required: true,
+            description: "Array of case labels",
+        },
+        OperationField {
+            name: "case_destinations",
+            required: true,
+            description: "Array of case destinations",
+        },
+        OperationField {
+            name: "default_destination",
+            required: false,
+            description: "Default destination if no case matches",
+        },
+    ],
+    needs_submission: true,
+};
+
+/// Flow Call operation metadata.
+pub static FLOW_CALL: OperationMetadata = OperationMetadata {
+    name: "flow_call",
+    fields: &[
+        OperationField {
+            name: "agent_name",
+            required: true,
+            description: "Name of the agent to call",
+        },
+        OperationField {
+            name: "flow_name",
+            required: true,
+            description: "Name of the flow to invoke",
+        },
+        OperationField {
+            name: "args",
+            required: false,
+            description: "Arguments to pass to the flow",
+        },
+    ],
+    needs_submission: true,
+};
+
 /// Get operation metadata by operation type.
 pub fn get_operation_metadata(op_type: AISOperationType) -> &'static OperationMetadata {
     match op_type {
@@ -427,6 +478,8 @@ pub fn get_operation_metadata(op_type: AISOperationType) -> &'static OperationMe
         AISOperationType::LoopStart => &LOOP_START,
         AISOperationType::LoopEnd => &LOOP_END,
         AISOperationType::Return => &RETURN,
+        AISOperationType::Switch => &SWITCH,
+        AISOperationType::FlowCall => &FLOW_CALL,
         AISOperationType::Merge => &MERGE,
         AISOperationType::Fence => &FENCE,
         AISOperationType::WaitAll => &WAIT_ALL,

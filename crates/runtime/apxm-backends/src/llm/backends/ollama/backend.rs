@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 const DEFAULT_BASE_URL: &str = "http://localhost:11434";
-const DEFAULT_MODEL: &str = "llama3";
+const DEFAULT_MODEL: &str = "gpt-oss:120b-cloud";
 
 /// Ollama LLM backend (local models).
 pub struct OllamaBackend {

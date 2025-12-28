@@ -1,0 +1,18 @@
+// Conditional Routing Workflow
+// Demonstrates A-PXM's native switch/case for efficient branching.
+// Only the selected branch executes, saving LLM calls.
+
+agent RouterAgent {
+    flow main(input: str) {
+        // 1. Classify the input
+        rsn "Classify this input into exactly one word: technical, creative, or factual. Input: " + input -> category
+
+        // 2. Route based on classification (only selected branch runs)
+        switch category {
+            case "technical" => rsn "Provide a detailed technical explanation for: " + input -> output
+            case "creative" => rsn "Provide a creative, imaginative response for: " + input -> output
+            case "factual" => rsn "Provide accurate factual information for: " + input -> output
+            default => rsn "Provide a helpful general response for: " + input -> output
+        }
+    }
+}

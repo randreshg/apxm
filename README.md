@@ -26,7 +26,7 @@ The project is inspired by the “Agent Programming eXecution Model” paper: ag
 ### Quick Setup (Recommended)
 
 ```bash
-git clone https://github.com/miguelcsx/apxm
+git clone https://github.com/randreshg/apxm
 cd apxm
 
 # Create the conda environment (installs MLIR/LLVM toolchain)

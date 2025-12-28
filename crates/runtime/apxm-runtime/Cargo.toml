@@ -39,9 +39,17 @@ chrono = "0.4"
 num_cpus = "1.16"
 priority-queue = "1.3"
 
+[dev-dependencies]
+apxm-driver = { path = "../../apxm-driver" }
+
 [features]
 default = ["dashmap", "fxhash"]
 dashmap = ["dep:dashmap"]
 fxhash = ["dep:fxhash"]
 smallvec = ["dep:smallvec"]
 metrics = ["apxm-backends/metrics"]
+
+[[example]]
+name = "paper_benchmarks"
+path = "../../../papers/cf26/benchmarks/runtime/paper_benchmarks.rs"
+

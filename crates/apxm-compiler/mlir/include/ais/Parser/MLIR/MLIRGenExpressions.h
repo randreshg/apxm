@@ -43,6 +43,7 @@ private:
   static mlir::Value generateCommunicateExpr(MLIRGen &gen, CommunicateExpr *expr);
   static mlir::Value generateWaitAllExpr(MLIRGen &gen, WaitAllExpr *expr);
   static mlir::Value generateMergeExpr(MLIRGen &gen, MergeExpr *expr);
+  static mlir::Value generateFlowCallExpr(MLIRGen &gen, FlowCallExpr *expr);
 
   /// Convert value to target type with proper conversion
   static mlir::Value convertNumericValue(MLIRGen &gen, mlir::Value value, mlir::Type targetType,

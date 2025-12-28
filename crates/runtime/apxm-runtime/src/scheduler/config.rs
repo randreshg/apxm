@@ -202,7 +202,7 @@ fn default_watchdog_interval_ms() -> u64 {
 }
 
 fn default_deadlock_timeout_ms() -> u64 {
-    30_000
+    120_000 // 2 minutes - allows for multiple sequential LLM calls
 }
 
 fn default_queue_capacity() -> usize {

@@ -1,6 +1,13 @@
 //! Worker loop for the dataflow scheduler.
 //!
 //! Workers continuously steal and execute operations until the DAG completes.
+//!
+//! When the `metrics` feature is enabled, this module instruments key operations
+//! to measure scheduler overhead breakdown:
+//! - Work stealing
+//! - Input collection
+//! - Operation dispatch
+//! - Token routing
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -13,6 +20,7 @@ use crate::executor::ExecutionContext;
 use crate::executor::ExecutorEngine;
 use crate::scheduler::internal_state::{OpState, TokenState};
 use crate::scheduler::state::SchedulerState;
+use crate::timed;
 use apxm_core::error::RuntimeError;
 
 /// Main worker loop.
@@ -32,8 +40,11 @@ pub async fn worker_loop(
             break;
         }
 
-        // Try to steal work
-        let Some(node_id) = state.work_stealing.steal_next(&local_queue, worker_id) else {
+        // Try to steal work (timed when metrics enabled)
+        let stolen = timed!(state.metrics, record_work_stealing, {
+            state.work_stealing.steal_next(&local_queue, worker_id)
+        });
+        let Some(node_id) = stolen else {
             // No work available, yield
             tokio::task::yield_now().await;
             continue;
@@ -54,8 +65,11 @@ pub async fn worker_loop(
         // Mark operation as running
         op_start(&state.op_states, node_id);
 
-        // Collect inputs (must all be ready)
-        let Some(inputs) = collect_inputs(&state.tokens, &node) else {
+        // Collect inputs (must all be ready) - timed when metrics enabled
+        let collected = timed!(state.metrics, record_input_collection, {
+            collect_inputs(&state.tokens, &node)
+        });
+        let Some(inputs) = collected else {
             // Inputs not ready - requeue at lowest priority and continue
             // This shouldn't normally happen since readiness is tracked,
             // but handle gracefully in case of race conditions
@@ -260,8 +274,17 @@ async fn handle_success(event: &WorkerEvent<'_>, value: Value, attempts: u32) {
     event.state.executed.fetch_add(1, Ordering::Relaxed);
     event.state.record_progress();
 
-    // Publish outputs and propagate readiness
+    // Publish outputs and propagate readiness (timed when metrics enabled)
+    #[cfg(feature = "metrics")]
+    let routing_start = std::time::Instant::now();
+
     publish_outputs(event.state, event.outputs, value).await;
+
+    #[cfg(feature = "metrics")]
+    event
+        .state
+        .metrics
+        .record_token_routing(routing_start.elapsed());
 
     // Mark operation as completed
     if let Some(mut op_state) = event.state.op_states.get_mut(&event.node_id) {

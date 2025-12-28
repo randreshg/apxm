@@ -187,7 +187,9 @@ Token Lexer::lexIdentifierOrKeyword() {
       .Case("memory", TokenKind::kw_memory)
 
       // Control flow
+      .Case("case", TokenKind::kw_case)
       .Case("catch", TokenKind::kw_catch)
+      .Case("default", TokenKind::kw_default)
       .Case("else", TokenKind::kw_else)
       .Case("if", TokenKind::kw_if)
       .Case("in", TokenKind::kw_in)
@@ -195,6 +197,7 @@ Token Lexer::lexIdentifierOrKeyword() {
       .Case("loop", TokenKind::kw_loop)
       .Case("parallel", TokenKind::kw_parallel)
       .Case("return", TokenKind::kw_return)
+      .Case("switch", TokenKind::kw_switch)
       .Case("try", TokenKind::kw_try)
 
       // Operations
@@ -204,6 +207,7 @@ Token Lexer::lexIdentifierOrKeyword() {
       .Case("mem", TokenKind::kw_mem)
       .Case("plan", TokenKind::kw_plan)
       .Case("reflect", TokenKind::kw_reflect)
+      .Case("rsn", TokenKind::kw_rsn)
       .Case("talk", TokenKind::kw_talk)
       .Case("think", TokenKind::kw_think)
       .Case("tool", TokenKind::kw_tool)

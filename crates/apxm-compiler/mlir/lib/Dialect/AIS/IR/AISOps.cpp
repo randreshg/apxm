@@ -598,6 +598,67 @@ LogicalResult CommunicateOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// SwitchOp - Multi-way Branch
+//===----------------------------------------------------------------------===//
+
+LogicalResult SwitchOp::verify() {
+  // Check discriminant is TokenType
+  if (failed(verifyType<TokenType>(*this, getDiscriminant(),
+                                   "discriminant operand must be !ais.token type")))
+    return failure();
+
+  // Check result is TokenType
+  if (failed(verifyType<TokenType>(*this, getResult(), "result must be !ais.token type")))
+    return failure();
+
+  // Check case_labels and case_destinations have matching sizes
+  auto labels = getCaseLabels();
+  auto destinations = getCaseDestinations();
+  if (labels.size() != destinations.size())
+    return emitOpError("case_labels and case_destinations must have matching sizes");
+
+  // Check that case_labels contains only string attributes
+  for (auto label : labels) {
+    if (!llvm::isa<StringAttr>(label))
+      return emitOpError("case_labels must contain only string attributes");
+  }
+
+  // Check that case_destinations contains only string attributes
+  for (auto dest : destinations) {
+    if (!llvm::isa<StringAttr>(dest))
+      return emitOpError("case_destinations must contain only string attributes");
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// FlowCallOp - Cross-Agent Flow Invocation
+//===----------------------------------------------------------------------===//
+
+LogicalResult FlowCallOp::verify() {
+  // Check agent_name is not empty
+  if (getAgentName().empty())
+    return emitOpError("agent_name cannot be empty");
+
+  // Check flow_name is not empty
+  if (getFlowName().empty())
+    return emitOpError("flow_name cannot be empty");
+
+  // Check all args are tokens, handles, or goals
+  if (failed(verifyTypes<TokenType, HandleType, GoalType>(
+          *this, getArgs(),
+          "args must be !ais.token, !ais.handle, or !ais.goal types")))
+    return failure();
+
+  // Check result is TokenType
+  if (failed(verifyType<TokenType>(*this, getResult(), "result must be !ais.token type")))
+    return failure();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen Generated Class Definitions
 //===----------------------------------------------------------------------===//
 

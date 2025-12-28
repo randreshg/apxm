@@ -144,9 +144,26 @@ mlir::Value MLIRGenOperations::generateInvOp(MLIRGen &gen, llvm::StringRef calle
 
 mlir::Value MLIRGenOperations::generateRsnOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,
                                            mlir::Location loc) {
-  llvm::StringRef templateStr = args.empty() ? "" : extractStringArg(args[0].get());
   llvm::SmallVector<mlir::Value, 4> contextArgs;
+  llvm::StringRef templateStr;
 
+  if (!args.empty()) {
+    // Check if the first arg is a simple string literal or an expression
+    if (auto strLit = llvm::dyn_cast<StringLiteralExpr>(args[0].get())) {
+      // Simple case: string literal becomes the template
+      templateStr = strLit->getValue();
+    } else {
+      // Complex case: expression (e.g., "prefix" + var + "suffix")
+      // Generate the expression and pass as context
+      // Use empty template - the context operand becomes the prompt
+      templateStr = "";
+      if (auto arg = gen.generateExpression(args[0].get())) {
+        contextArgs.push_back(arg);
+      }
+    }
+  }
+
+  // Process additional arguments as context
   for (size_t i = 1; i < args.size(); ++i) {
     if (!llvm::isa<StringLiteralExpr>(args[i].get())) {
       if (auto arg = gen.generateExpression(args[i].get())) {

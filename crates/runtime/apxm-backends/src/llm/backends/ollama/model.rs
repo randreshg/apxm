@@ -4,8 +4,10 @@ use std::fmt;
 // Ollama local models (dynamic).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum OllamaModel {
-    #[serde(rename = "llama3.3")]
+    #[serde(rename = "gpt-oss:120b-cloud")]
     #[default]
+    GptOss120bCloud,
+    #[serde(rename = "llama3.3")]
     Llama3_3,
     #[serde(rename = "llama3.2")]
     Llama3_2,
@@ -26,6 +28,7 @@ pub enum OllamaModel {
 impl OllamaModel {
     pub fn as_str(&self) -> &str {
         match self {
+            OllamaModel::GptOss120bCloud => "gpt-oss:120b-cloud",
             OllamaModel::Llama3_3 => "llama3.3",
             OllamaModel::Llama3_2 => "llama3.2",
             OllamaModel::Llama3_1 => "llama3.1",
@@ -40,6 +43,7 @@ impl OllamaModel {
     pub fn from_string(s: impl Into<String>) -> Self {
         let s = s.into();
         match s.as_str() {
+            "gpt-oss:120b-cloud" => OllamaModel::GptOss120bCloud,
             "llama3.3" => OllamaModel::Llama3_3,
             "llama3.2" => OllamaModel::Llama3_2,
             "llama3.1" => OllamaModel::Llama3_1,
@@ -53,6 +57,7 @@ impl OllamaModel {
 
     pub fn common_models() -> &'static [&'static str] {
         &[
+            "gpt-oss:120b-cloud",
             "llama3.3",
             "llama3.2",
             "llama3.1",

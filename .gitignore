@@ -23,3 +23,24 @@ target
 
 # APXM Configuration
 .apxm/*
+
+# Build directories (CMake, etc.)
+**/build/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+*.egg-info/
+.eggs/
+
+# macOS
+.DS_Store
+
+# Editor/IDE
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

@@ -31,7 +31,7 @@ protected:
 public:
   static bool classof(const ASTNode *node) {
     const Kind kind = node->getKind();
-    return kind >= Kind::StringLiteralExpr && kind <= Kind::MergeExpr;
+    return kind >= Kind::StringLiteralExpr && kind <= Kind::FlowCallExpr;
   }
 };
 
@@ -472,6 +472,40 @@ public:
 
   static bool classof(const ASTNode *node) {
     return node->getKind() == Kind::MergeExpr;
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// Flow Call Expression (Agent.flow(args) -> result)
+//===----------------------------------------------------------------------===//
+
+class FlowCallExpr final : public Expr {
+  const std::string agentName;
+  const std::string flowName;
+  llvm::SmallVector<std::unique_ptr<Expr>, 4> args;
+
+public:
+  FlowCallExpr(Location loc, llvm::StringRef agentName, llvm::StringRef flowName,
+               llvm::MutableArrayRef<std::unique_ptr<Expr>> args)
+      : Expr(Kind::FlowCallExpr, loc), agentName(agentName.str()),
+        flowName(flowName.str()) {
+    assert(!agentName.empty() && "Agent name cannot be empty");
+    assert(!flowName.empty() && "Flow name cannot be empty");
+
+    this->args.reserve(args.size());
+    for (auto &&arg : args) {
+      this->args.push_back(std::move(arg));
+    }
+  }
+
+  llvm::StringRef getAgentName() const noexcept { return agentName; }
+  llvm::StringRef getFlowName() const noexcept { return flowName; }
+  llvm::ArrayRef<std::unique_ptr<Expr>> getArgs() const noexcept {
+    return {args.data(), args.size()};
+  }
+
+  static bool classof(const ASTNode *node) {
+    return node->getKind() == Kind::FlowCallExpr;
   }
 };
 

@@ -1,0 +1,19 @@
+# LangGraph Baseline Benchmark Dependencies
+# For A-PXM Paper - Computing Frontiers 2026
+
+# LangGraph core
+langgraph>=0.2.0
+
+# LangChain dependencies (required by LangGraph)
+langchain-core>=0.3.0
+
+# For checkpoint benchmarks
+langgraph-checkpoint>=2.0.0
+
+# Optional: For async benchmarks
+asyncio
+
+# For statistical analysis
+# (stdlib statistics module is sufficient, but these can help)
+# numpy>=1.24.0  # Optional
+# scipy>=1.10.0  # Optional

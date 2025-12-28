@@ -231,25 +231,28 @@ std::unique_ptr<FlowDecl> DeclarationParser::parseFlowDecl() {
 
   llvm::StringRef name = nameTok.spelling;
 
-  if (!expect(TokenKind::l_paren)) return nullptr;
-
+  // Parameters and return type are optional
+  // Supports both: `flow main { }` and `flow main() -> token { }`
   llvm::SmallVector<std::pair<std::string, std::string>, 4> params;
-  if (!parseNamedTypeList(TokenKind::r_paren, "parameter", params, true)) {
-    return nullptr;
+  llvm::StringRef returnType = "void";
+
+  if (consume(TokenKind::l_paren)) {
+    if (!parseNamedTypeList(TokenKind::r_paren, "parameter", params, true)) {
+      return nullptr;
+    }
+
+    if (consume(TokenKind::arrow)) {
+      if (!peek(TokenKind::identifier) && !peek(TokenKind::kw_string) &&
+          !peek(TokenKind::kw_number) && !peek(TokenKind::kw_bool) &&
+          !peek(TokenKind::kw_json) && !peek(TokenKind::kw_void) &&
+          !peek(TokenKind::kw_token)) {
+        emitError(getCurrentLocation(), "Expected return type");
+        return nullptr;
+      }
+      returnType = peek().spelling;
+      advance();
+    }
   }
-
-  if (!expect(TokenKind::arrow)) return nullptr;
-
-  if (!peek(TokenKind::identifier) && !peek(TokenKind::kw_string) &&
-      !peek(TokenKind::kw_number) && !peek(TokenKind::kw_bool) &&
-      !peek(TokenKind::kw_json) && !peek(TokenKind::kw_void) &&
-      !peek(TokenKind::kw_token)) {
-    emitError(getCurrentLocation(), "Expected return type");
-    return nullptr;
-  }
-
-  llvm::StringRef returnType = peek().spelling;
-  advance();
 
   llvm::SmallVector<std::unique_ptr<Stmt>, 8> body;
   if (!peek(TokenKind::l_brace)) {

@@ -399,6 +399,8 @@ fn to_tablegen_name(op_type: AISOperationType) -> String {
         AISOperationType::LoopStart => "LoopStart",
         AISOperationType::LoopEnd => "LoopEnd",
         AISOperationType::Return => "Return",
+        AISOperationType::Switch => "Switch",
+        AISOperationType::FlowCall => "FlowCall",
         AISOperationType::Merge => "Merge",
         AISOperationType::Fence => "Fence",
         AISOperationType::WaitAll => "WaitAll",

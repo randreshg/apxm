@@ -44,6 +44,10 @@ enum Commands {
         /// Treat input as MLIR
         #[arg(long)]
         mlir: bool,
+        /// Optimization level (0 = no optimizations, 1-3 = increasing optimization)
+        /// -O0 disables FuseReasoning, -O1+ enables it
+        #[arg(short = 'O', long = "opt-level", default_value = "1")]
+        opt_level: u8,
     },
     /// Diagnose compiler/runtime dependencies
     Doctor,
@@ -74,7 +78,7 @@ async fn run_cli() -> Result<()> {
 
     match cli.command {
         Commands::Compile { input, mlir, output } => compile_command(input, mlir, output),
-        Commands::Run { input, mlir } => run_command(input, mlir, cli.config).await,
+        Commands::Run { input, mlir, opt_level } => run_command(input, mlir, opt_level, cli.config).await,
         Commands::Doctor => doctor_command(cli.config),
         Commands::Activate { shell } => activate_command(&shell),
         Commands::Install => install_command(),
@@ -194,9 +198,17 @@ fn compile_command(input: PathBuf, mlir: bool, output: Option<PathBuf>) -> Resul
 }
 
 #[cfg(feature = "driver")]
-async fn run_command(input: PathBuf, mlir: bool, config: Option<PathBuf>) -> Result<()> {
+async fn run_command(input: PathBuf, mlir: bool, opt_level: u8, config: Option<PathBuf>) -> Result<()> {
+    use apxm_core::types::OptimizationLevel;
+
     let apxm_config = load_config(config).context("Failed to load configuration")?;
-    let linker_config = LinkerConfig::from_apxm_config(apxm_config);
+    let opt = match opt_level {
+        0 => OptimizationLevel::O0,
+        1 => OptimizationLevel::O1,
+        2 => OptimizationLevel::O2,
+        _ => OptimizationLevel::O3,
+    };
+    let linker_config = LinkerConfig::from_apxm_config(apxm_config).with_opt_level(opt);
     let linker = Linker::new(linker_config)
         .await
         .context("Failed to initialize runtime")?;

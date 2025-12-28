@@ -29,6 +29,7 @@ mlir::Value MLIRGenExpressions::generateExpression(MLIRGen &gen, Expr *expr) {
       .Case<NullLiteralExpr>([&](auto *e) { return generateNullLiteral(gen, e); })
       .Case<VarExpr>([&](auto *e) { return generateVarExpr(gen, e); })
       .Case<CallExpr>([&](auto *e) { return MLIRGenOperations::generateCallExpr(gen, e); })
+      .Case<FlowCallExpr>([&](auto *e) { return generateFlowCallExpr(gen, e); })
       .Case<ArrayExpr>([&](auto *e) { return generateArrayExpr(gen, e); })
       .Case<BinaryExpr>([&](auto *e) { return generateBinaryExpr(gen, e); })
       .Case<UnaryExpr>([&](auto *e) { return generateUnaryExpr(gen, e); })
@@ -163,7 +164,19 @@ mlir::Value MLIRGenExpressions::generateBinaryExpr(MLIRGen &gen, BinaryExpr *exp
     return gen.builder.create<arith::CmpIOp>(loc, predicate, lhs, rhs);
   }
 
-  case BinaryExpr::Operator::Add:
+  case BinaryExpr::Operator::Add: {
+    // Check if this is string/token concatenation
+    if (llvm::isa<mlir::ais::TokenType>(lhs.getType()) ||
+        llvm::isa<mlir::ais::TokenType>(rhs.getType())) {
+      // String concatenation - use MergeOp
+      auto i64Type = gen.builder.getI64Type();
+      auto tokenType = mlir::ais::TokenType::get(&gen.context, i64Type);
+      llvm::SmallVector<mlir::Value, 2> operands = {lhs, rhs};
+      return gen.builder.create<mlir::ais::MergeOp>(loc, tokenType, operands);
+    }
+    // Fall through to numeric handling
+    [[fallthrough]];
+  }
   case BinaryExpr::Operator::Sub:
   case BinaryExpr::Operator::Mul:
   case BinaryExpr::Operator::Div:
@@ -401,4 +414,25 @@ mlir::Value MLIRGenExpressions::generateMemoryAccess(MLIRGen &gen, llvm::StringR
 
   return gen.builder.create<mlir::ais::QMemOp>(loc, handleType, queryAttr, sidAttr, spaceAttr,
                                              /*limit=*/nullptr);
+}
+
+mlir::Value MLIRGenExpressions::generateFlowCallExpr(MLIRGen &gen, FlowCallExpr *expr) {
+  mlir::Location loc = gen.getLocation(expr->getLocation());
+
+  // Generate argument expressions
+  llvm::SmallVector<mlir::Value, 4> argValues;
+  for (const auto &arg : expr->getArgs()) {
+    auto value = gen.generateExpression(arg.get());
+    if (!value) return nullptr;
+    argValues.push_back(value);
+  }
+
+  auto i64Type = gen.builder.getI64Type();
+  auto tokenType = mlir::ais::TokenType::get(&gen.context, i64Type);
+
+  return gen.builder.create<mlir::ais::FlowCallOp>(
+      loc, tokenType,
+      gen.builder.getStringAttr(expr->getAgentName()),
+      gen.builder.getStringAttr(expr->getFlowName()),
+      argValues);
 }

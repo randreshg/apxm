@@ -52,6 +52,8 @@ impl OperationDispatcher {
             AISOperationType::LoopStart => loop_start::execute(ctx, node, inputs).await,
             AISOperationType::LoopEnd => loop_end::execute(ctx, node, inputs).await,
             AISOperationType::Return => return_op::execute(ctx, node, inputs).await,
+            AISOperationType::Switch => switch::execute(ctx, node, inputs).await,
+            AISOperationType::FlowCall => flow_call::execute(ctx, node, inputs).await,
 
             // Error handling operations
             AISOperationType::TryCatch => try_catch::execute(ctx, node, inputs).await,
@@ -63,6 +65,9 @@ impl OperationDispatcher {
 
             // Literal operations
             AISOperationType::ConstStr => const_str::execute(ctx, node, inputs).await,
+
+            // Metadata operations (Agent is metadata, not executed)
+            AISOperationType::Agent => Ok(Value::Null),
         };
 
         match &result {

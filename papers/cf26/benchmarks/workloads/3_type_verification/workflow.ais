@@ -1,0 +1,16 @@
+// Type Verification Workflow - INTENTIONALLY BROKEN
+// Demonstrates compile-time error detection.
+//
+// This workflow contains a bug: `undefined_var` is never defined.
+// A-PXM catches this at compile time, before any LLM calls.
+
+agent BrokenAgent {
+    flow main {
+        // First operation succeeds
+        rsn "Do something useful" -> result
+
+        // ERROR: undefined_var is not defined anywhere
+        // A-PXM compiler will catch this BEFORE execution
+        rsn "Use this: " + undefined_var -> output
+    }
+}

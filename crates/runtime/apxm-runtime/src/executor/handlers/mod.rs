@@ -6,6 +6,7 @@ pub mod const_str;
 pub mod err;
 pub mod exc;
 pub mod fence;
+pub mod flow_call;
 pub mod inner_plan;
 pub mod inv;
 pub mod jump;
@@ -17,6 +18,7 @@ pub mod qmem;
 pub mod reflect;
 pub mod return_op;
 pub mod rsn;
+pub mod switch;
 pub mod try_catch;
 pub mod umem;
 pub mod verify;
@@ -196,7 +198,7 @@ async fn record_llm_event(
         .memory()
         .record_episodic_event(
             ctx.execution_id.clone(),
-            "llm_call".to_string(),
+            "llm_call",
             Value::Object(fields.into_iter().collect()),
         )
         .await;

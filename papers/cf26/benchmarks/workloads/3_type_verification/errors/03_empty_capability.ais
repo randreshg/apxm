@@ -1,0 +1,12 @@
+// ERROR TEST: Empty Capability Name
+// Category: Capability Operations
+// Expected: "capability name cannot be empty"
+//
+// Tool invocations must have a valid capability name.
+
+agent EmptyCapabilityTest {
+    flow main {
+        // ERROR: Empty string is not a valid capability name
+        inv "" ({}) -> result
+    }
+}

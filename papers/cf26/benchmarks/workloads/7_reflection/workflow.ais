@@ -1,0 +1,15 @@
+// Reflection Workflow
+// Demonstrates A-PXM's built-in reflect operation for self-improvement.
+
+agent ReflectiveAgent {
+    flow main(task: str) {
+        // 1. Initial attempt at solving the task
+        rsn "Solve this task: " + task -> initial_answer
+
+        // 2. Reflect on the answer (native reflect operation)
+        reflect initial_answer -> reflection
+
+        // 3. Improve based on reflection feedback
+        rsn "Given this feedback: " + reflection + ", improve the answer to: " + task -> improved_answer
+    }
+}

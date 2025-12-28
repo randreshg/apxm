@@ -1,0 +1,33 @@
+// Multi-Agent Workflow
+// Demonstrates A-PXM's direct flow calls for cross-agent invocation.
+// Compiler detects dataflow dependencies and parallelizes where possible.
+
+agent Researcher {
+    flow research(topic: str) {
+        rsn "Conduct deep research on: " + topic -> findings
+    }
+}
+
+agent Critic {
+    flow critique(content: str) {
+        rsn "Critically analyze and identify weaknesses: " + content -> feedback
+    }
+
+    flow prepare(topic: str) {
+        rsn "Prepare initial critique questions for: " + topic -> questions
+    }
+}
+
+agent Coordinator {
+    flow main(topic: str) {
+        // 1. These run in parallel (no dependencies between them)
+        Researcher.research(topic) -> research_result
+        Critic.prepare(topic) -> critique_prep
+
+        // 2. This depends on research_result, runs after
+        Critic.critique(research_result) -> critique_result
+
+        // 3. Synthesize final report
+        rsn "Synthesize into final report. Research: " + research_result + " | Critique: " + critique_result -> final_report
+    }
+}

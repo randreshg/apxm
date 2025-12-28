@@ -23,8 +23,10 @@ std::unique_ptr<Stmt> StatementParser::parseStatement() {
     return parseLoopStmt();
   } else if (peek(TokenKind::kw_try)) {
     return parseTryCatchStmt();
+  } else if (peek(TokenKind::kw_switch)) {
+    return parseSwitchStmt();
   } else {
-    // Expression statement
+    // Expression statement (possibly with binding)
     auto expr = exprParser.parseExpression();
     if (!expr) {
       synchronize();
@@ -32,6 +34,24 @@ std::unique_ptr<Stmt> StatementParser::parseStatement() {
     }
 
     Location loc = expr->getLocation();
+
+    // Check for binding syntax: `expr -> varname`
+    // This is syntactic sugar for: `let varname = expr;`
+    if (consume(TokenKind::arrow)) {
+      Token varTok = peek();
+      if (!expect(TokenKind::identifier)) {
+        synchronize();
+        return nullptr;
+      }
+      llvm::StringRef varName = varTok.spelling;
+
+      // Semicolon is optional for binding statements in flow bodies
+      consume(TokenKind::semicolon);
+
+      // Convert to a LetStmt
+      return std::make_unique<LetStmt>(loc, varName, std::nullopt, std::move(expr));
+    }
+
     if (!expect(TokenKind::semicolon)) {
       synchronize();
       return nullptr;
@@ -199,4 +219,81 @@ bool StatementParser::parseStatementBlock(llvm::SmallVectorImpl<std::unique_ptr<
   }
 
   return expect(TokenKind::r_brace);
+}
+
+std::unique_ptr<Stmt> StatementParser::parseSwitchStmt() {
+  Location loc = getCurrentLocation();
+  if (!expect(TokenKind::kw_switch)) return nullptr;
+
+  // Parse discriminant expression
+  auto discriminant = exprParser.parseExpression();
+  if (!discriminant) {
+    synchronize();
+    return nullptr;
+  }
+
+  if (!expect(TokenKind::l_brace)) return nullptr;
+
+  llvm::SmallVector<SwitchCase, 4> cases;
+  llvm::SmallVector<std::unique_ptr<Stmt>, 4> defaultBody;
+
+  // Parse cases and default
+  while (!peek(TokenKind::r_brace) && !peek(TokenKind::eof)) {
+    if (peek(TokenKind::kw_case)) {
+      advance(); // consume 'case'
+
+      // Parse case label (string literal)
+      Token labelTok = peek();
+      if (!expect(TokenKind::string_literal)) {
+        synchronize();
+        continue;
+      }
+      // Remove quotes from the string literal
+      llvm::StringRef label = labelTok.spelling;
+      if (label.size() >= 2 && label.front() == '"' && label.back() == '"') {
+        label = label.drop_front().drop_back();
+      }
+
+      if (!expect(TokenKind::fat_arrow)) {
+        synchronize();
+        continue;
+      }
+
+      // Parse case body (single statement)
+      llvm::SmallVector<std::unique_ptr<Stmt>, 4> caseBody;
+      auto stmt = parseStatement();
+      if (!stmt) {
+        synchronize();
+        continue;
+      }
+      caseBody.push_back(std::move(stmt));
+
+      cases.push_back(SwitchCase(label, caseBody));
+
+    } else if (peek(TokenKind::kw_default)) {
+      advance(); // consume 'default'
+
+      if (!expect(TokenKind::fat_arrow)) {
+        synchronize();
+        continue;
+      }
+
+      // Parse default body (single statement)
+      auto stmt = parseStatement();
+      if (!stmt) {
+        synchronize();
+        continue;
+      }
+      defaultBody.push_back(std::move(stmt));
+
+    } else {
+      emitError(getCurrentLocation(), "Expected 'case' or 'default' in switch statement");
+      synchronize();
+      break;
+    }
+  }
+
+  if (!expect(TokenKind::r_brace)) return nullptr;
+
+  return std::make_unique<SwitchStmt>(loc, std::move(discriminant), cases, defaultBody);
 }

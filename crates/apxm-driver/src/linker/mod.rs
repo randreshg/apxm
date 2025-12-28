@@ -6,6 +6,7 @@ use apxm_artifact::Artifact;
 use apxm_compiler::Module;
 use apxm_core::error::runtime::RuntimeError;
 use apxm_core::log_info;
+use apxm_core::types::OptimizationLevel;
 use apxm_runtime::{RuntimeConfig, RuntimeExecutionResult};
 
 use crate::{
@@ -20,6 +21,9 @@ pub struct LinkerConfig {
 
     /// Optional runtime configuration overrides.
     pub runtime_config: RuntimeConfig,
+
+    /// Optimization level for compilation.
+    pub opt_level: OptimizationLevel,
 }
 
 impl LinkerConfig {
@@ -28,7 +32,14 @@ impl LinkerConfig {
         Self {
             apxm_config,
             runtime_config: RuntimeConfig::default(),
+            opt_level: OptimizationLevel::O1,
         }
+    }
+
+    /// Set the optimization level.
+    pub fn with_opt_level(mut self, opt_level: OptimizationLevel) -> Self {
+        self.opt_level = opt_level;
+        self
     }
 }
 
@@ -64,7 +75,7 @@ pub struct Linker {
 impl Linker {
     /// Create a new linker instance with the provided configuration.
     pub async fn new(config: LinkerConfig) -> Result<Self, DriverError> {
-        let compiler = Compiler::new()?;
+        let compiler = Compiler::with_opt_level(config.opt_level)?;
         let runtime = RuntimeExecutor::new(&config).await?;
 
         Ok(Self { compiler, runtime })

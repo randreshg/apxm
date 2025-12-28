@@ -380,6 +380,61 @@ def AIS_TryCatchOp : AIS_Op<"try_catch"> {
   let hasVerifier = 1;
 }
 
+def AIS_SwitchOp : AIS_Op<"switch"> {
+  let summary = "Multi-way branch based on string value";
+  let description = [{
+    Conditionally executes one of several branches based on matching a
+    discriminant value against case labels. Supports a default case.
+
+    Example:
+    ```mlir
+    ais.switch %category : !ais.token {
+      case "technical" -> ^bb1
+      case "creative" -> ^bb2
+      default -> ^bb3
+    }
+    ```
+  }];
+  let arguments = (ins
+    AIS_TokenType:$discriminant,
+    ArrayAttr:$case_labels,
+    ArrayAttr:$case_destinations,
+    OptionalAttr<StrAttr>:$default_destination
+  );
+  let results = (outs AIS_TokenType:$result);
+  let assemblyFormat = [{
+    $discriminant `:` type($discriminant)
+    `cases` $case_labels `->` $case_destinations
+    (`default` $default_destination^)?
+    attr-dict `->` type($result)
+  }];
+  let hasVerifier = 1;
+}
+
+def AIS_FlowCallOp : AIS_Op<"flow_call",
+    [MemoryEffects<[MemRead<AIS_BeliefResource>, MemWrite<AIS_BeliefResource>]>]> {
+  let summary = "Call a flow on another agent";
+  let description = [{
+    Invokes a flow on a specified agent, passing arguments and receiving a result.
+    This enables cross-agent communication and coordination with implicit parallelism.
+
+    Example:
+    ```mlir
+    %result = ais.flow_call "Researcher" "research" (%topic : !ais.token) : !ais.token
+    ```
+  }];
+  let arguments = (ins
+    StrAttr:$agent_name,
+    StrAttr:$flow_name,
+    Variadic<AIS_AnyTokenHandleOrGoal>:$args
+  );
+  let results = (outs AIS_TokenType:$result);
+  let assemblyFormat = [{
+    $agent_name $flow_name (`(` $args^ `:` type($args) `)`)? attr-dict `:` type($result)
+  }];
+  let hasVerifier = 1;
+}
+
 def AIS_ReturnOp : AIS_Op<"return", [Terminator]> {
   let summary = "Return from subgraph";
   let arguments = (ins AIS_TokenType:$value);

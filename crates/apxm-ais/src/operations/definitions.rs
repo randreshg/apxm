@@ -47,7 +47,7 @@ pub enum AISOperationType {
     /// Execute code in sandbox.
     Exc,
 
-    // Control Flow Operations (5)
+    // Control Flow Operations (7)
     /// Unconditional jump to label.
     Jump,
     /// Branch based on value comparison.
@@ -58,6 +58,10 @@ pub enum AISOperationType {
     LoopEnd,
     /// Return from subgraph with result.
     Return,
+    /// Multi-way branch based on string value (switch/case).
+    Switch,
+    /// Call a flow on another agent.
+    FlowCall,
 
     // Synchronization Operations (3)
     /// Merge multiple tokens into one.
@@ -104,6 +108,8 @@ impl fmt::Display for AISOperationType {
             AISOperationType::LoopStart => write!(f, "LOOP_START"),
             AISOperationType::LoopEnd => write!(f, "LOOP_END"),
             AISOperationType::Return => write!(f, "RETURN"),
+            AISOperationType::Switch => write!(f, "SWITCH"),
+            AISOperationType::FlowCall => write!(f, "FLOW_CALL"),
             // Synchronization
             AISOperationType::Merge => write!(f, "MERGE"),
             AISOperationType::Fence => write!(f, "FENCE"),
@@ -137,6 +143,8 @@ impl AISOperationType {
             AISOperationType::LoopStart => "loop_start",
             AISOperationType::LoopEnd => "loop_end",
             AISOperationType::Return => "return",
+            AISOperationType::Switch => "switch",
+            AISOperationType::FlowCall => "flow_call",
             AISOperationType::Merge => "merge",
             AISOperationType::Fence => "fence",
             AISOperationType::WaitAll => "wait_all",
@@ -165,7 +173,7 @@ impl AISOperationType {
         matches!(self, AISOperationType::ConstStr)
     }
 
-    /// Get all public operation types (19 operations).
+    /// Get all public operation types (21 operations).
     pub fn public_operations() -> &'static [AISOperationType] {
         &[
             AISOperationType::QMem,
@@ -181,6 +189,8 @@ impl AISOperationType {
             AISOperationType::LoopStart,
             AISOperationType::LoopEnd,
             AISOperationType::Return,
+            AISOperationType::Switch,
+            AISOperationType::FlowCall,
             AISOperationType::Merge,
             AISOperationType::Fence,
             AISOperationType::WaitAll,
@@ -190,7 +200,7 @@ impl AISOperationType {
         ]
     }
 
-    /// Get all operation types (21 total).
+    /// Get all operation types (23 total).
     pub fn all_operations() -> &'static [AISOperationType] {
         &[
             AISOperationType::Agent,
@@ -207,6 +217,8 @@ impl AISOperationType {
             AISOperationType::LoopStart,
             AISOperationType::LoopEnd,
             AISOperationType::Return,
+            AISOperationType::Switch,
+            AISOperationType::FlowCall,
             AISOperationType::Merge,
             AISOperationType::Fence,
             AISOperationType::WaitAll,
@@ -499,6 +511,34 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         min_inputs: 1,
         produces_output: true,
     },
+    OperationSpec {
+        op_type: AISOperationType::Switch,
+        name: "Switch",
+        category: OperationCategory::ControlFlow,
+        description: "Multi-way branch based on string value comparison",
+        fields: &[
+            OperationField::required("discriminant", "Token to match against case labels"),
+            OperationField::required("cases", "Array of case label/destination pairs"),
+            OperationField::optional("default", "Default destination if no case matches"),
+        ],
+        needs_submission: true,
+        min_inputs: 1,
+        produces_output: true,
+    },
+    OperationSpec {
+        op_type: AISOperationType::FlowCall,
+        name: "FlowCall",
+        category: OperationCategory::ControlFlow,
+        description: "Call a flow on another agent with implicit parallelism",
+        fields: &[
+            OperationField::required("agent_name", "Name of the agent to call"),
+            OperationField::required("flow_name", "Name of the flow to invoke"),
+            OperationField::optional("args", "Arguments to pass to the flow"),
+        ],
+        needs_submission: true,
+        min_inputs: 0,
+        produces_output: true,
+    },
     // ========== Synchronization Operations (3) ==========
     OperationSpec {
         op_type: AISOperationType::Merge,
@@ -666,12 +706,12 @@ mod tests {
     #[test]
     fn test_operation_counts() {
         assert_eq!(METADATA_OPERATIONS.len(), 1, "Expected 1 metadata operation");
-        assert_eq!(AIS_OPERATIONS.len(), 19, "Expected 19 public AIS operations");
+        assert_eq!(AIS_OPERATIONS.len(), 21, "Expected 21 public AIS operations");
         assert_eq!(INTERNAL_OPERATIONS.len(), 1, "Expected 1 internal operation");
         assert_eq!(
             AISOperationType::all_operations().len(),
-            21,
-            "Expected 21 total operations"
+            23,
+            "Expected 23 total operations"
         );
     }
 

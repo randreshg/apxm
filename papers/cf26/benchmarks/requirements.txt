@@ -1,0 +1,17 @@
+# A-PXM Benchmark Dependencies
+
+# LangGraph (baseline comparison)
+langgraph>=0.2.0
+langchain-core>=0.3.0
+
+# For checkpoint benchmarks
+langgraph-checkpoint>=2.0.0
+
+# Async support
+asyncio
+
+# JSON output
+# (stdlib json is sufficient)
+
+# Statistical analysis
+# (stdlib statistics is sufficient for mean, stdev, etc.)

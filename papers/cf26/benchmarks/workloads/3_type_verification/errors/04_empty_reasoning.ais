@@ -1,0 +1,12 @@
+// ERROR TEST: Empty Reasoning Operation
+// Category: Reasoning Operations
+// Expected: "reasoning operation must have at least context or template"
+//
+// RSN operations must have either a template string or context.
+
+agent EmptyReasoningTest {
+    flow main {
+        // ERROR: No template and no context
+        rsn "" -> result
+    }
+}

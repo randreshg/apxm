@@ -50,6 +50,7 @@ public:
     CommunicateExpr,
     WaitAllExpr,
     MergeExpr,
+    FlowCallExpr,
 
     // Statements
     LetStmt,
@@ -58,7 +59,8 @@ public:
     ExprStmt,
     ParallelStmt,
     LoopStmt,
-    TryCatchStmt
+    TryCatchStmt,
+    SwitchStmt
   };
 
 protected:
@@ -110,6 +112,7 @@ class ExecuteExpr;
 class CommunicateExpr;
 class WaitAllExpr;
 class MergeExpr;
+class FlowCallExpr;
 
 class LetStmt;
 class ReturnStmt;
@@ -118,6 +121,7 @@ class ExprStmt;
 class ParallelStmt;
 class LoopStmt;
 class TryCatchStmt;
+class SwitchStmt;
 
 class ASTVisitor {
 public:
@@ -152,6 +156,7 @@ public:
   HANDLE_NODE(CommunicateExpr)
   HANDLE_NODE(WaitAllExpr)
   HANDLE_NODE(MergeExpr)
+  HANDLE_NODE(FlowCallExpr)
   HANDLE_NODE(LetStmt)
   HANDLE_NODE(ReturnStmt)
   HANDLE_NODE(IfStmt)
@@ -159,6 +164,7 @@ public:
   HANDLE_NODE(ParallelStmt)
   HANDLE_NODE(LoopStmt)
   HANDLE_NODE(TryCatchStmt)
+  HANDLE_NODE(SwitchStmt)
 #undef HANDLE_NODE
 };
 
@@ -201,6 +207,8 @@ public:
   HANDLE_NODE(ParallelStmt)
   HANDLE_NODE(LoopStmt)
   HANDLE_NODE(TryCatchStmt)
+  HANDLE_NODE(SwitchStmt)
+  HANDLE_NODE(FlowCallExpr)
 #undef HANDLE_NODE
 };
 

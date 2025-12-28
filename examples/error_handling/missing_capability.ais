@@ -1,0 +1,12 @@
+// INVALID: Missing capability example
+// This should produce a compile-time error because we're invoking
+// a tool that isn't registered in the agent's capabilities.
+
+agent MissingCapabilityDemo {
+    // Note: No capabilities are registered
+
+    flow main {
+        // ERROR: 'unregistered_tool' is not in the capability registry
+        inv unregistered_tool("some_arg") -> result
+    }
+}

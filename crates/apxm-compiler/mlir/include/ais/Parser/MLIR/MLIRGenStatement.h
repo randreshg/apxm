@@ -34,6 +34,7 @@ private:
   static mlir::LogicalResult generateParallelStmt(MLIRGen &gen, ParallelStmt *stmt);
   static mlir::LogicalResult generateLoopStmt(MLIRGen &gen, LoopStmt *stmt);
   static mlir::LogicalResult generateTryCatchStmt(MLIRGen &gen, TryCatchStmt *stmt);
+  static mlir::LogicalResult generateSwitchStmt(MLIRGen &gen, SwitchStmt *stmt);
 };
 
 } // namespace apxm::parser

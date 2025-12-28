@@ -27,6 +27,7 @@ mlir::LogicalResult MLIRGenStatements::generateStatement(MLIRGen &gen, Stmt *stm
       .Case<ParallelStmt>([&](auto *s) { return generateParallelStmt(gen, s); })
       .Case<LoopStmt>([&](auto *s) { return generateLoopStmt(gen, s); })
       .Case<TryCatchStmt>([&](auto *s) { return generateTryCatchStmt(gen, s); })
+      .Case<SwitchStmt>([&](auto *s) { return generateSwitchStmt(gen, s); })
       .Case<ExprStmt>([&](auto *s) {
         gen.generateExpression(s->getExpr());
         return mlir::success();
@@ -216,4 +217,79 @@ mlir::Value MLIRGenStatements::coerceToBool(MLIRGen &gen, mlir::Value value, mli
 
   // Non-numeric values are always truthy
   return gen.builder.create<arith::ConstantOp>(loc, gen.builder.getBoolAttr(true));
+}
+
+mlir::LogicalResult MLIRGenStatements::generateSwitchStmt(MLIRGen &gen, SwitchStmt *stmt) {
+  mlir::Location loc = gen.getLocation(stmt->getLocation());
+
+  // Generate discriminant expression
+  auto discriminant = gen.generateExpression(stmt->getDiscriminant());
+  if (!discriminant) return mlir::failure();
+
+  auto i64Type = gen.builder.getI64Type();
+  auto tokenType = mlir::ais::TokenType::get(&gen.context, i64Type);
+
+  // Collect case labels and destinations
+  llvm::SmallVector<mlir::Attribute, 4> caseLabels;
+  llvm::SmallVector<mlir::Attribute, 4> caseDestinations;
+
+  // Generate a unique base label for this switch
+  llvm::SmallString<64> switchId;
+  switchId.append("switch_");
+  switchId.append(std::to_string(reinterpret_cast<uintptr_t>(stmt)));
+
+  for (size_t i = 0; i < stmt->getCases().size(); ++i) {
+    const auto &caseItem = stmt->getCases()[i];
+    caseLabels.push_back(gen.builder.getStringAttr(caseItem.label));
+
+    llvm::SmallString<64> caseLabel;
+    caseLabel.append(switchId);
+    caseLabel.append("_case_");
+    caseLabel.append(std::to_string(i));
+    caseDestinations.push_back(gen.builder.getStringAttr(caseLabel));
+  }
+
+  // Default destination
+  llvm::SmallString<64> defaultLabel;
+  defaultLabel.append(switchId);
+  defaultLabel.append("_default");
+
+  // Create the switch operation
+  auto switchOp = gen.builder.create<mlir::ais::SwitchOp>(
+      loc, tokenType, discriminant,
+      gen.builder.getArrayAttr(caseLabels),
+      gen.builder.getArrayAttr(caseDestinations),
+      stmt->getDefaultBody().empty() ? mlir::StringAttr() : gen.builder.getStringAttr(defaultLabel));
+
+  // Store the result for use in case bodies
+  mlir::Value switchResult = switchOp.getResult();
+
+  // Generate case bodies (each case gets its own scoped block)
+  for (size_t i = 0; i < stmt->getCases().size(); ++i) {
+    const auto &caseItem = stmt->getCases()[i];
+    llvm::ScopedHashTableScope<llvm::StringRef, mlir::Value> scope(gen.symbolTable);
+
+    // Store discriminant value for case body to access
+    gen.symbolTable.insert("__switch_value__", switchResult);
+
+    for (const auto &caseStmt : caseItem.body) {
+      if (failed(generateStatement(gen, caseStmt.get()))) {
+        return mlir::failure();
+      }
+    }
+  }
+
+  // Generate default body if present
+  if (!stmt->getDefaultBody().empty()) {
+    llvm::ScopedHashTableScope<llvm::StringRef, mlir::Value> scope(gen.symbolTable);
+    gen.symbolTable.insert("__switch_value__", switchResult);
+
+    for (const auto &defaultStmt : stmt->getDefaultBody()) {
+      if (failed(generateStatement(gen, defaultStmt.get()))) {
+        return mlir::failure();
+      }
+    }
+  }
+
+  return mlir::success();
 }

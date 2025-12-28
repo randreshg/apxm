@@ -34,7 +34,7 @@ protected:
 public:
   static bool classof(const ASTNode *node) {
     const Kind kind = node->getKind();
-    return kind >= Kind::LetStmt && kind <= Kind::TryCatchStmt;
+    return kind >= Kind::LetStmt && kind <= Kind::SwitchStmt;
   }
 };
 
@@ -215,6 +215,71 @@ public:
 
   static bool classof(const ASTNode *node) {
     return node->getKind() == Kind::TryCatchStmt;
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// Switch Statement
+//===----------------------------------------------------------------------===//
+
+/// Represents a single case in a switch statement
+struct SwitchCase {
+  std::string label;
+  llvm::SmallVector<std::unique_ptr<Stmt>, 4> body;
+
+  SwitchCase(llvm::StringRef label, llvm::MutableArrayRef<std::unique_ptr<Stmt>> body)
+      : label(label.str()) {
+    this->body.reserve(body.size());
+    for (auto &&stmt : body) {
+      this->body.push_back(std::move(stmt));
+    }
+  }
+
+  // Move constructor and assignment
+  SwitchCase(SwitchCase &&other) = default;
+  SwitchCase &operator=(SwitchCase &&other) = default;
+
+  // Delete copy operations
+  SwitchCase(const SwitchCase &) = delete;
+  SwitchCase &operator=(const SwitchCase &) = delete;
+};
+
+class SwitchStmt final : public Stmt {
+  std::unique_ptr<Expr> discriminant;
+  llvm::SmallVector<SwitchCase, 4> cases;
+  llvm::SmallVector<std::unique_ptr<Stmt>, 4> defaultBody;
+
+public:
+  SwitchStmt(Location loc, std::unique_ptr<Expr> discriminant,
+             llvm::MutableArrayRef<SwitchCase> cases,
+             llvm::MutableArrayRef<std::unique_ptr<Stmt>> defaultBody)
+      : Stmt(Kind::SwitchStmt, loc), discriminant(std::move(discriminant)) {
+    assert(this->discriminant && "Discriminant cannot be null");
+
+    this->cases.reserve(cases.size());
+    for (auto &&c : cases) {
+      this->cases.push_back(std::move(c));
+    }
+
+    this->defaultBody.reserve(defaultBody.size());
+    for (auto &&stmt : defaultBody) {
+      this->defaultBody.push_back(std::move(stmt));
+    }
+  }
+
+  const Expr *getDiscriminant() const noexcept { return discriminant.get(); }
+  Expr *getDiscriminant() noexcept { return discriminant.get(); }
+
+  llvm::ArrayRef<SwitchCase> getCases() const noexcept {
+    return {cases.data(), cases.size()};
+  }
+
+  llvm::ArrayRef<std::unique_ptr<Stmt>> getDefaultBody() const noexcept {
+    return {defaultBody.data(), defaultBody.size()};
+  }
+
+  static bool classof(const ASTNode *node) {
+    return node->getKind() == Kind::SwitchStmt;
   }
 };
 

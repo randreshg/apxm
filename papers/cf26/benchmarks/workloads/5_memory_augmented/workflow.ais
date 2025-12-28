@@ -1,0 +1,22 @@
+// Memory Augmented Workflow
+// Demonstrates A-PXM's memory operations: qmem (query) and umem (update).
+// Memory tiers: stm (short-term), ltm (long-term), episodic (audit trail).
+
+agent MemoryAgent {
+    flow main(query: str) {
+        // 1. Query long-term memory for cached knowledge
+        qmem ltm "domain_knowledge" -> cached
+
+        // 2. Update short-term memory with working state
+        umem stm "current_query" <- query
+
+        // 3. Reason with context from memory
+        rsn "Given knowledge: " + cached + ", answer: " + query -> answer
+
+        // 4. Update episodic memory for audit trail
+        umem episodic "query_answered" <- answer
+
+        // 5. Persist new knowledge to long-term memory
+        umem ltm "last_answer" <- answer
+    }
+}

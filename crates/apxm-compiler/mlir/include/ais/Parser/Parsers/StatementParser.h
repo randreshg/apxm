@@ -46,6 +46,7 @@ private:
   [[nodiscard]] std::unique_ptr<Stmt> parseParallelStmt();
   [[nodiscard]] std::unique_ptr<Stmt> parseLoopStmt();
   [[nodiscard]] std::unique_ptr<Stmt> parseTryCatchStmt();
+  [[nodiscard]] std::unique_ptr<Stmt> parseSwitchStmt();
 
   // Helper methods
   bool parseStatementBlock(llvm::SmallVectorImpl<std::unique_ptr<Stmt>> &storage);
