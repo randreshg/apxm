@@ -1,6 +1,6 @@
 //! Execution context - Holds runtime state and provides access to subsystems
 
-use crate::{aam::Aam, capability::CapabilitySystem, memory::MemorySystem};
+use crate::{aam::Aam, capability::CapabilitySystem, capability::flow_registry::FlowRegistry, memory::MemorySystem};
 use apxm_backends::LLMRegistry;
 use std::sync::Arc;
 
@@ -15,6 +15,7 @@ use super::inner_plan_linker::{InnerPlanLinker, NoOpLinker};
 /// - Capability system for tool invocation
 /// - Inner plan linker for compiling DSL during execution
 /// - DAG splicer for dynamic inner/outer plan unification
+/// - Flow registry for cross-agent flow calls
 /// - Execution metadata (ID, session, etc.)
 #[derive(Clone)]
 pub struct ExecutionContext {
@@ -34,6 +35,8 @@ pub struct ExecutionContext {
     pub inner_plan_linker: Arc<dyn InnerPlanLinker>,
     /// DAG splicer for dynamic inner/outer plan unification
     pub dag_splicer: Arc<dyn DagSplicer>,
+    /// Flow registry for cross-agent flow calls
+    pub flow_registry: Arc<FlowRegistry>,
     /// Start time of execution (for timing)
     pub start_time: std::time::Instant,
     /// Custom metadata
@@ -57,6 +60,7 @@ impl ExecutionContext {
             aam,
             inner_plan_linker: Arc::new(NoOpLinker),
             dag_splicer: Arc::new(NoOpSplicer),
+            flow_registry: Arc::new(FlowRegistry::new()),
             start_time: std::time::Instant::now(),
             metadata: std::collections::HashMap::new(),
         }
@@ -70,6 +74,7 @@ impl ExecutionContext {
         aam: Aam,
         inner_plan_linker: Arc<dyn InnerPlanLinker>,
         dag_splicer: Arc<dyn DagSplicer>,
+        flow_registry: Arc<FlowRegistry>,
     ) -> Self {
         Self {
             execution_id: uuid::Uuid::now_v7().to_string(),
@@ -80,6 +85,7 @@ impl ExecutionContext {
             aam,
             inner_plan_linker,
             dag_splicer,
+            flow_registry,
             start_time: std::time::Instant::now(),
             metadata: std::collections::HashMap::new(),
         }
@@ -124,6 +130,7 @@ impl ExecutionContext {
             aam: self.aam.clone(),
             inner_plan_linker: Arc::clone(&self.inner_plan_linker),
             dag_splicer: Arc::clone(&self.dag_splicer),
+            flow_registry: Arc::clone(&self.flow_registry),
             start_time: std::time::Instant::now(),
             metadata: self.metadata.clone(),
         }
@@ -131,6 +138,11 @@ impl ExecutionContext {
 
     pub fn aam(&self) -> &Aam {
         &self.aam
+    }
+
+    /// Get a reference to the flow registry
+    pub fn flow_registry(&self) -> &FlowRegistry {
+        &self.flow_registry
     }
 }
 

@@ -6,13 +6,10 @@
 //!
 //! Run: `cargo run --example basic_runtime -p apxm-runtime`
 
-use apxm_core::types::{
-    execution::NodeMetadata,
-    operations::AISOperationType,
-};
+use apxm_core::types::{execution::NodeMetadata, operations::AISOperationType};
 use apxm_runtime::{
-    aam::{Goal, GoalId, GoalStatus, TransitionLabel},
     ExecutionDag, Node, Runtime, RuntimeConfig, Value,
+    aam::{Goal, GoalId, GoalStatus, TransitionLabel},
 };
 use std::collections::HashMap;
 
@@ -50,9 +47,10 @@ async fn main() -> anyhow::Result<()> {
     let node = Node {
         id: 0,
         op_type: AISOperationType::ConstStr,
-        attributes: HashMap::from([
-            ("value".to_string(), Value::String("Hello, A-PXM!".to_string()))
-        ]),
+        attributes: HashMap::from([(
+            "value".to_string(),
+            Value::String("Hello, A-PXM!".to_string()),
+        )]),
         input_tokens: vec![],
         output_tokens: vec![1],
         metadata: NodeMetadata::default(),
@@ -71,7 +69,11 @@ async fn main() -> anyhow::Result<()> {
     println!("Execution result: {:?}", result);
 
     // Mark goal complete
-    aam.update_goal_status(goal_id, GoalStatus::Completed, TransitionLabel::custom("done"));
+    aam.update_goal_status(
+        goal_id,
+        GoalStatus::Completed,
+        TransitionLabel::custom("done"),
+    );
 
     Ok(())
 }

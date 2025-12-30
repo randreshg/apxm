@@ -132,7 +132,8 @@ std::unique_ptr<AgentDecl> DeclarationParser::parseAgent() {
       if (auto decl = parseCapabilityDecl()) {
         capabilityDecls.push_back(std::move(decl));
       }
-    } else if (peek(TokenKind::kw_flow)) {
+    } else if (peek(TokenKind::kw_flow) || peek(TokenKind::at_sign)) {
+      // Handle both `flow name { }` and `@entry flow name { }`
       if (auto decl = parseFlowDecl()) {
         flowDecls.push_back(std::move(decl));
       }
@@ -161,6 +162,18 @@ std::unique_ptr<AgentDecl> DeclarationParser::parseAgent() {
   deduplicateAndValidate(beliefDecls);
   deduplicateAndValidate(goalDecls);
   deduplicateAndValidate(onEventDecls);
+
+  // Validate exactly one @entry flow per agent
+  int entryCount = 0;
+  for (const auto &flow : flowDecls) {
+    if (flow->isEntryFlow()) {
+      entryCount++;
+      if (entryCount > 1) {
+        emitError(flow->getLocation(),
+                  "Multiple @entry flows declared. Only one allowed per agent.");
+      }
+    }
+  }
 
   return std::make_unique<AgentDecl>(nameLoc, agentName, memoryDecls, capabilityDecls,
                                     flowDecls, beliefDecls, goalDecls, onEventDecls);
@@ -225,6 +238,17 @@ std::unique_ptr<CapabilityDecl> DeclarationParser::parseCapabilityDecl() {
 
 std::unique_ptr<FlowDecl> DeclarationParser::parseFlowDecl() {
   Location loc = getCurrentLocation();
+
+  // Check for @entry annotation
+  bool isEntry = false;
+  if (consume(TokenKind::at_sign)) {
+    if (!expect(TokenKind::kw_entry)) {
+      emitError(getCurrentLocation(), "Expected 'entry' after '@'");
+      return nullptr;
+    }
+    isEntry = true;
+  }
+
   if (!expect(TokenKind::kw_flow)) return nullptr;
   Token nameTok = peek();
   if (!expect(TokenKind::identifier)) return nullptr;
@@ -264,7 +288,7 @@ std::unique_ptr<FlowDecl> DeclarationParser::parseFlowDecl() {
   }
 
   auto paramRefs = makeStringRefPairs(params);
-  return std::make_unique<FlowDecl>(loc, name, paramRefs, returnType, body);
+  return std::make_unique<FlowDecl>(loc, name, paramRefs, returnType, isEntry, body);
 }
 
 std::unique_ptr<BeliefDecl> DeclarationParser::parseBeliefDecl() {

@@ -4,8 +4,8 @@
 //! Ideal for temporary results, intermediate values, and caching.
 
 use super::config::StmConfig;
-use apxm_core::{error::RuntimeError, types::values::Value};
 use apxm_backends::{InMemoryBackend, SearchResult, StorageBackend};
+use apxm_core::{error::RuntimeError, types::values::Value};
 
 type Result<T> = std::result::Result<T, RuntimeError>;
 

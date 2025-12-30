@@ -1,0 +1,9 @@
+// Real-LLM Probe: Measures actual LLM latency and scheduler overhead
+// A minimal workflow that makes a single LLM call
+
+agent LLMProbe {
+    @entry flow main() -> str {
+        rsn "What is 2+2? Answer with just the number." -> answer
+        return answer
+    }
+}

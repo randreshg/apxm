@@ -1,16 +1,16 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
 #[cfg(feature = "driver")]
 use anyhow::Context;
-use std::env;
-use colored::Colorize;
+use anyhow::Result;
 use apxm_core::utils::build::MlirEnvReport;
 #[cfg(feature = "driver")]
 use apxm_driver::compiler::Compiler;
 #[cfg(feature = "driver")]
 use apxm_driver::{ApXmConfig, ConfigError, Linker, LinkerConfig};
 use clap::{Parser, Subcommand};
+use colored::Colorize;
+use std::env;
 
 #[derive(Parser)]
 #[command(name = "apxm")]
@@ -36,6 +36,12 @@ enum Commands {
         /// Output artifact path
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Emit diagnostics JSON file with compilation statistics
+        #[arg(long)]
+        emit_diagnostics: Option<PathBuf>,
+        /// Optimization level (0 = no optimizations, 1-3 = increasing optimization)
+        #[arg(short = 'O', long = "opt-level", default_value = "1")]
+        opt_level: u8,
     },
     /// Compile + run DSL/MLIR through the runtime
     Run {
@@ -48,6 +54,9 @@ enum Commands {
         /// -O0 disables FuseReasoning, -O1+ enables it
         #[arg(short = 'O', long = "opt-level", default_value = "1")]
         opt_level: u8,
+        /// Emit metrics JSON file with runtime execution statistics
+        #[arg(long)]
+        emit_metrics: Option<PathBuf>,
     },
     /// Diagnose compiler/runtime dependencies
     Doctor,
@@ -77,8 +86,19 @@ async fn run_cli() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Compile { input, mlir, output } => compile_command(input, mlir, output),
-        Commands::Run { input, mlir, opt_level } => run_command(input, mlir, opt_level, cli.config).await,
+        Commands::Compile {
+            input,
+            mlir,
+            output,
+            emit_diagnostics,
+            opt_level,
+        } => compile_command(input, mlir, output, emit_diagnostics, opt_level),
+        Commands::Run {
+            input,
+            mlir,
+            opt_level,
+            emit_metrics,
+        } => run_command(input, mlir, opt_level, cli.config, emit_metrics).await,
         Commands::Doctor => doctor_command(cli.config),
         Commands::Activate { shell } => activate_command(&shell),
         Commands::Install => install_command(),
@@ -105,15 +125,27 @@ fn activate_command(shell: &str) -> Result<()> {
 
     match shell {
         "sh" | "bash" | "zsh" => {
-            println!("export MLIR_DIR={}", prefix.join("lib/cmake/mlir").display());
-            println!("export LLVM_DIR={}", prefix.join("lib/cmake/llvm").display());
+            println!(
+                "export MLIR_DIR={}",
+                prefix.join("lib/cmake/mlir").display()
+            );
+            println!(
+                "export LLVM_DIR={}",
+                prefix.join("lib/cmake/llvm").display()
+            );
             println!("export MLIR_PREFIX={}", prefix.display());
             println!("export LLVM_PREFIX={}", prefix.display());
             println!("export PATH={}/bin:$PATH", prefix.display());
         }
         "fish" => {
-            println!("set -gx MLIR_DIR {}", prefix.join("lib/cmake/mlir").display());
-            println!("set -gx LLVM_DIR {}", prefix.join("lib/cmake/llvm").display());
+            println!(
+                "set -gx MLIR_DIR {}",
+                prefix.join("lib/cmake/mlir").display()
+            );
+            println!(
+                "set -gx LLVM_DIR {}",
+                prefix.join("lib/cmake/llvm").display()
+            );
             println!("set -gx MLIR_PREFIX {}", prefix.display());
             println!("set -gx LLVM_PREFIX {}", prefix.display());
             println!("set -gx PATH {}/bin $PATH", prefix.display());
@@ -180,26 +212,101 @@ fn command_available(cmd: &str) -> bool {
 }
 
 #[cfg(feature = "driver")]
-fn compile_command(input: PathBuf, mlir: bool, output: Option<PathBuf>) -> Result<()> {
-    let compiler = Compiler::new().context("Failed to initialize compiler")?;
-    let module = compiler
-        .compile(&input, mlir)
-        .with_context(|| format!("Failed to compile {}", input.display()))?;
+fn compile_command(
+    input: PathBuf,
+    mlir: bool,
+    output: Option<PathBuf>,
+    emit_diagnostics: Option<PathBuf>,
+    opt_level: u8,
+) -> Result<()> {
+    use apxm_core::types::OptimizationLevel;
+
+    let opt = match opt_level {
+        0 => OptimizationLevel::O0,
+        1 => OptimizationLevel::O1,
+        2 => OptimizationLevel::O2,
+        _ => OptimizationLevel::O3,
+    };
+
+    // Read source for error display
+    let source = std::fs::read_to_string(&input)
+        .with_context(|| format!("Failed to read {}", input.display()))?;
+
+    let compile_start = std::time::Instant::now();
+    let compiler = Compiler::with_opt_level(opt).context("Failed to initialize compiler")?;
+    let module = match compiler.compile(&input, mlir) {
+        Ok(m) => m,
+        Err(err) => {
+            // Pretty-print compilation errors with source context
+            eprintln!("{}", format_driver_error(&err, &source));
+            return Err(anyhow::anyhow!("Compilation failed"));
+        }
+    };
+    let compile_time = compile_start.elapsed();
+
+    let artifact_start = std::time::Instant::now();
     let bytes = module
         .generate_artifact_bytes()
         .context("Failed to generate artifact")?;
+    let artifact_time = artifact_start.elapsed();
 
     let out_path = output.unwrap_or_else(|| input.with_extension("apxmobj"));
-    std::fs::write(&out_path, bytes)
+    std::fs::write(&out_path, &bytes)
         .with_context(|| format!("Failed to write {}", out_path.display()))?;
 
+    // Emit diagnostics if requested
+    if let Some(diag_path) = emit_diagnostics {
+        let artifact = apxm_artifact::Artifact::from_bytes(&bytes)
+            .map_err(|e| anyhow::anyhow!("Failed to parse artifact: {}", e))?;
+        let dag = artifact.dag();
+
+        let diagnostics = serde_json::json!({
+            "input": input.display().to_string(),
+            "optimization_level": format!("O{}", opt_level),
+            "compilation_phases": {
+                "total_ms": compile_time.as_secs_f64() * 1000.0,
+                "artifact_gen_ms": artifact_time.as_secs_f64() * 1000.0
+            },
+            "dag_statistics": {
+                "total_nodes": dag.nodes.len(),
+                "entry_nodes": dag.entry_nodes.len(),
+                "exit_nodes": dag.exit_nodes.len(),
+                "total_edges": dag.edges.len()
+            },
+            "passes_applied": match opt_level {
+                0 => vec!["lower-to-async"],
+                _ => vec!["normalize", "scheduling", "fuse-reasoning", "canonicalizer", "cse", "symbol-dce", "lower-to-async"]
+            }
+        });
+
+        std::fs::write(&diag_path, serde_json::to_string_pretty(&diagnostics)?)
+            .with_context(|| format!("Failed to write diagnostics to {}", diag_path.display()))?;
+
+        println!("Wrote diagnostics to {}", diag_path.display());
+    }
+
     println!("Wrote artifact to {}", out_path.display());
+    println!(
+        "Compiled in {:.2}ms, artifact generated in {:.2}ms",
+        compile_time.as_secs_f64() * 1000.0,
+        artifact_time.as_secs_f64() * 1000.0
+    );
     Ok(())
 }
 
 #[cfg(feature = "driver")]
-async fn run_command(input: PathBuf, mlir: bool, opt_level: u8, config: Option<PathBuf>) -> Result<()> {
+async fn run_command(
+    input: PathBuf,
+    mlir: bool,
+    opt_level: u8,
+    config: Option<PathBuf>,
+    emit_metrics: Option<PathBuf>,
+) -> Result<()> {
     use apxm_core::types::OptimizationLevel;
+
+    // Read source for error display
+    let source = std::fs::read_to_string(&input)
+        .with_context(|| format!("Failed to read {}", input.display()))?;
 
     let apxm_config = load_config(config).context("Failed to load configuration")?;
     let opt = match opt_level {
@@ -213,10 +320,14 @@ async fn run_command(input: PathBuf, mlir: bool, opt_level: u8, config: Option<P
         .await
         .context("Failed to initialize runtime")?;
 
-    let result = linker
-        .run(&input, mlir)
-        .await
-        .with_context(|| format!("Failed to run {}", input.display()))?;
+    let result = match linker.run(&input, mlir).await {
+        Ok(r) => r,
+        Err(err) => {
+            // Pretty-print compilation/runtime errors with source context
+            eprintln!("{}", format_driver_error(&err, &source));
+            return Err(anyhow::anyhow!("Execution failed"));
+        }
+    };
 
     println!(
         "Executed {} nodes in {} ms",
@@ -230,15 +341,65 @@ async fn run_command(input: PathBuf, mlir: bool, opt_level: u8, config: Option<P
 
     #[cfg(feature = "metrics")]
     {
-        let metrics = &result.execution.llm_metrics;
+        let llm_metrics = &result.execution.llm_metrics;
         println!(
             "LLM usage: {} input, {} output ({} total)",
-            metrics.total_input_tokens,
-            metrics.total_output_tokens,
-            metrics.total_input_tokens + metrics.total_output_tokens
+            llm_metrics.total_input_tokens,
+            llm_metrics.total_output_tokens,
+            llm_metrics.total_input_tokens + llm_metrics.total_output_tokens
         );
-        println!("LLM requests: {}", metrics.total_requests);
-        println!("LLM avg latency: {:?}", metrics.average_latency);
+        println!("LLM requests: {}", llm_metrics.total_requests);
+        println!("LLM avg latency: {:?}", llm_metrics.average_latency);
+    }
+
+    // Print scheduler metrics
+    let scheduler_metrics = &result.execution.scheduler_metrics;
+    println!(
+        "Scheduler overhead: {:.2}μs/op (max parallelism: {}, avg: {:.2})",
+        scheduler_metrics.per_op_overhead_us,
+        scheduler_metrics.max_parallelism,
+        scheduler_metrics.avg_parallelism
+    );
+
+    // Emit metrics JSON if requested
+    if let Some(metrics_path) = emit_metrics {
+        let mut metrics_json = serde_json::json!({
+            "input": input.display().to_string(),
+            "optimization_level": format!("O{}", opt_level),
+            "execution": {
+                "nodes_executed": result.execution.stats.executed_nodes,
+                "nodes_failed": result.execution.stats.failed_nodes,
+                "duration_ms": result.execution.stats.duration_ms,
+                "status": if result.execution.stats.failed_nodes == 0 { "success" } else { "partial_failure" }
+            },
+            "scheduler": result.execution.scheduler_metrics.to_json()
+        });
+
+        #[cfg(feature = "metrics")]
+        {
+            let llm_metrics = &result.execution.llm_metrics;
+            metrics_json["llm"] = serde_json::json!({
+                "total_requests": llm_metrics.total_requests,
+                "total_input_tokens": llm_metrics.total_input_tokens,
+                "total_output_tokens": llm_metrics.total_output_tokens,
+                "avg_latency_ms": llm_metrics.average_latency.as_millis(),
+                "p50_latency_ms": llm_metrics.p50_latency.as_millis(),
+                "p99_latency_ms": llm_metrics.p99_latency.as_millis()
+            });
+
+            let link_metrics = &result.metrics;
+            metrics_json["link_phases"] = serde_json::json!({
+                "compile_ms": link_metrics.compile_time.as_secs_f64() * 1000.0,
+                "artifact_ms": link_metrics.artifact_time.as_secs_f64() * 1000.0,
+                "validation_ms": link_metrics.validation_time.as_secs_f64() * 1000.0,
+                "runtime_ms": link_metrics.runtime_time.as_secs_f64() * 1000.0
+            });
+        }
+
+        std::fs::write(&metrics_path, serde_json::to_string_pretty(&metrics_json)?)
+            .with_context(|| format!("Failed to write metrics to {}", metrics_path.display()))?;
+
+        println!("Wrote metrics to {}", metrics_path.display());
     }
 
     Ok(())
@@ -270,9 +431,7 @@ fn doctor_command(config: Option<PathBuf>) -> Result<()> {
 fn print_minimal_mlir_status() {
     let conda_prefix = env::var("CONDA_PREFIX").ok().map(PathBuf::from);
     let conda_bin = conda_prefix.as_ref().map(|p| p.join("bin"));
-    let mlir_tblgen = conda_bin
-        .as_ref()
-        .map(|p| p.join("mlir-tblgen"));
+    let mlir_tblgen = conda_bin.as_ref().map(|p| p.join("mlir-tblgen"));
     let mlir_cmake = conda_prefix.as_ref().map(|p| p.join("lib/cmake/mlir"));
     let llvm_cmake = conda_prefix.as_ref().map(|p| p.join("lib/cmake/llvm"));
 
@@ -293,17 +452,29 @@ fn print_minimal_mlir_status() {
 
     print_status_line(
         "mlir-tblgen",
-        if has_tblgen { Status::Ok } else { Status::Error },
+        if has_tblgen {
+            Status::Ok
+        } else {
+            Status::Error
+        },
         if has_tblgen { "found" } else { "missing" },
     );
     print_status_line(
         "cmake/mlir",
-        if has_mlir_cmake { Status::Ok } else { Status::Error },
+        if has_mlir_cmake {
+            Status::Ok
+        } else {
+            Status::Error
+        },
         if has_mlir_cmake { "found" } else { "missing" },
     );
     print_status_line(
         "cmake/llvm",
-        if has_llvm_cmake { Status::Ok } else { Status::Error },
+        if has_llvm_cmake {
+            Status::Ok
+        } else {
+            Status::Error
+        },
         if has_llvm_cmake { "found" } else { "missing" },
     );
 
@@ -348,12 +519,7 @@ fn print_status_line(label: &str, status: Status, value: &str) {
         Status::Ok => "OK".green().bold(),
         Status::Error => "MISSING".red().bold(),
     };
-    println!(
-        "{:<14} [{}] {}",
-        label.bold(),
-        status_str,
-        value
-    );
+    println!("{:<14} [{}] {}", label.bold(), status_str, value);
 }
 
 #[cfg(feature = "driver")]
@@ -371,5 +537,19 @@ fn load_config(config: Option<PathBuf>) -> Result<ApXmConfig> {
         }
         Err(ConfigError::HomeDirMissing) => Ok(ApXmConfig::default()),
         Err(err) => Err(anyhow::anyhow!(err)),
+    }
+}
+
+/// Format a driver error with pretty-printed source context.
+///
+/// This extracts the underlying compiler error and uses `pretty_print()` to
+/// display rustc-style error messages with line numbers and source snippets.
+#[cfg(feature = "driver")]
+fn format_driver_error(err: &apxm_driver::DriverError, source: &str) -> String {
+    use apxm_driver::DriverError;
+
+    match err {
+        DriverError::Compiler(compiler_err) => compiler_err.pretty_print(Some(source)),
+        other => format!("{other}"),
     }
 }

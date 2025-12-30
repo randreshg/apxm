@@ -5,6 +5,7 @@ Demonstrates explicit parallelism with Send API.
 Compare with workflow.ais which achieves the same with automatic dataflow parallelism.
 """
 
+import os
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.constants import Send
@@ -17,7 +18,11 @@ except ImportError:
     HAS_OLLAMA = False
 
 # Ollama model configuration
-OLLAMA_MODEL = "phi3:mini"
+OLLAMA_MODEL = (
+    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
+    or os.environ.get("OLLAMA_MODEL")
+    or "phi3:mini"
+)
 
 
 class ResearchState(TypedDict):

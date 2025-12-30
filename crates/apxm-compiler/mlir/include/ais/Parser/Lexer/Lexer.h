@@ -87,6 +87,10 @@ enum class TokenKind {
   kw_token,
   kw_void,
 
+  // Annotations
+  at_sign,      // @
+  kw_entry,     // entry (annotation keyword)
+
   // Punctuation
   arrow,        // ->
   bang,         // !

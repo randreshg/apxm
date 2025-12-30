@@ -86,3 +86,47 @@ impl Default for TokenState {
         Self::new()
     }
 }
+
+/// Promise state for tracking flow call results.
+///
+/// When a flow call operation executes, it creates a promise token that
+/// will be resolved when the sub-flow completes.
+#[derive(Debug, Clone)]
+pub struct PromiseState {
+    /// Target agent name.
+    pub target_agent: String,
+    /// Target flow name.
+    pub target_flow: String,
+    /// Time when the promise was created.
+    pub created_at: Instant,
+    /// Whether the promise has been resolved.
+    pub resolved: bool,
+    /// The resolved value (if resolved).
+    pub value: Option<Value>,
+}
+
+impl PromiseState {
+    /// Create a new unresolved promise.
+    pub fn new(target_agent: String, target_flow: String) -> Self {
+        Self {
+            target_agent,
+            target_flow,
+            created_at: Instant::now(),
+            resolved: false,
+            value: None,
+        }
+    }
+}
+
+/// Execution frame for tracking recursive flow calls.
+///
+/// Each sub-flow execution pushes a frame onto the stack.
+#[derive(Debug, Clone)]
+pub struct ExecutionFrame {
+    /// Unique execution ID for this frame.
+    pub execution_id: String,
+    /// The flow being executed.
+    pub flow_name: String,
+    /// The promise token that will be resolved when this flow completes.
+    pub parent_promise: Option<apxm_core::types::TokenId>,
+}

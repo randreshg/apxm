@@ -14,10 +14,11 @@ This benchmark runs the ACTUAL AIS workflow through the full A-PXM pipeline:
 
 import argparse
 import json
+import os
 import statistics
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Add parent directory to import apxm_runner
@@ -25,13 +26,23 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from apxm_runner import APXMConfig, run_benchmark, compare_optimization_levels
 
 # Configuration
-WARMUP_ITERATIONS = 1
-BENCHMARK_ITERATIONS = 3
+def _get_int_env(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+WARMUP_ITERATIONS = _get_int_env("APXM_BENCH_WARMUP", 3)
+BENCHMARK_ITERATIONS = _get_int_env("APXM_BENCH_ITERATIONS", 10)
 TOPIC = "quantum computing"
 WORKFLOW_FILE = Path(__file__).parent / "workflow.ais"
 
 
-def run_langgraph(iterations: int = BENCHMARK_ITERATIONS) -> dict:
+def run_langgraph(iterations: int = BENCHMARK_ITERATIONS, warmup: int = WARMUP_ITERATIONS) -> dict:
     """Run LangGraph workflow and collect timing."""
     from workflow import graph, HAS_OLLAMA
 
@@ -46,7 +57,7 @@ def run_langgraph(iterations: int = BENCHMARK_ITERATIONS) -> dict:
     }
 
     # Warmup
-    for _ in range(WARMUP_ITERATIONS):
+    for _ in range(warmup):
         graph.invoke(initial_state)
 
     # Benchmark
@@ -67,10 +78,10 @@ def run_langgraph(iterations: int = BENCHMARK_ITERATIONS) -> dict:
     }
 
 
-def run_apxm(iterations: int = BENCHMARK_ITERATIONS) -> dict:
+def run_apxm(iterations: int = BENCHMARK_ITERATIONS, warmup: int = WARMUP_ITERATIONS) -> dict:
     """Run A-PXM workflow through the REAL pipeline."""
     config = APXMConfig(opt_level=1)
-    return run_benchmark(WORKFLOW_FILE, config, iterations, warmup=WARMUP_ITERATIONS)
+    return run_benchmark(WORKFLOW_FILE, config, iterations, warmup=warmup)
 
 
 def run_apxm_comparison(iterations: int = BENCHMARK_ITERATIONS) -> dict:
@@ -82,31 +93,32 @@ def main():
     parser = argparse.ArgumentParser(description="Parallel Research Benchmark")
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--iterations", type=int, default=BENCHMARK_ITERATIONS)
+    parser.add_argument("--warmup", type=int, default=WARMUP_ITERATIONS)
     parser.add_argument("--langgraph-only", action="store_true")
     args = parser.parse_args()
 
     results = {
         "meta": {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "benchmark": "parallel_research",
             "topic": TOPIC,
         },
         "config": {
             "iterations": args.iterations,
-            "warmup": WARMUP_ITERATIONS,
+            "warmup": args.warmup,
         },
         "results": {},
     }
 
     # Run LangGraph benchmark
     try:
-        results["results"]["langgraph"] = run_langgraph(args.iterations)
+        results["results"]["langgraph"] = run_langgraph(args.iterations, warmup=args.warmup)
     except ImportError as e:
         results["results"]["langgraph"] = {"error": str(e)}
 
     # Run A-PXM benchmark (if not langgraph-only)
     if not args.langgraph_only:
-        results["results"]["apxm"] = run_apxm(args.iterations)
+        results["results"]["apxm"] = run_apxm(args.iterations, warmup=args.warmup)
 
     if args.json:
         print(json.dumps(results, indent=2))

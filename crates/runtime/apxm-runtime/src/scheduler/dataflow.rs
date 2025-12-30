@@ -8,7 +8,7 @@ use tokio::task::JoinHandle;
 
 use crate::executor::ExecutionContext;
 use crate::executor::ExecutorEngine;
-use crate::observability::MetricsCollector;
+use crate::observability::{MetricsCollector, SchedulerMetrics};
 use crate::scheduler::config::SchedulerConfig;
 use crate::scheduler::state::SchedulerState;
 use crate::scheduler::worker;
@@ -38,13 +38,13 @@ impl DataflowScheduler {
 
     /// Execute a DAG to completion.
     ///
-    /// Returns the exit values and execution statistics.
+    /// Returns the exit values, execution statistics, and scheduler metrics.
     pub async fn execute(
         &self,
         dag: ExecutionDag,
         executor: Arc<ExecutorEngine>,
         mut ctx: ExecutionContext,
-    ) -> RuntimeResult<(std::collections::HashMap<u64, Value>, ExecutionStats)> {
+    ) -> RuntimeResult<(std::collections::HashMap<u64, Value>, ExecutionStats, SchedulerMetrics)> {
         let start = Instant::now();
 
         // Validate DAG cost budget early
@@ -85,7 +85,10 @@ impl DataflowScheduler {
         // Build statistics
         let stats = state.build_stats();
 
-        Ok((results, stats))
+        // Capture scheduler metrics snapshot
+        let scheduler_metrics = SchedulerMetrics::from_collector(&state.metrics);
+
+        Ok((results, stats, scheduler_metrics))
     }
 
     /// Enforce the cost budget for the DAG.

@@ -1,0 +1,42 @@
+{
+  "meta": {
+    "timestamp": "2025-12-29T18:48:26.656776Z",
+    "suite": "apxm_benchmarks",
+    "mode": "partial"
+  },
+  "config": {
+    "iterations": 3,
+    "warmup": 1,
+    "quick": true
+  },
+  "dependencies": {
+    "python": true,
+    "ollama": true,
+    "apxm": false,
+    "cargo": true,
+    "langgraph": false
+  },
+  "benchmark": {
+    "1_parallel_research": {
+      "meta": {
+        "timestamp": "2025-12-29T18:48:26.765042Z",
+        "benchmark": "parallel_research",
+        "topic": "quantum computing"
+      },
+      "config": {
+        "iterations": 3,
+        "warmup": 3
+      },
+      "results": {
+        "langgraph": {
+          "error": "No module named 'langgraph'"
+        },
+        "apxm": {
+          "success": false,
+          "error": "CLI returned non-zero: -6\ndyld[38051]: Library not loaded: @rpath/libapxm_compiler_c.dylib\n  Referenced from: <AF4015D1-4052-3AEC-96AF-71E12FE28619> /Users/randreshg/Documents/apxm/target/release/apxm\n  Reason: no LC_RPATH's found\n",
+          "samples": []
+        }
+      }
+    }
+  }
+}

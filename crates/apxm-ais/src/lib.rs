@@ -42,17 +42,17 @@ pub mod validation;
 // Re-export commonly used types
 pub use aam::{AAM, Beliefs, Capabilities, Goals};
 pub use memory::MemoryTier;
-pub use operations::{
-    find_operation_by_mnemonic, find_operation_by_name, get_all_operations, get_operation_metadata,
-    get_operation_spec, get_public_operations, AISOperationType, OperationCategory,
-    OperationEmit, OperationField, OperationMetadata, OperationSpec, AIS_OPERATIONS,
-    INTERNAL_OPERATIONS, METADATA_OPERATIONS, AGENT, BRANCH_ON_VALUE, COMMUNICATE, CONST_STR, ERR,
-    EXC, FENCE, INV, JUMP, LOOP_END, LOOP_START, MERGE, PLAN, QMEM, REFLECT, RETURN, RSN,
-    TRY_CATCH, UMEM, VERIFY, WAIT_ALL,
-};
 pub use operations::tablegen::generate_tablegen;
+pub use operations::{
+    AGENT, AIS_OPERATIONS, AISOperationType, BRANCH_ON_VALUE, COMMUNICATE, CONST_STR, ERR, EXC,
+    FENCE, INTERNAL_OPERATIONS, INV, JUMP, LOOP_END, LOOP_START, MERGE, METADATA_OPERATIONS,
+    OperationCategory, OperationEmit, OperationField, OperationMetadata, OperationSpec, PLAN, QMEM,
+    REFLECT, RETURN, RSN, TRY_CATCH, UMEM, VERIFY, WAIT_ALL, find_operation_by_mnemonic,
+    find_operation_by_name, get_all_operations, get_operation_metadata, get_operation_spec,
+    get_public_operations,
+};
 pub use types::Value;
 pub use validation::{
-    has_required_fields, missing_required_fields, validate_operation, validate_operation_strict,
-    ValidationError,
+    ValidationError, has_required_fields, missing_required_fields, validate_operation,
+    validate_operation_strict,
 };

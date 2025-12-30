@@ -12,6 +12,9 @@ pub struct WireDag {
     pub entry_nodes: Vec<u64>,
     pub exit_nodes: Vec<u64>,
     pub metadata_name: Option<String>,
+    /// Whether this DAG represents an @entry flow.
+    #[serde(default)]
+    pub is_entry: bool,
 }
 
 impl WireDag {
@@ -22,6 +25,7 @@ impl WireDag {
             entry_nodes: dag.entry_nodes.clone(),
             exit_nodes: dag.exit_nodes.clone(),
             metadata_name: dag.metadata.name.clone(),
+            is_entry: dag.metadata.is_entry,
         }
     }
 
@@ -48,6 +52,7 @@ impl WireDag {
             exit_nodes: self.exit_nodes,
             metadata: DagMetadata {
                 name: self.metadata_name,
+                is_entry: self.is_entry,
             },
         }
     }

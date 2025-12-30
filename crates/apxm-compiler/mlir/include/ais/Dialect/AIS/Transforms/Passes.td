@@ -81,6 +81,29 @@ def FuseReasoning : Pass<"fuse-reasoning", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// Analysis/Warning Passes
+//===----------------------------------------------------------------------===//
+
+def UnconsumedValueWarning : Pass<"unconsumed-value-warning", "mlir::ModuleOp"> {
+  let summary = "Warn about unconsumed operation results";
+  let description = [{
+    Scans all operations and emits warnings when operation results are not
+    consumed by any other operation. This helps developers identify:
+
+    - Forgotten variable bindings (e.g., `rsn "query" -> unused_result`)
+    - Missing return statements in flows
+    - Logic errors where data flows are incomplete
+
+    Operations with side effects (memory writes, invocations, communication)
+    are exempt as they have effects beyond their return value.
+
+    This pass is typically run after optimization passes but before artifact
+    emission, as a diagnostic aid rather than a transformation.
+  }];
+  let constructor = "mlir::ais::createUnconsumedValueWarningPass()";
+}
+
+//===----------------------------------------------------------------------===//
 // Conversion/Lowering Passes
 //===----------------------------------------------------------------------===//
 

@@ -7,7 +7,7 @@
 //! and types defined in the imported module to be used in the current module.
 
 use crate::api::Context;
-use crate::codegen::artifact::parse_wire_dag;
+use crate::codegen::artifact::parse_wire_dags;
 use crate::ffi;
 use apxm_artifact::{Artifact, ArtifactMetadata};
 use apxm_core::error::builder::ErrorBuilder;
@@ -184,9 +184,16 @@ impl Module {
 
     pub fn generate_artifact_bytes_with_name(&self, module_name: Option<&str>) -> Result<Vec<u8>> {
         let payload = self.emit_artifact_payload(module_name)?;
-        let dag = parse_wire_dag(&payload)?;
-        let metadata = ArtifactMetadata::new(dag.metadata.name.clone(), crate::VERSION);
-        Artifact::new(metadata, dag)
+        let dags = parse_wire_dags(&payload)?;
+
+        // Find entry DAG for metadata naming
+        let entry_dag = dags.iter().find(|d| d.metadata.is_entry);
+        let name = entry_dag
+            .and_then(|d| d.metadata.name.clone())
+            .or_else(|| dags.first().and_then(|d| d.metadata.name.clone()));
+
+        let metadata = ArtifactMetadata::new(name, crate::VERSION);
+        Artifact::new(metadata, dags)
             .to_bytes()
             .map_err(|err| invalid_input_error(err.to_string()))
     }

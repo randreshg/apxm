@@ -8,12 +8,13 @@
 
 use super::{
     ExecutionContext, Node, Result, Value, execute_llm_request, get_optional_string_attribute,
-    get_string_attribute, inner_plan::{InnerPlanOptions, execute_inner_plan},
+    get_string_attribute,
+    inner_plan::{InnerPlanOptions, execute_inner_plan},
 };
 use crate::aam::{Goal as AamGoal, GoalId, GoalStatus, TransitionLabel};
+use apxm_backends::LLMRequest;
 use apxm_core::InnerPlanDsl;
 use apxm_core::error::RuntimeError;
-use apxm_backends::LLMRequest;
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -122,7 +123,8 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
                 tracing::warn!(error = %e, "Failed to load rsn_system template, using fallback");
                 "You are a helpful AI assistant. When providing structured responses, \
                  use JSON format with fields: belief_updates (object), new_goals (array), \
-                 and result (any type).".to_string()
+                 and result (any type)."
+                    .to_string()
             });
         request = request.with_system_prompt(system_prompt);
     }

@@ -31,8 +31,8 @@ pub use models::{FinishReason, LLMResponse, ModelCapabilities, ModelInfo, TokenU
 
 // Re-export from operations (which re-exports from apxm-ais)
 pub use operations::metadata::{
-    find_operation_by_name, get_operation_spec, OperationField, OperationSpec, ValidationError,
-    AIS_OPERATIONS, INTERNAL_OPERATIONS,
+    AIS_OPERATIONS, INTERNAL_OPERATIONS, OperationField, OperationSpec, ValidationError,
+    find_operation_by_name, get_operation_spec,
 };
 pub use operations::{AISOperation, AISOperationType, OperationCategory, validate_operation};
 

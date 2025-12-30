@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use apxm_artifact::Artifact;
 use apxm_core::types::execution::ExecutionDag;
 use apxm_runtime::{Runtime, RuntimeExecutionResult};
 
@@ -38,6 +39,19 @@ impl RuntimeExecutor {
             .map_err(DriverError::Runtime)
     }
 
+    /// Execute an artifact with @entry flow requirement.
+    ///
+    /// This method will return an error if the artifact doesn't have an @entry flow.
+    pub async fn execute_artifact_auto(
+        &self,
+        artifact: Artifact,
+    ) -> Result<RuntimeExecutionResult, DriverError> {
+        self.runtime
+            .execute_artifact_auto(artifact)
+            .await
+            .map_err(DriverError::Runtime)
+    }
+
     /// Get the LLM registry from the runtime
     pub fn llm_registry(&self) -> Arc<apxm_backends::LLMRegistry> {
         self.runtime.llm_registry_arc()
@@ -48,9 +62,7 @@ impl RuntimeExecutor {
     /// Returns the names of all capabilities registered in the runtime.
     /// Useful for validation, UI display, and constraining LLM generation.
     pub fn capability_names(&self) -> Vec<String> {
-        self.runtime
-            .capability_system()
-            .list_capability_names()
+        self.runtime.capability_system().list_capability_names()
     }
 
     /// Get capability system reference (for advanced usage)

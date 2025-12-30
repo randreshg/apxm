@@ -1,0 +1,91 @@
+{
+  "meta": {
+    "timestamp": "2025-12-29T18:48:09.949806Z",
+    "suite": "apxm_benchmarks",
+    "mode": "partial"
+  },
+  "config": {
+    "iterations": 3,
+    "warmup": 1,
+    "quick": true
+  },
+  "dependencies": {
+    "python": true,
+    "ollama": true,
+    "apxm": false,
+    "cargo": true,
+    "langgraph": false
+  },
+  "benchmark": {
+    "compilation_scaling": {
+      "meta": {
+        "benchmark": "compilation_scaling",
+        "timestamp": "2025-12-29T18:48:10.085402Z",
+        "iterations": 3,
+        "opt_level": 1
+      },
+      "data": [
+        {
+          "num_ops": 10,
+          "iterations": 3,
+          "wall_time": {
+            "mean_ms": 64.8668473198389,
+            "std_ms": 67.75974179150977,
+            "min_ms": 24.914291978348047,
+            "max_ms": 143.10312498128042
+          },
+          "compile_phases": {
+            "parse_opt_mean_ms": 18.896472333333335,
+            "artifact_gen_mean_ms": 0.21405566666666667,
+            "total_mean_ms": 19.110528000000002
+          }
+        },
+        {
+          "num_ops": 25,
+          "iterations": 3,
+          "wall_time": {
+            "mean_ms": 25.913208664860576,
+            "std_ms": 0.384177951180618,
+            "min_ms": 25.46991698909551,
+            "max_ms": 26.149416982661933
+          },
+          "compile_phases": {
+            "parse_opt_mean_ms": 9.752972999999999,
+            "artifact_gen_mean_ms": 0.123819,
+            "total_mean_ms": 9.876792
+          }
+        },
+        {
+          "num_ops": 50,
+          "iterations": 3,
+          "wall_time": {
+            "mean_ms": 25.69993067299947,
+            "std_ms": 0.5522317174562457,
+            "min_ms": 25.158000004012138,
+            "max_ms": 26.261917024385184
+          },
+          "compile_phases": {
+            "parse_opt_mean_ms": 9.708889,
+            "artifact_gen_mean_ms": 0.19448633333333332,
+            "total_mean_ms": 9.903375333333333
+          }
+        },
+        {
+          "num_ops": 100,
+          "iterations": 3,
+          "wall_time": {
+            "mean_ms": 26.64508332964033,
+            "std_ms": 0.8625770805973236,
+            "min_ms": 25.826625002082437,
+            "max_ms": 27.545874996576458
+          },
+          "compile_phases": {
+            "parse_opt_mean_ms": 9.759902666666667,
+            "artifact_gen_mean_ms": 0.365889,
+            "total_mean_ms": 10.125791666666666
+          }
+        }
+      ]
+    }
+  }
+}

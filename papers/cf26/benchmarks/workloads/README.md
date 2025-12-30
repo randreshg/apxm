@@ -2,6 +2,35 @@
 
 DSL comparison benchmarks between A-PXM (AIS DSL) and LangGraph.
 
+## Quick Start
+
+```bash
+# Run a single benchmark by folder name
+python3 run_all.py --benchmark compilation_scaling
+python3 run_all.py --benchmark real_llm_probe
+python3 run_all.py --benchmark fusion_quality
+python3 run_all.py --benchmark token_estimation
+python3 run_all.py --benchmark 1_parallel_research
+
+# Quick mode (fewer iterations)
+python3 run_all.py --benchmark compilation_scaling --quick
+
+# JSON output only
+python3 run_all.py --benchmark compilation_scaling --json
+
+# Run all paper benchmarks
+python3 run_all.py --paper
+
+# Run everything (workloads + runtime + paper benchmarks)
+python3 run_all.py
+
+# Run only DSL comparison workloads
+python3 run_all.py --workloads
+
+# Run only Rust runtime benchmarks
+python3 run_all.py --runtime
+```
+
 ## Overview
 
 This benchmark suite measures the developer experience and performance differences between:
@@ -24,6 +53,10 @@ workloads/
 ├── 8_planning/              # Native plan operation
 ├── 9_conditional_routing/   # Dataflow-based routing
 ├── 10_multi_agent/          # Multi-agent collaboration
+├── 11_compilation_scaling/  # Compilation phase timing at different scales
+├── 12_real_llm_probe/       # Real LLM latency and token measurements
+├── 13_fusion_quality/       # FuseReasoning O0 vs O1 comparison
+├── 14_token_estimation/     # Token cost estimation for fusion
 ├── runner.py                # Master benchmark runner
 └── README.md                # This file
 ```
@@ -60,14 +93,46 @@ pip install langgraph langchain-ollama
 
 ```bash
 cd /path/to/apxm
-cargo build --release -p apxm
+
+# Using Python CLI (recommended - handles environment automatically)
+python tools/apxm_cli.py compiler build
+
+# Or manually (requires activated conda environment)
+conda activate apxm
+eval "$(cargo run -p apxm-cli -- activate)"
+cargo build -p apxm-cli --features driver --release
 ```
 
 ## Running Benchmarks
 
-### Run All Workloads
+### Using Python CLI (Recommended)
+
+The Python CLI provides convenient commands for managing workloads:
 
 ```bash
+cd /path/to/apxm
+
+# List available workloads
+python tools/apxm_cli.py workloads list
+
+# Check all workloads compile correctly
+python tools/apxm_cli.py workloads check
+
+# Run a specific workload benchmark
+python tools/apxm_cli.py workloads run 10_multi_agent
+python tools/apxm_cli.py workloads run 1_parallel_research
+
+# Run benchmarks with iterations/warmup control
+python tools/apxm_cli.py workloads benchmark 2_chain_fusion
+python tools/apxm_cli.py workloads benchmark --all --json -o results.json
+python tools/apxm_cli.py workloads benchmark --all -n 10 -w 3
+```
+
+### Manual: Run All Workloads
+
+```bash
+cd papers/cf26/benchmarks/workloads
+
 # JSON output (for analysis)
 python runner.py --json > results.json
 
@@ -78,7 +143,7 @@ python runner.py
 python runner.py --iterations 20
 ```
 
-### Run Individual Workload
+### Manual: Run Individual Workload
 
 ```bash
 cd 1_parallel_research
@@ -295,10 +360,39 @@ pip install langgraph langchain-ollama
 
 ### Timeout Issues
 
-Increase timeout in run.py if LLM responses are slow:
-```python
-BENCHMARK_ITERATIONS = 5  # Reduce iterations
-```
+Reduce benchmark load if LLM responses are slow:
+
+- Per-workload: `python N_workload/run.py --iterations 3 --warmup 1`
+- Whole suite: `python runner.py --iterations 3 --warmup 1`
+- Or via env: `APXM_BENCH_ITERATIONS=3 APXM_BENCH_WARMUP=1 python runner.py`
+
+## Paper-Specific Benchmarks
+
+These benchmarks generate data for the CF'26 paper tables and figures.
+
+### Compilation Scaling (`compilation_scaling/`)
+Measures compilation time at different operation counts (10, 25, 50, 100 ops).
+- **Output**: `tab/compilation-scaling.tex`
+- **Metrics**: Parse+Opt time, Artifact generation time, Total time
+
+### Real-LLM Probe (`real_llm_probe/`)
+Measures actual LLM latency and token usage with Ollama.
+- **Output**: `tab/real-llm.tex`
+- **Metrics**: LLM latency, Input/Output tokens, Scheduler overhead ratio
+
+### FuseReasoning Quality (`fusion_quality/`)
+Compares O0 (unfused) vs O1 (with FuseReasoning) performance.
+- **Output**: `tab/fusion-applicability.tex`
+- **Metrics**: Speedup by task type (classification, extraction, reasoning, creative)
+
+### Token Estimation (`token_estimation/`)
+Estimates token cost savings from FuseReasoning optimization.
+- **Metrics**: Token reduction percentage, API calls saved, System prompt amortization
+
+### Rust Substrate Overhead (`../runtime/paper_benchmarks.rs`)
+Measures runtime scheduler overhead and parallelism scaling.
+- **Output**: `tab/runtime-overhead.tex`, `fig/speedup-plot.tex`
+- **Metrics**: Per-op overhead (μs), Parallelism efficiency at N=2,4,8,16,32
 
 ## Contributing
 

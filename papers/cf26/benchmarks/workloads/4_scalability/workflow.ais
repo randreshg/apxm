@@ -3,24 +3,26 @@
 // Each flow runs N parallel RSN operations, then merges.
 
 agent ScalabilityTest {
-    // 2-way parallel
-    flow parallel_2 {
+    // 2-way parallel (entry point for default tests)
+    @entry flow parallel_2() -> str {
         rsn "Task A" -> a
         rsn "Task B" -> b
         merge [a, b] -> result
+        return result
     }
 
     // 4-way parallel
-    flow parallel_4 {
+    flow parallel_4() -> str {
         rsn "Task A" -> a
         rsn "Task B" -> b
         rsn "Task C" -> c
         rsn "Task D" -> d
         merge [a, b, c, d] -> result
+        return result
     }
 
     // 8-way parallel
-    flow parallel_8 {
+    flow parallel_8() -> str {
         rsn "Task A" -> a
         rsn "Task B" -> b
         rsn "Task C" -> c
@@ -30,5 +32,6 @@ agent ScalabilityTest {
         rsn "Task G" -> g
         rsn "Task H" -> h
         merge [a, b, c, d, e, f, g, h] -> result
+        return result
     }
 }

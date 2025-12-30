@@ -5,7 +5,7 @@
 // with a batched prompt, reducing 5 API calls to 1.
 
 agent ChainFusion {
-    flow main {
+    @entry flow main() -> str {
         // These 5 RSN ops form a dependency chain
         // FuseReasoning pass will batch them into a single prompt
         rsn "Define quantum computing" -> step1
@@ -13,5 +13,6 @@ agent ChainFusion {
         rsn "Using: " + step2 + ", explain superposition" -> step3
         rsn "Using: " + step3 + ", explain entanglement" -> step4
         rsn "Summarize all concepts above: " + step4 -> summary
+        return summary
     }
 }

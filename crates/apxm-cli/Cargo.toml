@@ -13,12 +13,14 @@ path = "src/main.rs"
 [dependencies]
 apxm-core = { path = "../runtime/apxm-core" }
 apxm-driver = { path = "../apxm-driver", optional = true }
+apxm-artifact = { path = "../runtime/apxm-artifact", optional = true }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1.48", features = ["rt-multi-thread", "macros"], optional = true }
 anyhow = "1.0"
 colored = "3.0.0"
+serde_json = { version = "1.0", optional = true }
 
 [features]
 default = []
-driver = ["dep:apxm-driver", "dep:tokio"]
+driver = ["dep:apxm-driver", "dep:tokio", "dep:apxm-artifact", "dep:serde_json"]
 metrics = ["driver", "apxm-driver/metrics"]

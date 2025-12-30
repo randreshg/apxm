@@ -47,6 +47,8 @@ enum class OperationKind : uint32_t {
   LoopEnd = 17,
   TryCatch = 18,
   ConstStr = 19,
+  Switch = 20,
+  FlowCall = 21,
 };
 
 enum class DependencyKind : uint8_t {
@@ -157,6 +159,7 @@ struct ArtifactDag {
   std::vector<uint64_t> entryNodes;
   std::vector<uint64_t> exitNodes;
   std::string moduleName;
+  bool isEntry = false;  // True if this flow is marked with @entry
 };
 
 struct DagBuildState {
@@ -278,6 +281,7 @@ public:
 
   void writeDag(const ArtifactDag &dag) {
     writeString(dag.moduleName);
+    writeBool(dag.isEntry);  // @entry flow marker
 
     writeU64(dag.nodes.size());
     for (const auto &node : dag.nodes)
@@ -328,6 +332,8 @@ std::optional<OperationKind> mapOperation(Operation *op) {
       .Case<BranchOnValueOp>([](auto) { return OperationKind::BranchOnValue; })
       .Case<LoopStartOp>([](auto) { return OperationKind::LoopStart; })
       .Case<LoopEndOp>([](auto) { return OperationKind::LoopEnd; })
+      .Case<SwitchOp>([](auto) { return OperationKind::Switch; })
+      .Case<FlowCallOp>([](auto) { return OperationKind::FlowCall; })
       .Case<TryCatchOp>([](auto) { return OperationKind::TryCatch; })
       .Default([](Operation *) { return std::nullopt; });
 }
@@ -458,6 +464,9 @@ LogicalResult emitFunction(func::FuncOp func, const ArtifactEmitOptions &options
   else
     dag.moduleName = func.getName().str();
 
+  // Check if this flow is marked as @entry (set by parser)
+  dag.isEntry = func->hasAttr("ais.entry");
+
   return success();
 }
 
@@ -475,13 +484,23 @@ LogicalResult ArtifactEmitter::emitModule(ModuleOp module) {
     return failure();
   }
 
-  ArtifactDag dag;
-  if (failed(emitFunction(*funcs.begin(), options, dag)))
-    return failure();
+  // Collect ALL DAGs (one per function) for multi-agent support
+  std::vector<ArtifactDag> dags;
+  for (auto func : funcs) {
+    ArtifactDag dag;
+    if (failed(emitFunction(func, options, dag)))
+      return failure();
+    dags.push_back(std::move(dag));
+  }
 
+  // Serialize multi-DAG format (version 3)
   ArtifactSerializer serializer;
-  serializer.writeU32(1); // Wire format version
-  serializer.writeDag(dag);
+  serializer.writeU32(3);  // Wire format version 3 = multi-DAG
+  serializer.writeU64(dags.size());
+  for (const auto& dag : dags) {
+    serializer.writeDag(dag);
+  }
+
   buffer = serializer.takeBuffer();
   return success();
 }

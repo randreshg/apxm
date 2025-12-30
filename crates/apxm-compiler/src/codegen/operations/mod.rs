@@ -7,7 +7,7 @@ use crate::codegen::emitter::RustEmitter;
 use apxm_core::error::compiler::Result;
 use std::collections::HashMap;
 
-use apxm_ais::{OperationMetadata, INV, MERGE, QMEM, RSN, UMEM, WAIT_ALL};
+use apxm_ais::{INV, MERGE, OperationMetadata, QMEM, RSN, UMEM, WAIT_ALL};
 use base::OperationEmit;
 
 pub struct OperationEmitter {

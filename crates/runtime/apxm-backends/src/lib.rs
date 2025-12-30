@@ -34,19 +34,36 @@ pub mod storage;
 // ═══════════════════════════════════════════════════════════════════════════
 
 pub use llm::{
-    // Backend traits and types
-    AnthropicModel, GenerationConfig, GoogleModel, LLMBackend, LLMRequest, LLMResponse,
-    OllamaModel, OpenAIModel, RequestBuilder, TokenUsage,
     // Observability
-    AggregatedMetrics, MetricsTracker, RequestMetrics, RequestTracer,
-    // Provider management
-    Provider, ProviderId,
-    // Registry and health
-    HealthMonitor, HealthStatus, LLMRegistry,
+    AggregatedMetrics,
+    // Backend traits and types
+    AnthropicModel,
     // Retry logic
-    ErrorClass, RetryConfig, RetryStrategy,
+    ErrorClass,
+    GenerationConfig,
+    GoogleModel,
+    // Registry and health
+    HealthMonitor,
+    HealthStatus,
     // Schema validation
-    JsonSchema, OutputParser,
+    JsonSchema,
+    LLMBackend,
+    LLMRegistry,
+    LLMRequest,
+    LLMResponse,
+    MetricsTracker,
+    OllamaModel,
+    OpenAIModel,
+    OutputParser,
+    // Provider management
+    Provider,
+    ProviderId,
+    RequestBuilder,
+    RequestMetrics,
+    RequestTracer,
+    RetryConfig,
+    RetryStrategy,
+    TokenUsage,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -55,9 +72,14 @@ pub use llm::{
 
 pub use storage::{
     // Backend trait and types
-    BackendStats, SearchResult, StorageBackend, StorageResult,
+    BackendStats,
     // Implementations
-    InMemoryBackend, RedbBackend, SqliteBackend,
+    InMemoryBackend,
+    RedbBackend,
+    SearchResult,
+    SqliteBackend,
+    StorageBackend,
+    StorageResult,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

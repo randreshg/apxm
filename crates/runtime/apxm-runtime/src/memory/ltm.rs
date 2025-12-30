@@ -4,8 +4,8 @@
 //! Supports semantic search and long-term knowledge retention.
 
 use super::config::{LtmBackend, LtmConfig};
-use apxm_core::{error::RuntimeError, types::values::Value};
 use apxm_backends::{InMemoryBackend, RedbBackend, SearchResult, SqliteBackend, StorageBackend};
+use apxm_core::{error::RuntimeError, types::values::Value};
 use std::sync::Arc;
 
 type Result<T> = std::result::Result<T, RuntimeError>;

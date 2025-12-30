@@ -1,0 +1,15 @@
+// Creative test: Parallel creative generation
+// All operations are independent - ideal for FuseReasoning batching
+
+agent CreativeTest {
+    @entry flow main() -> str {
+        // Parallel creative generation (no dependencies)
+        rsn "Write a haiku about programming" -> haiku
+        rsn "Create a short tagline for a coffee shop" -> tagline
+        rsn "Generate a one-liner joke about computers" -> joke
+
+        // Merge to consume all outputs (barrier + aggregation)
+        merge [haiku, tagline, joke] -> results
+        return results
+    }
+}

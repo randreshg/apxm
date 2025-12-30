@@ -31,6 +31,7 @@
 //! ```
 
 pub mod executor;
+pub mod flow_registry;
 pub mod metadata;
 pub mod registry;
 

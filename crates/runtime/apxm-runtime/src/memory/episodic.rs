@@ -4,8 +4,8 @@
 //! Maintains temporal order and supports querying by execution ID.
 
 use super::config::EpisodicConfig;
-use apxm_core::{error::RuntimeError, types::values::Value};
 use apxm_backends::SearchResult;
+use apxm_core::{error::RuntimeError, types::values::Value};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;

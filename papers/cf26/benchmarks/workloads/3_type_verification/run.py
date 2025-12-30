@@ -14,7 +14,7 @@ import json
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Add parent directory to import apxm_runner
@@ -63,7 +63,7 @@ def run_apxm_compile_test() -> dict:
     if cli_path is None:
         return {
             "error_caught": None,
-            "note": "A-PXM CLI not available - build with: cargo build -p apxm-cli --features driver --release",
+            "note": "A-PXM CLI not available - build with: python tools/apxm_cli.py compiler build",
             "expected_behavior": {
                 "error_type": "compile-time",
                 "time_to_error_ms": "~50ms",
@@ -111,7 +111,7 @@ def main():
 
     results = {
         "meta": {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "benchmark": "type_verification",
             "description": "Compile-time vs runtime error detection",
         },

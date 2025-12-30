@@ -10,7 +10,26 @@ pub async fn configure_llm_registry(
     registry: &LLMRegistry,
     config: &ApXmConfig,
 ) -> Result<(), DriverError> {
+    let allowed_backends = if config.chat.providers.is_empty() {
+        None
+    } else {
+        Some(
+            config
+                .chat
+                .providers
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>(),
+        )
+    };
+
     for backend in &config.llm_backends {
+        if let Some(allowed) = &allowed_backends
+            && !allowed.contains(&backend.name)
+        {
+            continue;
+        }
+
         let provider_name = backend.provider.as_deref().unwrap_or("openai").to_string();
         let provider_id = provider_name.parse::<ProviderId>().map_err(|e| {
             DriverError::Driver(format!("Unknown provider '{}': {e}", provider_name))

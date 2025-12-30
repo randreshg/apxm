@@ -11,8 +11,8 @@ use super::{
     ExecutionContext, Node, Result, Value, execute_llm_request, get_optional_string_attribute,
     get_string_attribute,
 };
-use apxm_core::error::RuntimeError;
 use apxm_backends::LLMRequest;
+use apxm_core::error::RuntimeError;
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
 
@@ -107,7 +107,8 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, _inputs: Vec<Value>) -
         .unwrap_or_else(|e| {
             tracing::warn!(error = %e, "Failed to load reflect_system template, using fallback");
             "You are an expert at analyzing execution patterns and extracting insights. \
-             Always respond in valid JSON format with structured analysis.".to_string()
+             Always respond in valid JSON format with structured analysis."
+                .to_string()
         });
     request = request.with_system_prompt(system_prompt);
 

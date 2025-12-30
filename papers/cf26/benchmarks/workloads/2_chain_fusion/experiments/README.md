@@ -30,9 +30,9 @@ Compares fusion effectiveness across different task types:
 ## Running
 
 ```bash
-# Requires Ollama running with qwen2.5:7b
-ollama pull qwen2.5:7b
+# Requires Ollama running with the cloud model used in the paper
 ollama serve
+# Ensure `gpt-oss:120b-cloud` (or fallback `gpt-oss:20b-cloud`) is available via `ollama list`
 
 # Run individual experiments
 python experiments/speedup_vs_count.py

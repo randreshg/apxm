@@ -1,6 +1,8 @@
 //! VERIFY operation - Verification with LLM
 
-use super::{ExecutionContext, Node, Result, Value, execute_llm_request, get_input, get_string_attribute};
+use super::{
+    ExecutionContext, Node, Result, Value, execute_llm_request, get_input, get_string_attribute,
+};
 use apxm_backends::LLMRequest;
 
 pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -> Result<Value> {

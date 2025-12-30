@@ -101,8 +101,8 @@ mod tests {
         capability::{CapabilitySystem, executor::EchoCapability},
         memory::{MemoryConfig, MemorySystem},
     };
-    use apxm_core::types::{execution::NodeMetadata, operations::AISOperationType};
     use apxm_backends::LLMRegistry;
+    use apxm_core::types::{execution::NodeMetadata, operations::AISOperationType};
     use std::sync::Arc;
 
     async fn create_test_context_with_capability() -> ExecutionContext {

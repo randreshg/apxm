@@ -7,10 +7,7 @@
 //!
 //! Run: `cargo run --example memory_tiers -p apxm-runtime`
 
-use apxm_runtime::{
-    memory::MemorySpace,
-    Runtime, RuntimeConfig, Value,
-};
+use apxm_runtime::{Runtime, RuntimeConfig, Value, memory::MemorySpace};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -19,33 +16,39 @@ async fn main() -> anyhow::Result<()> {
 
     // --- STM: Short-Term Memory ---
     println!("STM (Short-Term Memory):");
-    memory.write(
-        MemorySpace::Stm,
-        "current_task".to_string(),
-        Value::String("Process user request".to_string()),
-    ).await?;
+    memory
+        .write(
+            MemorySpace::Stm,
+            "current_task".to_string(),
+            Value::String("Process user request".to_string()),
+        )
+        .await?;
 
     let task = memory.read(MemorySpace::Stm, "current_task").await?;
     println!("  current_task: {:?}", task);
 
     // --- LTM: Long-Term Memory ---
     println!("\nLTM (Long-Term Memory):");
-    memory.write(
-        MemorySpace::Ltm,
-        "user_preference".to_string(),
-        Value::String("dark_mode".to_string()),
-    ).await?;
+    memory
+        .write(
+            MemorySpace::Ltm,
+            "user_preference".to_string(),
+            Value::String("dark_mode".to_string()),
+        )
+        .await?;
 
     let pref = memory.read(MemorySpace::Ltm, "user_preference").await?;
     println!("  user_preference: {:?}", pref);
 
     // --- Episodic Memory ---
     println!("\nEpisodic Memory:");
-    memory.record_episode(
-        "user_login".to_string(),
-        Value::String("User logged in at 10:30".to_string()),
-        "exec_001".to_string(),
-    ).await?;
+    memory
+        .record_episode(
+            "user_login".to_string(),
+            Value::String("User logged in at 10:30".to_string()),
+            "exec_001".to_string(),
+        )
+        .await?;
 
     let events = memory.query_episodes("exec_001").await?;
     println!("  execution trace: {} events", events.len());

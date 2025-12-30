@@ -1,10 +1,10 @@
 //! Extension trait to add code emission to operation metadata
 
 use crate::codegen::emitter::RustEmitter;
+use apxm_ais::OperationMetadata;
 use apxm_core::error::builder::ErrorBuilder;
 use apxm_core::error::codes::ErrorCode;
 use apxm_core::error::compiler::{CompilerError, Result};
-use apxm_ais::OperationMetadata;
 use std::collections::HashMap;
 
 /// Extension trait to add code emission to operation metadata

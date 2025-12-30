@@ -7,8 +7,8 @@ pub mod metadata;
 
 // Re-export from metadata (which re-exports from apxm-ais)
 pub use metadata::{
-    validate_operation, AISOperationType, OperationCategory, OperationField, OperationSpec,
-    ValidationError,
+    AISOperationType, OperationCategory, OperationField, OperationSpec, ValidationError,
+    validate_operation,
 };
 
 // Runtime-specific types

@@ -1,0 +1,22 @@
+// Tool Invocation Workflow
+// Demonstrates A-PXM's native INV operations with capability system.
+//
+// A-PXM advantages over LangGraph:
+// - Compile-time capability validation
+// - Type-checked tool signatures
+// - Native DAG scheduling for tool calls
+// - No runtime reflection overhead
+
+agent ToolAgent {
+    @entry flow main(query: str) -> str {
+        // 1. Invoke registered capability (search tool)
+        // The runtime's capability registry validates this at compile time
+        // Syntax: inv "capability_name" ("params") -> result
+        inv "search" ("{}") -> search_results
+
+        // 2. Reason about results to formulate answer
+        rsn "Given search results: " + search_results + ", answer the query: " + query -> answer
+
+        return answer
+    }
+}

@@ -2,8 +2,9 @@
 
 This folder contains the global documentation set. Start here, then jump to the crate docs as needed.
 
-## Getting Started
+## Quick Start
 
+- `docs/AGENTS.md`: **Python CLI reference** (recommended for AI agents and developers)
 - `docs/getting_started.md`: Step-by-step setup guide
 - `docs/hello_ais.md`: Minimal end-to-end example
 

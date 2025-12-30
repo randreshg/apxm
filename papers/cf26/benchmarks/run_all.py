@@ -18,7 +18,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -92,6 +92,7 @@ def check_dependencies() -> dict:
 def run_workloads(
     workload_nums: Optional[list] = None,
     iterations: int = 10,
+    warmup: int = 3,
     verbose: bool = True,
 ) -> dict:
     """Run DSL comparison workloads."""
@@ -101,6 +102,37 @@ def run_workloads(
         return {"error": f"Runner script not found: {runner_script}"}
 
     cmd = [sys.executable, str(runner_script), "--json"]
+    env = os.environ.copy()
+
+    cfg = load_config()
+    llm_cfg = (cfg.get("llm", {}) or {})
+    model = llm_cfg.get("model")
+    model_priority = llm_cfg.get("model_priority") or ([] if model is None else [model])
+
+    # Prefer the first locally-available model in model_priority, if `ollama` exists.
+    if model_priority:
+        try:
+            result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                available = set()
+                for line in result.stdout.splitlines():
+                    line = line.strip()
+                    if not line or line.upper().startswith("NAME"):
+                        continue
+                    available.add(line.split()[0])
+                for candidate in model_priority:
+                    if candidate in available:
+                        model = candidate
+                        break
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    if model:
+        env["APXM_BENCH_OLLAMA_MODEL"] = model
+        env.setdefault("OLLAMA_MODEL", model)
+
+    env["APXM_BENCH_ITERATIONS"] = str(iterations)
+    env["APXM_BENCH_WARMUP"] = str(warmup)
 
     if workload_nums:
         # Run each specified workload
@@ -109,10 +141,12 @@ def run_workloads(
             if verbose:
                 print(f"  Running workload {num}...")
             result = subprocess.run(
-                cmd + ["--workload", str(num), "--iterations", str(iterations)],
+                cmd
+                + ["--workload", str(num), "--iterations", str(iterations), "--warmup", str(warmup)],
                 capture_output=True,
                 text=True,
                 cwd=WORKLOADS_DIR,
+                env=env,
             )
             if result.returncode == 0:
                 try:
@@ -134,10 +168,11 @@ def run_workloads(
         if verbose:
             print("  Running all workloads...")
         result = subprocess.run(
-            cmd + ["--iterations", str(iterations)],
+            cmd + ["--iterations", str(iterations), "--warmup", str(warmup)],
             capture_output=True,
             text=True,
             cwd=WORKLOADS_DIR,
+            env=env,
         )
         if result.returncode == 0:
             try:
@@ -145,6 +180,154 @@ def run_workloads(
             except json.JSONDecodeError:
                 return {"error": "Invalid JSON output from runner"}
         return {"error": result.stderr or "Unknown error"}
+
+
+def run_single_benchmark(benchmark_name: str, iterations: int = 5, verbose: bool = True) -> dict:
+    """Run a single benchmark/workload by folder name.
+
+    Args:
+        benchmark_name: Folder name in workloads/ directory
+        iterations: Number of iterations to run
+        verbose: Print progress messages
+    """
+    # Special case: substrate_overhead is a Rust example, not a Python script
+    if benchmark_name == "substrate_overhead":
+        if verbose:
+            print(f"  Running paper_benchmarks.rs (substrate overhead)...")
+        try:
+            crate_path = BENCHMARKS_DIR.parent.parent.parent / "crates" / "runtime" / "apxm-runtime"
+            cmd = [
+                "cargo", "run", "--release", "--features", "metrics",
+                "--example", "paper_benchmarks",
+                "-p", "apxm-runtime",
+                "--", "--json",
+            ]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=crate_path.parent.parent.parent,
+                timeout=120,
+            )
+            if result.returncode == 0:
+                start = result.stdout.find("{")
+                end = result.stdout.rfind("}") + 1
+                if start >= 0 and end > start:
+                    return json.loads(result.stdout[start:end])
+            return {"error": result.stderr[:500] if result.stderr else "Unknown error"}
+        except subprocess.TimeoutExpired:
+            return {"error": "Timeout (2 min)"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # Normal workload: look for run.py in workloads/<name>/
+    workload_dir = WORKLOADS_DIR / benchmark_name
+    run_script = workload_dir / "run.py"
+
+    if not workload_dir.exists():
+        return {"error": f"Workload folder not found: {workload_dir}"}
+    if not run_script.exists():
+        return {"error": f"run.py not found in {workload_dir}"}
+
+    if verbose:
+        print(f"  Running {benchmark_name}...")
+
+    try:
+        cmd = [sys.executable, str(run_script), "--json", "--iterations", str(iterations)]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=workload_dir,
+        )
+
+        if result.returncode == 0:
+            try:
+                return json.loads(result.stdout)
+            except json.JSONDecodeError:
+                return {"raw_output": result.stdout[:2000], "note": "Could not parse JSON"}
+        else:
+            return {"error": result.stderr[:500] if result.stderr else "Unknown error"}
+    except subprocess.TimeoutExpired:
+        return {"error": "Timeout (5 min)"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def run_paper_benchmarks(quick: bool = False, verbose: bool = True,
+                         benchmark_name: str | None = None) -> dict:
+    """Run paper-specific benchmarks (workloads 11-14 + Rust substrate_overhead).
+
+    These are now unified with all other DSL workloads and use the same runner.
+
+    Args:
+        quick: Use fewer iterations
+        verbose: Print progress messages
+        benchmark_name: If specified, run only this benchmark
+    """
+    iterations = 2 if quick else 5
+    warmup = 1 if quick else 2
+
+    # Paper benchmarks are now workloads 11-14 (unified with DSL comparison workloads)
+    paper_workload_nums = [11, 12, 13, 14]
+
+    if verbose:
+        print("  Running paper benchmarks via unified runner (workloads 11-14)...")
+
+    # Use the unified runner for DSL benchmarks
+    results = run_workloads(
+        workload_nums=paper_workload_nums,
+        iterations=iterations,
+        warmup=warmup,
+        verbose=verbose,
+    )
+
+    # Also run the Rust paper_benchmarks example (substrate overhead)
+    if verbose:
+        print("  Running paper_benchmarks.rs (substrate overhead)...")
+
+    substrate_result = {}
+    try:
+        crate_path = BENCHMARKS_DIR.parent.parent.parent / "crates" / "runtime" / "apxm-runtime"
+        cmd = [
+            "cargo", "run", "--release", "--features", "metrics",
+            "--example", "paper_benchmarks",
+            "-p", "apxm-runtime",
+            "--", "--json",
+        ]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=crate_path.parent.parent.parent,
+            timeout=120,
+        )
+
+        if result.returncode == 0:
+            try:
+                start = result.stdout.find("{")
+                end = result.stdout.rfind("}") + 1
+                if start >= 0 and end > start:
+                    substrate_result = json.loads(result.stdout[start:end])
+                else:
+                    substrate_result = {"raw_output": result.stdout[:2000]}
+            except json.JSONDecodeError:
+                substrate_result = {"raw_output": result.stdout[:2000]}
+        else:
+            substrate_result = {"error": result.stderr[:500] if result.stderr else "Unknown error"}
+    except subprocess.TimeoutExpired:
+        substrate_result = {"error": "Timeout"}
+    except Exception as e:
+        substrate_result = {"error": str(e)}
+
+    # Add substrate_overhead to the workloads results
+    if "workloads" in results:
+        results["workloads"]["substrate_overhead"] = substrate_result
+    else:
+        results["workloads"] = {"substrate_overhead": substrate_result}
+
+    return results
 
 
 def run_runtime_benchmarks(quick: bool = False, verbose: bool = True) -> dict:
@@ -354,6 +537,18 @@ Examples:
         help="Run only Rust runtime benchmarks"
     )
     parser.add_argument(
+        "--paper", action="store_true",
+        help="Run only paper-specific benchmarks (compilation scaling, LLM probe, fusion quality)"
+    )
+    parser.add_argument(
+        "--benchmark", type=str,
+        help="Run a single workload by folder name (e.g., compilation_scaling, 1_parallel_research)"
+    )
+    parser.add_argument(
+        "--list", action="store_true",
+        help="List all available benchmarks"
+    )
+    parser.add_argument(
         "--analyze", action="store_true",
         help="Run only analysis on existing results"
     )
@@ -370,6 +565,10 @@ Examples:
         help="Override number of iterations"
     )
     parser.add_argument(
+        "--warmup", type=int,
+        help="Override warmup iterations"
+    )
+    parser.add_argument(
         "--json", action="store_true",
         help="Output only JSON (no progress messages)"
     )
@@ -379,6 +578,24 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    # Handle --list: show available benchmarks and exit (use unified runner)
+    if args.list:
+        print("\nAll DSL Workloads (1-14):\n")
+        # Use the unified runner to list all workloads
+        result = subprocess.run(
+            [sys.executable, str(WORKLOADS_DIR / "runner.py"), "--list"],
+            capture_output=True,
+            text=True,
+        )
+        print(result.stdout)
+        print("Additional Rust benchmarks:")
+        print("  substrate_overhead (paper_benchmarks.rs)")
+        print("\nUsage:")
+        print("  python run_all.py --workload 1,5,12    # Run specific workloads")
+        print("  python run_all.py --workloads          # Run all DSL workloads (1-14)")
+        print("  python run_all.py --benchmark <name>   # Run by folder name")
+        sys.exit(0)
 
     # Load configuration
     config = load_config()
@@ -391,21 +608,30 @@ Examples:
     else:
         iterations = config.get("llm", {}).get("iterations", 10)
 
+    # Determine warmup
+    if args.warmup is not None:
+        warmup = args.warmup
+    elif args.quick:
+        warmup = 1
+    else:
+        warmup = config.get("llm", {}).get("warmup", 3)
+
     # Verbose mode (progress messages)
     verbose = not args.json
 
     # If no specific mode selected, run everything
-    run_all = not (args.workloads or args.runtime or args.analyze)
+    run_all = not (args.workloads or args.runtime or args.paper or args.benchmark or args.analyze)
 
     # Results container
     results = {
         "meta": {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "suite": "apxm_benchmarks",
             "mode": "full" if run_all else "partial",
         },
         "config": {
             "iterations": iterations,
+            "warmup": warmup,
             "quick": args.quick,
         },
     }
@@ -431,6 +657,7 @@ Examples:
         results["workloads"] = run_workloads(
             workload_nums=workload_nums,
             iterations=iterations,
+            warmup=warmup,
             verbose=verbose,
         )
 
@@ -443,9 +670,27 @@ Examples:
         else:
             results["runtime"] = {"error": "Cargo not available"}
 
+    # Run paper-specific benchmarks
+    if run_all or args.paper:
+        if verbose:
+            print("\nRunning paper-specific benchmarks...")
+        results["paper"] = run_paper_benchmarks(quick=args.quick, verbose=verbose)
+
+    # Run single benchmark by name
+    if args.benchmark:
+        if verbose:
+            print(f"\nRunning benchmark: {args.benchmark}")
+        results["benchmark"] = {
+            args.benchmark: run_single_benchmark(
+                args.benchmark,
+                iterations=iterations,
+                verbose=verbose
+            )
+        }
+
     # Save results before analysis
     results_file = None
-    if not args.no_save and (run_all or args.workloads or args.runtime):
+    if not args.no_save and (run_all or args.workloads or args.runtime or args.paper or args.benchmark):
         results_file = save_results(results)
         if verbose:
             print(f"\nResults saved to: {results_file}")

@@ -2,7 +2,7 @@
 // Demonstrates automatic parallelism from dataflow dependencies.
 
 agent ParallelResearch {
-    flow main(topic: str) {
+    @entry flow main(topic: str) -> str {
         // These 3 RSN ops have no dependencies -> run in PARALLEL automatically
         rsn "Explain the domain background of " + topic -> background
         rsn "What are the recent advances in " + topic -> advances
@@ -13,5 +13,6 @@ agent ParallelResearch {
 
         // Final synthesis is sequential (depends on merge)
         rsn "Synthesize into a coherent report: " + combined -> report
+        return report
     }
 }

@@ -107,7 +107,8 @@ std::unique_ptr<Stmt> StatementParser::parseReturnStmt() {
     }
   }
 
-  if (!expect(TokenKind::semicolon)) return nullptr;
+  // Semicolon is optional for return statements in flow bodies
+  consume(TokenKind::semicolon);
 
   return std::make_unique<ReturnStmt>(loc, std::move(returnExpr));
 }

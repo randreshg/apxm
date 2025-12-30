@@ -293,7 +293,9 @@ fn build_link_spec(library_path: &Path, config: &LibraryConfig) -> Result<LinkSp
 /// Emit cargo directives for the provided LinkSpec.
 pub fn emit_link_directives(spec: &LinkSpec, out_dir: &Path) -> Result<()> {
     // Create symlink if requested (Unix only)
-    if cfg!(unix) && let Some((src, dst_name)) = &spec.symlink {
+    if cfg!(unix)
+        && let Some((src, dst_name)) = &spec.symlink
+    {
         let dst = out_dir.join(dst_name);
         if !dst.exists() {
             std::os::unix::fs::symlink(src, &dst).with_context(|| {
@@ -562,7 +564,11 @@ impl MlirEnvReport {
 
         lines.push(format!(
             "cmake: {}",
-            if self.cmake_available { "available" } else { "missing" }
+            if self.cmake_available {
+                "available"
+            } else {
+                "missing"
+            }
         ));
         lines.push(format!(
             "mlir-tblgen: {}",

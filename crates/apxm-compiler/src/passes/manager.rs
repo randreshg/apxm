@@ -71,6 +71,10 @@ impl<'ctx> PassManager<'ctx> {
         self.add_pass("lower-to-async")
     }
 
+    pub fn unconsumed_value_warning(&mut self) -> Result<&mut Self> {
+        self.add_pass("unconsumed-value-warning")
+    }
+
     pub fn run(&self, module: &Module) -> Result<()> {
         ffi::handle_bool_result(
             unsafe { ffi::apxm_pass_manager_run(self.raw, module.as_ptr()) },

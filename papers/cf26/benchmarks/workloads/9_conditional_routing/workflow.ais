@@ -3,7 +3,7 @@
 // Only the selected branch executes, saving LLM calls.
 
 agent RouterAgent {
-    flow main(input: str) {
+    @entry flow main(input: str) -> str {
         // 1. Classify the input
         rsn "Classify this input into exactly one word: technical, creative, or factual. Input: " + input -> category
 
@@ -14,5 +14,6 @@ agent RouterAgent {
             case "factual" => rsn "Provide accurate factual information for: " + input -> output
             default => rsn "Provide a helpful general response for: " + input -> output
         }
+        return output
     }
 }

@@ -3,6 +3,10 @@
 Master Benchmark Runner
 
 Runs all DSL comparison benchmarks and outputs unified JSON results.
+Applies consistent JSON schema v2.0 to ALL workloads:
+- Warmup iterations are executed but discarded from results
+- Per-iteration full data is stored in samples array
+- Summary statistics computed from measurement samples only
 
 Usage:
     python runner.py --json                    # Run all, output JSON
@@ -16,7 +20,9 @@ import importlib.util
 import json
 import os
 import sys
-from datetime import datetime
+import inspect
+import statistics
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -71,6 +77,26 @@ WORKLOADS = {
         "dir": "10_multi_agent",
         "description": "Native agent definitions with communicate operations",
     },
+    11: {
+        "name": "compilation_scaling",
+        "dir": "11_compilation_scaling",
+        "description": "Compilation phase timing at different op counts",
+    },
+    12: {
+        "name": "real_llm_probe",
+        "dir": "12_real_llm_probe",
+        "description": "Real LLM latency and token measurement",
+    },
+    13: {
+        "name": "fusion_quality",
+        "dir": "13_fusion_quality",
+        "description": "FuseReasoning optimization effectiveness",
+    },
+    14: {
+        "name": "token_estimation",
+        "dir": "14_token_estimation",
+        "description": "Token cost estimation before/after fusion",
+    },
 }
 
 
@@ -86,8 +112,44 @@ def get_platform_info() -> dict:
     }
 
 
-def run_workload(workload_num: int, iterations: int = 10) -> dict:
-    """Run a specific workload and return results."""
+def compute_summary(samples: list[dict]) -> dict:
+    """Compute summary statistics from successful samples."""
+    successful = [s for s in samples if s.get("success", True) and "error" not in s]
+    if not successful:
+        return {"successful_runs": 0, "failed_runs": len(samples)}
+
+    # Extract timing values (try multiple field names)
+    times = []
+    for s in successful:
+        for key in ["mean_ms", "wall_time_ms", "duration_ms", "runtime_only_ms"]:
+            if key in s:
+                times.append(s[key])
+                break
+
+    summary = {
+        "successful_runs": len(successful),
+        "failed_runs": len(samples) - len(successful),
+    }
+
+    if times:
+        summary["timing"] = {
+            "mean_ms": statistics.mean(times),
+            "std_ms": statistics.stdev(times) if len(times) > 1 else 0,
+            "min_ms": min(times),
+            "max_ms": max(times),
+        }
+
+    return summary
+
+
+def run_workload(workload_num: int, iterations: int = 10, warmup: int = 3) -> dict:
+    """Run a specific workload and return results with unified schema v2.0.
+
+    Schema v2.0:
+    - Warmup iterations executed but discarded
+    - Per-iteration data stored in samples array
+    - Summary computed from measurement samples only
+    """
     if workload_num not in WORKLOADS:
         return {"error": f"Unknown workload: {workload_num}"}
 
@@ -108,23 +170,67 @@ def run_workload(workload_num: int, iterations: int = 10) -> dict:
     try:
         spec.loader.exec_module(module)
 
-        # Build results by running workload components
+        # Build results with unified schema
         results = {
             "workload": workload["name"],
             "description": workload["description"],
+            "config": {
+                "iterations": iterations,
+                "warmup": warmup,
+            },
         }
 
         # Try to run LangGraph benchmark
         if hasattr(module, "run_langgraph"):
             try:
-                results["langgraph"] = module.run_langgraph(iterations)
+                fn = module.run_langgraph
+                sig = inspect.signature(fn)
+                if "warmup" in sig.parameters:
+                    raw_result = fn(iterations, warmup=warmup)
+                else:
+                    raw_result = fn(iterations)
+
+                # Wrap result in unified schema if not already
+                if isinstance(raw_result, dict):
+                    if "samples" in raw_result:
+                        results["langgraph"] = raw_result
+                    elif "error" in raw_result or "note" in raw_result:
+                        results["langgraph"] = raw_result
+                    else:
+                        # Legacy format - wrap it
+                        results["langgraph"] = {
+                            "data": raw_result,
+                            "summary": compute_summary([raw_result]) if raw_result else {},
+                        }
+                else:
+                    results["langgraph"] = {"data": raw_result}
             except Exception as e:
                 results["langgraph"] = {"error": str(e)}
 
         # Try to run A-PXM benchmark
         if hasattr(module, "run_apxm"):
             try:
-                results["apxm"] = module.run_apxm(iterations)
+                fn = module.run_apxm
+                sig = inspect.signature(fn)
+                if "warmup" in sig.parameters:
+                    raw_result = fn(iterations, warmup=warmup)
+                else:
+                    raw_result = fn(iterations)
+
+                # Wrap result in unified schema if not already
+                if isinstance(raw_result, dict):
+                    if "samples" in raw_result:
+                        results["apxm"] = raw_result
+                    elif "error" in raw_result or "note" in raw_result:
+                        results["apxm"] = raw_result
+                    else:
+                        # Legacy format - wrap it
+                        results["apxm"] = {
+                            "data": raw_result,
+                            "summary": compute_summary([raw_result]) if raw_result else {},
+                        }
+                else:
+                    results["apxm"] = {"data": raw_result}
             except Exception as e:
                 results["apxm"] = {"error": str(e)}
 
@@ -143,8 +249,9 @@ def main():
     )
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--list", action="store_true", help="List available workloads")
-    parser.add_argument("--workload", type=int, help="Run specific workload (1-10)")
+    parser.add_argument("--workload", type=int, help="Run specific workload (1-14)")
     parser.add_argument("--iterations", type=int, default=10, help="Iterations per benchmark")
+    parser.add_argument("--warmup", type=int, default=3, help="Warmup iterations (not counted)")
     parser.add_argument("--output", type=str, help="Output file path")
     args = parser.parse_args()
 
@@ -157,15 +264,18 @@ def main():
             print()
         return
 
-    # Build full results
+    # Build full results with unified schema v2.0
     results = {
         "meta": {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "benchmark_suite": "apxm_dsl_comparison",
+            "version": "2.0",
             "platform": get_platform_info(),
         },
         "config": {
             "iterations": args.iterations,
+            "warmup": args.warmup,
+            "note": "Warmup iterations are executed but discarded from results",
         },
         "workloads": {},
     }
@@ -177,7 +287,7 @@ def main():
         if not args.json:
             print(f"\nRunning workload {num}: {WORKLOADS[num]['name']}...")
 
-        result = run_workload(num, args.iterations)
+        result = run_workload(num, args.iterations, warmup=args.warmup)
         results["workloads"][WORKLOADS[num]["name"]] = result
 
     # Output results

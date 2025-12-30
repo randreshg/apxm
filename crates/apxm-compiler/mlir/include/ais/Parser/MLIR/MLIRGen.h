@@ -36,6 +36,10 @@ public:
   /// Generate MLIR module from agent declaration
   [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp> generateModule(AgentDecl *agent);
 
+  /// Generate MLIR module from multiple agent declarations
+  [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp> generateModuleFromAgents(
+      const std::vector<std::unique_ptr<AgentDecl>> &agents);
+
   void emitError(parser::Location loc, llvm::StringRef message);
   void emitError(mlir::Location loc, llvm::StringRef message);
 
@@ -56,7 +60,7 @@ private:
   //===--------------------------------------------------------------------===//
 
   mlir::LogicalResult generateAgentDecl(mlir::ModuleOp module, AgentDecl *agent);
-  mlir::LogicalResult generateFlowDecl(mlir::ModuleOp module, FlowDecl *flow);
+  mlir::LogicalResult generateFlowDecl(mlir::ModuleOp module, FlowDecl *flow, llvm::StringRef agentName);
   mlir::LogicalResult generateOnEventDecl(mlir::ModuleOp module, OnEventDecl *handler,
                                          llvm::StringRef symbolName, bool returnsValue);
 

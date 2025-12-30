@@ -4,7 +4,10 @@ use super::{ExecutionContext, Result};
 use apxm_core::{
     InnerPlanDsl,
     error::RuntimeError,
-    types::{TokenId, execution::{ExecutionDag, Node}},
+    types::{
+        TokenId,
+        execution::{ExecutionDag, Node},
+    },
 };
 use std::collections::{HashMap, HashSet};
 

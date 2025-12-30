@@ -9,11 +9,12 @@
 
 use super::{
     ExecutionContext, Node, Result, Value, execute_llm_request, get_optional_string_attribute,
-    get_string_attribute, inner_plan::{InnerPlanOptions, execute_inner_plan},
+    get_string_attribute,
+    inner_plan::{InnerPlanOptions, execute_inner_plan},
 };
 use crate::aam::{Goal as AamGoal, GoalId, GoalStatus, TransitionLabel};
-use apxm_core::{InnerPlanDsl, Plan, error::RuntimeError};
 use apxm_backends::LLMRequest;
+use apxm_core::{InnerPlanDsl, Plan, error::RuntimeError};
 use serde::de::Error;
 use std::collections::HashMap;
 
@@ -68,10 +69,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     // Retrieve context from memory if specified
     let mut context_info = String::new();
     if let Some(key) = context_key
-        && let Ok(Some(value)) = ctx
-            .memory
-            .read(crate::memory::MemorySpace::Ltm, &key)
-            .await
+        && let Ok(Some(value)) = ctx.memory.read(crate::memory::MemorySpace::Ltm, &key).await
     {
         context_info = format!("\n\nContext: {:?}", value);
     }
@@ -186,8 +184,7 @@ async fn execute_plan_once(
     // Try to parse as structured plan
     if let Ok(mut plan) = parse_plan_output(&content) {
         if enable_inner_plan {
-            match generate_inner_plan(ctx, node, &plan, original_goal, model_override).await
-            {
+            match generate_inner_plan(ctx, node, &plan, original_goal, model_override).await {
                 Ok(Some(dsl)) => {
                     plan.inner_plan = Some(InnerPlanDsl { dsl });
                 }
@@ -286,7 +283,8 @@ async fn execute_plan_once(
                 }
                 Err(err) => {
                     let err_msg = err.to_string();
-                    if err_msg.contains("not supported") || err_msg.contains("No linker configured") {
+                    if err_msg.contains("not supported") || err_msg.contains("No linker configured")
+                    {
                         tracing::warn!(
                             execution_id = %ctx.execution_id,
                             "Inner plan linking not supported - continuing without inner plan execution. \
@@ -311,8 +309,7 @@ async fn execute_plan_once(
         result_obj.insert(
             "plan".to_string(),
             Value::Array(
-                plan
-                    .steps
+                plan.steps
                     .iter()
                     .map(|step| {
                         let mut step_obj = HashMap::new();
@@ -330,7 +327,10 @@ async fn execute_plan_once(
                             step_obj.insert(
                                 "dependencies".to_string(),
                                 Value::Array(
-                                    step.dependencies.iter().map(|d| Value::String(d.clone())).collect(),
+                                    step.dependencies
+                                        .iter()
+                                        .map(|d| Value::String(d.clone()))
+                                        .collect(),
                                 ),
                             );
                         }
@@ -413,11 +413,11 @@ async fn generate_inner_plan(
             tracing::warn!(error = %e, "Failed to load plan_inner_system template, using fallback");
             "You are an APXM DSL code generator. Generate ONLY valid APXM DSL code - \
              no markdown fences, no explanations, no comments outside the code. \
-             The output must be syntactically correct and compilable.".to_string()
+             The output must be syntactically correct and compilable."
+                .to_string()
         });
 
-    let mut request = LLMRequest::new(user_prompt)
-        .with_system_prompt(system_prompt);
+    let mut request = LLMRequest::new(user_prompt).with_system_prompt(system_prompt);
 
     if let Some(model_name) = model_override {
         request = request.with_model(model_name.to_string());

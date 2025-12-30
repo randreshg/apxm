@@ -2,8 +2,9 @@
 // A minimal agent that demonstrates basic DSL syntax
 
 agent HelloWorld {
-    // Simple reasoning flow
-    flow main {
+    // Simple reasoning flow with @entry annotation
+    @entry flow main() -> str {
         rsn "Generate a friendly greeting" -> greeting
+        return greeting
     }
 }

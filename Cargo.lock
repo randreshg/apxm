@@ -155,10 +155,12 @@ name = "apxm-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "apxm-artifact",
  "apxm-core",
  "apxm-driver",
  "clap",
  "colored",
+ "serde_json",
  "tokio",
 ]
 

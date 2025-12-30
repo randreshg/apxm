@@ -1,0 +1,104 @@
+{
+  "meta": {
+    "timestamp": "2025-12-29T18:19:04.625706Z",
+    "suite": "apxm_benchmarks",
+    "mode": "partial"
+  },
+  "config": {
+    "iterations": 3,
+    "warmup": 1,
+    "quick": true
+  },
+  "dependencies": {
+    "python": true,
+    "ollama": true,
+    "apxm": false,
+    "cargo": true,
+    "langgraph": false
+  },
+  "paper": {
+    "paper_benchmarks": {
+      "compilation_scaling": {
+        "meta": {
+          "benchmark": "compilation_scaling",
+          "timestamp": "2025-12-29T18:19:04.724161Z",
+          "iterations": 2,
+          "opt_level": 1
+        },
+        "data": [
+          {
+            "num_ops": 10,
+            "error": "No successful runs"
+          },
+          {
+            "num_ops": 25,
+            "error": "No successful runs"
+          },
+          {
+            "num_ops": 50,
+            "error": "No successful runs"
+          },
+          {
+            "num_ops": 100,
+            "error": "No successful runs"
+          }
+        ]
+      },
+      "real_llm_probe": {
+        "meta": {
+          "benchmark": "real_llm_probe",
+          "timestamp": "2025-12-29T18:19:05.076563Z",
+          "iterations": 2
+        },
+        "data": [
+          {
+            "success": false,
+            "error": "Error: Failed to initialize runtime\n\nCaused by:\n    Driver error: MLIR toolchain not detected.\n    MLIR environment diagnostics:\n    Env vars:\n    - CONDA_PREFIX=/Users/randreshg/miniforge3\n    - LLVM_DIR=<not set>\n    - LLVM_PREFIX=<not set>\n    - MLIR_DIR=<not set>\n    - MLIR_PREFIX=<not set>\n    cmake: available\n    mlir-tblgen: <not found in PATH>\n    llvm-config: <not found in PATH>\n    Candidate prefixes:\n    - /Users/randreshg/miniforge3 (mlir_lib: no, llvm_lib: no, mlir_cmake: no, llvm_cmake: no)\n    Resolved MLIR prefix: <not found>\n    Locate error: Library not found in any candidate path. Set one of: MLIR_PREFIX, CONDA_PREFIX, LLVM_PREFIX, MLIR_DIR, LLVM_DIR\n    Set MLIR_DIR/MLIR_PREFIX/LLVM_PREFIX/CONDA_PREFIX or ensure mlir-tblgen is on PATH.\n",
+            "wall_time_ms": 24.48666701093316
+          },
+          {
+            "success": false,
+            "error": "Error: Failed to initialize runtime\n\nCaused by:\n    Driver error: MLIR toolchain not detected.\n    MLIR environment diagnostics:\n    Env vars:\n    - CONDA_PREFIX=/Users/randreshg/miniforge3\n    - LLVM_DIR=<not set>\n    - LLVM_PREFIX=<not set>\n    - MLIR_DIR=<not set>\n    - MLIR_PREFIX=<not set>\n    cmake: available\n    mlir-tblgen: <not found in PATH>\n    llvm-config: <not found in PATH>\n    Candidate prefixes:\n    - /Users/randreshg/miniforge3 (mlir_lib: no, llvm_lib: no, mlir_cmake: no, llvm_cmake: no)\n    Resolved MLIR prefix: <not found>\n    Locate error: Library not found in any candidate path. Set one of: MLIR_PREFIX, CONDA_PREFIX, LLVM_PREFIX, MLIR_DIR, LLVM_DIR\n    Set MLIR_DIR/MLIR_PREFIX/LLVM_PREFIX/CONDA_PREFIX or ensure mlir-tblgen is on PATH.\n",
+            "wall_time_ms": 22.545791987795383
+          }
+        ]
+      },
+      "fusion_quality": {
+        "meta": {
+          "benchmark": "fusion_quality",
+          "timestamp": "2025-12-29T18:19:05.168293Z",
+          "iterations": 2
+        },
+        "data": [
+          {
+            "task_type": "classification",
+            "description": "Parallel classification queries",
+            "iterations": 2,
+            "error": "Insufficient successful runs"
+          },
+          {
+            "task_type": "extraction",
+            "description": "Parallel entity extraction",
+            "iterations": 2,
+            "error": "Insufficient successful runs"
+          },
+          {
+            "task_type": "reasoning",
+            "description": "Sequential reasoning chain",
+            "iterations": 2,
+            "error": "Insufficient successful runs"
+          },
+          {
+            "task_type": "creative",
+            "description": "Creative generation",
+            "iterations": 2,
+            "error": "Insufficient successful runs"
+          }
+        ]
+      },
+      "substrate_overhead": {
+        "error": "Timeout"
+      }
+    }
+  }
+}

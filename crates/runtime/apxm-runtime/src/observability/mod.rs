@@ -11,7 +11,7 @@
 
 mod metrics;
 
-pub use metrics::{MetricsCollector, OverheadBreakdown};
+pub use metrics::{MetricsCollector, OverheadBreakdown, SchedulerMetrics};
 
 // Re-export the timing macros at crate root
 pub use crate::{timed, timed_async};

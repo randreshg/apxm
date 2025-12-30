@@ -2,12 +2,13 @@
 
 use crate::{
     aam::Aam,
-    capability::CapabilitySystem,
+    capability::{flow_registry::FlowRegistry, CapabilitySystem},
     executor::{ExecutionContext, ExecutionResult, ExecutorEngine, InnerPlanLinker, NoOpLinker},
     memory::{MemoryConfig, MemorySystem},
     scheduler::{DataflowScheduler, SchedulerConfig},
 };
 use apxm_artifact::Artifact;
+use apxm_backends::LLMRegistry;
 use apxm_core::log_info;
 use apxm_core::{
     error::RuntimeError,
@@ -16,7 +17,6 @@ use apxm_core::{
         values::Value,
     },
 };
-use apxm_backends::LLMRegistry;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 
@@ -30,6 +30,8 @@ pub struct RuntimeExecutionResult {
     /// LLM request metrics (when enabled)
     #[cfg(feature = "metrics")]
     pub llm_metrics: apxm_backends::AggregatedMetrics,
+    /// Scheduler overhead metrics
+    pub scheduler_metrics: crate::observability::SchedulerMetrics,
 }
 
 /// Runtime configuration
@@ -66,6 +68,7 @@ pub struct Runtime {
     memory: Arc<MemorySystem>,
     llm_registry: Arc<LLMRegistry>,
     capability_system: Arc<CapabilitySystem>,
+    flow_registry: Arc<FlowRegistry>,
     aam: Aam,
     scheduler: DataflowScheduler,
     inner_plan_linker: Arc<dyn InnerPlanLinker>,
@@ -90,6 +93,9 @@ impl Runtime {
         let aam = Aam::new();
         let capability_system = Arc::new(CapabilitySystem::with_aam(aam.clone()));
 
+        // Initialize flow registry for cross-agent flow calls
+        let flow_registry = Arc::new(FlowRegistry::new());
+
         // Initialize scheduler
         let scheduler = DataflowScheduler::new(config.scheduler_config.clone());
 
@@ -100,6 +106,7 @@ impl Runtime {
             memory,
             llm_registry,
             capability_system,
+            flow_registry,
             aam,
             scheduler,
             inner_plan_linker: Arc::new(NoOpLinker),
@@ -127,19 +134,26 @@ impl Runtime {
         self.llm_registry.metrics().reset();
 
         // Create execution context
-        let mut context = ExecutionContext::new(
-            Arc::clone(&self.memory),
-            Arc::clone(&self.llm_registry),
-            Arc::clone(&self.capability_system),
-            self.aam.clone(),
-        );
-        context.inner_plan_linker = Arc::clone(&self.inner_plan_linker);
+        let context = ExecutionContext {
+            execution_id: uuid::Uuid::now_v7().to_string(),
+            session_id: None,
+            memory: Arc::clone(&self.memory),
+            llm_registry: Arc::clone(&self.llm_registry),
+            capability_system: Arc::clone(&self.capability_system),
+            aam: self.aam.clone(),
+            inner_plan_linker: Arc::clone(&self.inner_plan_linker),
+            dag_splicer: Arc::new(crate::executor::NoOpSplicer),
+            flow_registry: Arc::clone(&self.flow_registry),
+            start_time: std::time::Instant::now(),
+            metadata: std::collections::HashMap::new(),
+        };
 
         // Create executor
         let executor = Arc::new(ExecutorEngine::new(context.clone()));
 
         // Execute with dataflow scheduler for automatic parallelism
-        let (results, stats) = self.scheduler.execute(dag, executor, context).await?;
+        let (results, stats, scheduler_metrics) =
+            self.scheduler.execute(dag, executor, context).await?;
 
         #[cfg(feature = "metrics")]
         let llm_metrics = self.llm_registry.metrics().aggregate();
@@ -149,6 +163,7 @@ impl Runtime {
             stats,
             #[cfg(feature = "metrics")]
             llm_metrics,
+            scheduler_metrics,
         })
     }
 
@@ -160,6 +175,64 @@ impl Runtime {
         self.execute(artifact.into_dag()).await
     }
 
+    /// Execute a serialized artifact with automatic entry point detection and flow registration.
+    ///
+    /// This method:
+    /// 1. Checks for an `@entry` DAG in the artifact
+    /// 2. Auto-registers all other flows in the FlowRegistry
+    /// 3. Executes the @entry DAG
+    ///
+    /// # Errors
+    ///
+    /// Returns `RuntimeError::State` if the artifact does not have an `@entry` flow.
+    pub async fn execute_artifact_auto(
+        &self,
+        artifact: Artifact,
+    ) -> Result<RuntimeExecutionResult, RuntimeError> {
+        // 1. Find @entry DAG
+        let entry_dag = artifact.entry_dag().cloned().ok_or_else(|| {
+            let name = artifact
+                .dags()
+                .first()
+                .and_then(|d| d.metadata.name.as_deref())
+                .unwrap_or("<unnamed>");
+            RuntimeError::State(format!(
+                "No @entry flow found in artifact '{}'. Mark a flow with @entry to designate the entry point.",
+                name
+            ))
+        })?;
+
+        // 2. Auto-register all non-entry flows
+        let num_registered = {
+            let mut count = 0;
+            for dag in artifact.flow_dags() {
+                if let Some(ref name) = dag.metadata.name {
+                    let (agent_name, flow_name) = parse_flow_name(name);
+                    log_info!(
+                        "runtime",
+                        agent = %agent_name,
+                        flow = %flow_name,
+                        "Auto-registering flow from artifact"
+                    );
+                    self.flow_registry.register_flow(&agent_name, &flow_name, dag.clone());
+                    count += 1;
+                }
+            }
+            count
+        };
+
+        log_info!(
+            "runtime",
+            name = entry_dag.metadata.name.as_deref().unwrap_or("<unnamed>"),
+            num_flows = artifact.dags().len(),
+            "Executing @entry flow with {} registered flows",
+            num_registered
+        );
+
+        // 3. Execute @entry DAG
+        self.execute(entry_dag).await
+    }
+
     /// Execute an artifact from raw bytes
     pub async fn execute_artifact_bytes(
         &self,
@@ -168,6 +241,20 @@ impl Runtime {
         let artifact = Artifact::from_bytes(bytes)
             .map_err(|e| RuntimeError::State(format!("Artifact parse error: {e}")))?;
         self.execute_artifact(artifact).await
+    }
+
+    /// Execute an artifact from raw bytes with entry point validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the artifact does not have an `@entry` flow.
+    pub async fn execute_artifact_bytes_auto(
+        &self,
+        bytes: &[u8],
+    ) -> Result<RuntimeExecutionResult, RuntimeError> {
+        let artifact = Artifact::from_bytes(bytes)
+            .map_err(|e| RuntimeError::State(format!("Artifact parse error: {e}")))?;
+        self.execute_artifact_auto(artifact).await
     }
 
     /// Execute a DAG sequentially (for testing/debugging)
@@ -181,13 +268,19 @@ impl Runtime {
             "Executing DAG sequentially"
         );
 
-        let mut context = ExecutionContext::new(
-            Arc::clone(&self.memory),
-            Arc::clone(&self.llm_registry),
-            Arc::clone(&self.capability_system),
-            self.aam.clone(),
-        );
-        context.inner_plan_linker = Arc::clone(&self.inner_plan_linker);
+        let context = ExecutionContext {
+            execution_id: uuid::Uuid::now_v7().to_string(),
+            session_id: None,
+            memory: Arc::clone(&self.memory),
+            llm_registry: Arc::clone(&self.llm_registry),
+            capability_system: Arc::clone(&self.capability_system),
+            aam: self.aam.clone(),
+            inner_plan_linker: Arc::clone(&self.inner_plan_linker),
+            dag_splicer: Arc::new(crate::executor::NoOpSplicer),
+            flow_registry: Arc::clone(&self.flow_registry),
+            start_time: std::time::Instant::now(),
+            metadata: std::collections::HashMap::new(),
+        };
 
         let executor = ExecutorEngine::new(context);
         executor.execute_dag(dag).await
@@ -225,14 +318,38 @@ impl Runtime {
 
     /// Create a new execution context
     pub fn create_context(&self) -> ExecutionContext {
-        let mut ctx = ExecutionContext::new(
-            Arc::clone(&self.memory),
-            Arc::clone(&self.llm_registry),
-            Arc::clone(&self.capability_system),
-            self.aam.clone(),
-        );
-        ctx.inner_plan_linker = Arc::clone(&self.inner_plan_linker);
-        ctx
+        ExecutionContext {
+            execution_id: uuid::Uuid::now_v7().to_string(),
+            session_id: None,
+            memory: Arc::clone(&self.memory),
+            llm_registry: Arc::clone(&self.llm_registry),
+            capability_system: Arc::clone(&self.capability_system),
+            aam: self.aam.clone(),
+            inner_plan_linker: Arc::clone(&self.inner_plan_linker),
+            dag_splicer: Arc::new(crate::executor::NoOpSplicer),
+            flow_registry: Arc::clone(&self.flow_registry),
+            start_time: std::time::Instant::now(),
+            metadata: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Get flow registry reference
+    pub fn flow_registry(&self) -> &FlowRegistry {
+        &self.flow_registry
+    }
+
+    /// Get flow registry as Arc (clones the Arc)
+    pub fn flow_registry_arc(&self) -> Arc<FlowRegistry> {
+        Arc::clone(&self.flow_registry)
+    }
+}
+
+/// Parse flow name in "Agent.flow" format
+fn parse_flow_name(name: &str) -> (String, String) {
+    if let Some((agent, flow)) = name.split_once('.') {
+        (agent.to_string(), flow.to_string())
+    } else {
+        ("default".to_string(), name.to_string())
     }
 }
 

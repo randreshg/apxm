@@ -46,7 +46,8 @@ bool apxm_pass_manager_has_pass(ApxmPassManager* pm, const char* pass_name) {
   // Simple implementation - in real system would use pass registry
   static const char* known_passes[] = {
     "normalize", "fuse-reasoning", "scheduling",
-    "canonicalizer", "cse", "symbol-dce", "inline", "lower-to-async"
+    "canonicalizer", "cse", "symbol-dce", "inline", "lower-to-async",
+    "unconsumed-value-warning"
   };
 
   for (auto name : known_passes) {
@@ -92,8 +93,17 @@ bool apxm_pass_manager_add_pass_by_name(ApxmPassManager* pm, const char* pass_na
     apxm_pass_manager_add_lower_to_async(pm);
     return true;
   }
+  if (strcmp(pass_name, "unconsumed-value-warning") == 0) {
+    apxm_pass_manager_add_unconsumed_value_warning(pm);
+    return true;
+  }
 
   return false;
+}
+
+// Analysis Passes
+void apxm_pass_manager_add_unconsumed_value_warning(ApxmPassManager* pm) {
+  if (pm) pm->pass_manager->addPass(mlir::ais::createUnconsumedValueWarningPass());
 }
 
 // Transform Passes

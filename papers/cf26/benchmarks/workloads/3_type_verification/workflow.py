@@ -5,6 +5,7 @@ Contains the SAME bug as workflow.ais: using an undefined key.
 LangGraph discovers this at RUNTIME, after the first LLM call.
 """
 
+import os
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
 
@@ -16,7 +17,11 @@ except ImportError:
     HAS_OLLAMA = False
 
 # Ollama model configuration
-OLLAMA_MODEL = "phi3:mini"
+OLLAMA_MODEL = (
+    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
+    or os.environ.get("OLLAMA_MODEL")
+    or "phi3:mini"
+)
 
 
 class BrokenState(TypedDict):

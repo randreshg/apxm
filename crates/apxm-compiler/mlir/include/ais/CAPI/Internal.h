@@ -13,6 +13,7 @@
 #include <memory>
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Async/IR/Async.h"
@@ -20,6 +21,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Support/raw_ostream.h"
 
 /* Make the AIS Rust codegen options type available to implementation
  * translation units that include this internal header. This allows files
@@ -31,6 +33,7 @@
 
 struct ApxmCompilerContext {
   std::unique_ptr<mlir::MLIRContext> mlir_context;
+  mlir::DiagnosticEngine::HandlerID diagnostic_handler_id;
 
   ApxmCompilerContext() {
     mlir_context = std::make_unique<mlir::MLIRContext>();
@@ -39,6 +42,46 @@ struct ApxmCompilerContext {
     mlir_context->loadDialect<mlir::func::FuncDialect>();
     mlir_context->loadDialect<mlir::async::AsyncDialect>();
     mlir_context->allowUnregisteredDialects(true);
+
+    // Register diagnostic handler to print warnings and errors to stderr
+    diagnostic_handler_id = mlir_context->getDiagEngine().registerHandler(
+        [](mlir::Diagnostic &diag) {
+          auto severity = diag.getSeverity();
+          llvm::raw_ostream &os = llvm::errs();
+
+          // Format: severity: message
+          switch (severity) {
+          case mlir::DiagnosticSeverity::Error:
+            os << "error: ";
+            break;
+          case mlir::DiagnosticSeverity::Warning:
+            os << "warning: ";
+            break;
+          case mlir::DiagnosticSeverity::Note:
+            os << "note: ";
+            break;
+          case mlir::DiagnosticSeverity::Remark:
+            os << "remark: ";
+            break;
+          }
+
+          os << diag.str() << "\n";
+
+          // Print location if available
+          auto loc = diag.getLocation();
+          if (auto fileLoc = mlir::dyn_cast<mlir::FileLineColLoc>(loc)) {
+            os << "  --> " << fileLoc.getFilename() << ":"
+               << fileLoc.getLine() << ":" << fileLoc.getColumn() << "\n";
+          }
+
+          return mlir::success();
+        });
+  }
+
+  ~ApxmCompilerContext() {
+    if (mlir_context) {
+      mlir_context->getDiagEngine().eraseHandler(diagnostic_handler_id);
+    }
   }
 };
 

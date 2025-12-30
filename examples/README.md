@@ -12,12 +12,25 @@ Example DSL programs demonstrating APXM capabilities.
 
 ## Running Examples
 
-```bash
-# Compile an example to artifact
-cargo run -p apxm-cli --features driver -- compile examples/hello_world.ais
+### Using Python CLI (Recommended)
 
-# Run an example (compile + execute)
-cargo run -p apxm-cli --features driver -- run examples/hello_world.ais
+```bash
+# Build the compiler first
+python tools/apxm_cli.py compiler build
+
+# Run an example
+python tools/apxm_cli.py compiler run examples/hello_world.ais
+
+# Compile to artifact only
+python tools/apxm_cli.py compiler compile examples/hello_world.ais -o examples/hello_world.apxmobj
+```
+
+### Manual (After Building)
+
+```bash
+# Use the compiled binary directly
+./target/release/apxm run examples/hello_world.ais
+./target/release/apxm compile examples/hello_world.ais -o output.apxmobj
 ```
 
 ## DSL Quick Reference

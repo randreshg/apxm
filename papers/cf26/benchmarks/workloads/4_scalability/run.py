@@ -11,24 +11,35 @@ Currently runs the default main flow; specific flow selection requires CLI enhan
 
 import argparse
 import json
+import os
 import statistics
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Add parent directory to import apxm_runner
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from apxm_runner import APXMConfig, run_benchmark
 
-WARMUP_ITERATIONS = 1
-BENCHMARK_ITERATIONS = 3
+def _get_int_env(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+WARMUP_ITERATIONS = _get_int_env("APXM_BENCH_WARMUP", 3)
+BENCHMARK_ITERATIONS = _get_int_env("APXM_BENCH_ITERATIONS", 10)
 PARALLEL_LEVELS = [2, 4, 8]
 SIMULATED_DELAY_MS = 100
 WORKFLOW_FILE = Path(__file__).parent / "workflow.ais"
 
 
-def run_langgraph_scalability(n: int, iterations: int) -> dict:
+def run_langgraph_scalability(n: int, iterations: int, warmup: int = WARMUP_ITERATIONS) -> dict:
     """Run LangGraph scalability test for N parallel ops."""
     from workflow import build_parallel_graph, HAS_OLLAMA
 
@@ -38,7 +49,7 @@ def run_langgraph_scalability(n: int, iterations: int) -> dict:
     samples = []
 
     # Warmup
-    for _ in range(WARMUP_ITERATIONS):
+    for _ in range(warmup):
         graph.invoke(initial_state)
 
     # Benchmark
@@ -66,14 +77,14 @@ def run_langgraph_scalability(n: int, iterations: int) -> dict:
     }
 
 
-def run_apxm_scalability(n: int, iterations: int) -> dict:
+def run_apxm_scalability(n: int, iterations: int, warmup: int = WARMUP_ITERATIONS) -> dict:
     """Run A-PXM scalability test through the REAL pipeline.
 
     Note: Currently runs the default flow. For specific N-way parallel testing,
     the CLI needs flow selection support (--flow parallel_N).
     """
     config = APXMConfig(opt_level=1)
-    result = run_benchmark(WORKFLOW_FILE, config, iterations, warmup=WARMUP_ITERATIONS)
+    result = run_benchmark(WORKFLOW_FILE, config, iterations, warmup=warmup)
 
     if result.get("success"):
         mean_ms = result["mean_ms"]
@@ -104,21 +115,34 @@ def run_apxm_scalability(n: int, iterations: int) -> dict:
         }
 
 
+def run_langgraph(iterations: int = BENCHMARK_ITERATIONS, warmup: int = WARMUP_ITERATIONS) -> dict:
+    """Entry point for the suite runner (`runner.py`)."""
+    series = [run_langgraph_scalability(n, iterations, warmup=warmup) for n in PARALLEL_LEVELS]
+    return {"series": series, "parallel_levels": PARALLEL_LEVELS}
+
+
+def run_apxm(iterations: int = BENCHMARK_ITERATIONS, warmup: int = WARMUP_ITERATIONS) -> dict:
+    """Entry point for the suite runner (`runner.py`)."""
+    series = [run_apxm_scalability(n, iterations, warmup=warmup) for n in PARALLEL_LEVELS]
+    return {"series": series, "parallel_levels": PARALLEL_LEVELS}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Scalability Benchmark")
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--iterations", type=int, default=BENCHMARK_ITERATIONS)
+    parser.add_argument("--warmup", type=int, default=WARMUP_ITERATIONS)
     args = parser.parse_args()
 
     results = {
         "meta": {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "benchmark": "scalability",
             "simulated_delay_ms": SIMULATED_DELAY_MS,
         },
         "config": {
             "iterations": args.iterations,
-            "warmup": WARMUP_ITERATIONS,
+            "warmup": args.warmup,
             "parallel_levels": PARALLEL_LEVELS,
         },
         "results": {
@@ -130,12 +154,12 @@ def main():
     # Run benchmarks for each parallelism level
     for n in PARALLEL_LEVELS:
         try:
-            lg_result = run_langgraph_scalability(n, args.iterations)
+            lg_result = run_langgraph_scalability(n, args.iterations, warmup=args.warmup)
             results["results"]["langgraph"].append(lg_result)
         except ImportError as e:
             results["results"]["langgraph"].append({"n": n, "error": str(e)})
 
-        apxm_result = run_apxm_scalability(n, args.iterations)
+        apxm_result = run_apxm_scalability(n, args.iterations, warmup=args.warmup)
         results["results"]["apxm"].append(apxm_result)
 
     if args.json:

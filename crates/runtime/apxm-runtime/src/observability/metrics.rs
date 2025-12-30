@@ -130,7 +130,8 @@ mod enabled {
         pub fn record_operation_dispatch(&self, duration: Duration) {
             self.operation_dispatch_ns
                 .fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
-            self.operation_dispatch_count.fetch_add(1, Ordering::Relaxed);
+            self.operation_dispatch_count
+                .fetch_add(1, Ordering::Relaxed);
         }
 
         #[inline]
@@ -355,7 +356,7 @@ mod enabled {
     }
 
     /// Overhead breakdown per operation.
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
     pub struct OverheadBreakdown {
         pub ready_set_update_us: f64,
         pub work_stealing_us: f64,
@@ -477,6 +478,69 @@ pub use enabled::{MetricsCollector, OverheadBreakdown};
 
 #[cfg(not(feature = "metrics"))]
 pub use disabled::{MetricsCollector, OverheadBreakdown};
+
+// ============================================================================
+// Scheduler metrics snapshot (always available for API consistency)
+// ============================================================================
+
+/// Snapshot of scheduler metrics for inclusion in execution results.
+///
+/// This struct is always available regardless of the `metrics` feature,
+/// but will contain zeros when metrics are disabled.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct SchedulerMetrics {
+    /// Per-operation overhead in microseconds
+    pub per_op_overhead_us: f64,
+    /// Breakdown of overhead by phase
+    pub overhead_breakdown: OverheadBreakdown,
+    /// Maximum concurrent operations observed
+    pub max_parallelism: usize,
+    /// Average parallelism factor
+    pub avg_parallelism: f64,
+    /// Total operations executed successfully
+    pub operations_executed: usize,
+    /// Total operations that failed
+    pub operations_failed: usize,
+}
+
+impl SchedulerMetrics {
+    /// Create a metrics snapshot from a MetricsCollector.
+    #[cfg(feature = "metrics")]
+    pub fn from_collector(collector: &MetricsCollector) -> Self {
+        Self {
+            per_op_overhead_us: collector.total_overhead_per_op_us(),
+            overhead_breakdown: collector.overhead_breakdown_us(),
+            max_parallelism: collector.max_parallelism(),
+            avg_parallelism: collector.average_parallelism(),
+            operations_executed: collector.get_executed(),
+            operations_failed: collector.get_failed(),
+        }
+    }
+
+    /// Create a metrics snapshot from a MetricsCollector (no-op version).
+    #[cfg(not(feature = "metrics"))]
+    pub fn from_collector(_collector: &MetricsCollector) -> Self {
+        Self::default()
+    }
+
+    /// Export as JSON value.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "per_op_overhead_us": self.per_op_overhead_us,
+            "overhead_breakdown": {
+                "ready_set_update_us": self.overhead_breakdown.ready_set_update_us,
+                "work_stealing_us": self.overhead_breakdown.work_stealing_us,
+                "input_collection_us": self.overhead_breakdown.input_collection_us,
+                "operation_dispatch_us": self.overhead_breakdown.operation_dispatch_us,
+                "token_routing_us": self.overhead_breakdown.token_routing_us
+            },
+            "max_parallelism": self.max_parallelism,
+            "avg_parallelism": self.avg_parallelism,
+            "operations_executed": self.operations_executed,
+            "operations_failed": self.operations_failed
+        })
+    }
+}
 
 // ============================================================================
 // Zero-overhead timing macro

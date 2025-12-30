@@ -13,7 +13,7 @@ Methodology:
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -136,7 +136,7 @@ def main():
 
     results = {
         "meta": {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "benchmark": "lines_of_code_comparison",
             "methodology": {
                 "total": "All lines including blank",

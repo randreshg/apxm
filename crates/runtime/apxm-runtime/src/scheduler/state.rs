@@ -18,7 +18,7 @@ use apxm_core::error::RuntimeError;
 
 type RuntimeResult<T> = Result<T, RuntimeError>;
 use crate::aam::effects::{OperationEffects, operation_effects};
-use crate::scheduler::internal_state::{OpState, TokenState};
+use crate::scheduler::internal_state::{ExecutionFrame, OpState, PromiseState, TokenState};
 use crate::scheduler::queue::{Priority, PriorityQueue};
 use crate::scheduler::ready_set::ReadySet;
 use crate::scheduler::work_stealing::WorkStealingScheduler;
@@ -53,6 +53,11 @@ pub struct SchedulerState {
     pub first_error: Arc<Mutex<Option<RuntimeError>>>,
     pub last_progress_ms: Arc<AtomicU64>,
     pub exit_nodes: Vec<NodeId>,
+
+    // Promise tracking for flow calls
+    pub pending_promises: Arc<DashMap<TokenId, PromiseState>>,
+    pub execution_stack: Arc<Mutex<Vec<ExecutionFrame>>>,
+    pub next_promise_token_id: Arc<AtomicU64>,
 }
 
 impl SchedulerState {
@@ -124,6 +129,11 @@ impl SchedulerState {
             first_error: Arc::new(Mutex::new(None)),
             last_progress_ms: Arc::new(AtomicU64::new(0)),
             exit_nodes: dag.exit_nodes.clone(),
+
+            // Initialize promise tracking
+            pending_promises: Arc::new(DashMap::new()),
+            execution_stack: Arc::new(Mutex::new(Vec::new())),
+            next_promise_token_id: Arc::new(AtomicU64::new(1_000_000)), // Start high to avoid collisions
         };
 
         // Initialize readiness tracking and seed ready nodes
@@ -204,6 +214,72 @@ impl SchedulerState {
         }
 
         Ok(results)
+    }
+
+    /// Create a new promise token for a flow call.
+    ///
+    /// The token is registered as "not ready" and will be resolved
+    /// when the sub-flow completes.
+    pub fn create_promise_token(&self, target_agent: String, target_flow: String) -> TokenId {
+        let token_id = self.next_promise_token_id.fetch_add(1, Ordering::Relaxed);
+
+        // Register promise state
+        self.pending_promises.insert(
+            token_id,
+            PromiseState::new(target_agent, target_flow),
+        );
+
+        // Register token as not ready (consumers will wait)
+        self.tokens.insert(token_id, TokenState::new());
+
+        token_id
+    }
+
+    /// Resolve a promise token with a value.
+    ///
+    /// This makes the token ready and propagates readiness to consumers.
+    pub fn resolve_promise(&self, token_id: TokenId, value: Value) -> RuntimeResult<()> {
+        // Update promise state
+        if let Some(mut promise) = self.pending_promises.get_mut(&token_id) {
+            promise.resolved = true;
+            promise.value = Some(value.clone());
+        }
+
+        // Update token state (makes downstream nodes ready)
+        if let Some(mut token) = self.tokens.get_mut(&token_id) {
+            token.ready = true;
+            token.value = Some(value);
+        }
+
+        // Propagate readiness to consumers
+        self.ready_set.on_token_ready(
+            token_id,
+            &self.tokens,
+            &self.priorities,
+            &self.op_states,
+            &self.queue,
+        )?;
+
+        self.record_progress();
+        Ok(())
+    }
+
+    /// Push an execution frame onto the stack (for sub-flow execution).
+    pub fn push_execution_frame(&self, frame: ExecutionFrame) {
+        let mut stack = self.execution_stack.lock();
+        stack.push(frame);
+    }
+
+    /// Pop an execution frame from the stack.
+    pub fn pop_execution_frame(&self) -> Option<ExecutionFrame> {
+        let mut stack = self.execution_stack.lock();
+        stack.pop()
+    }
+
+    /// Get the current execution stack depth.
+    pub fn execution_stack_depth(&self) -> usize {
+        let stack = self.execution_stack.lock();
+        stack.len()
     }
 
     pub fn build_stats(&self) -> ExecutionStats {

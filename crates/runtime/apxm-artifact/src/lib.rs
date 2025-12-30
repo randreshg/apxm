@@ -58,23 +58,23 @@ pub struct ArtifactSection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ArtifactPayload {
     metadata: ArtifactMetadata,
-    dag: wire::WireDag,
+    dags: Vec<wire::WireDag>,
     sections: Vec<ArtifactSection>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Artifact {
     metadata: ArtifactMetadata,
-    dag: ExecutionDag,
+    dags: Vec<ExecutionDag>,
     sections: Vec<ArtifactSection>,
     flags: u32,
 }
 
 impl Artifact {
-    pub fn new(metadata: ArtifactMetadata, dag: ExecutionDag) -> Self {
+    pub fn new(metadata: ArtifactMetadata, dags: Vec<ExecutionDag>) -> Self {
         Self {
             metadata,
-            dag,
+            dags,
             sections: Vec::new(),
             flags: 0,
         }
@@ -84,22 +84,47 @@ impl Artifact {
         &self.metadata
     }
 
+    /// Get all DAGs in the artifact
+    pub fn dags(&self) -> &[ExecutionDag] {
+        &self.dags
+    }
+
+    /// Get the @entry DAG (first with is_entry=true)
+    pub fn entry_dag(&self) -> Option<&ExecutionDag> {
+        self.dags.iter().find(|d| d.metadata.is_entry)
+    }
+
+    /// Get non-entry DAGs (for flow registration)
+    pub fn flow_dags(&self) -> impl Iterator<Item = &ExecutionDag> {
+        self.dags.iter().filter(|d| !d.metadata.is_entry)
+    }
+
+    /// Legacy: Get first DAG (backward compat for single-DAG artifacts)
     pub fn dag(&self) -> &ExecutionDag {
-        &self.dag
+        self.dags.first().expect("Artifact has no DAGs")
     }
 
     pub fn sections(&self) -> &[ArtifactSection] {
         &self.sections
     }
 
+    /// Consume artifact and return all DAGs
+    pub fn into_dags(self) -> Vec<ExecutionDag> {
+        self.dags
+    }
+
+    /// Legacy: Consume and return entry DAG only
     pub fn into_dag(self) -> ExecutionDag {
-        self.dag
+        self.entry_dag()
+            .cloned()
+            .or_else(|| self.dags.into_iter().next())
+            .expect("Artifact has no DAGs")
     }
 
     fn payload(&self) -> Result<Vec<u8>, Box<bincode::ErrorKind>> {
         let payload = ArtifactPayload {
             metadata: self.metadata.clone(),
-            dag: wire::WireDag::from_execution_dag(&self.dag),
+            dags: self.dags.iter().map(wire::WireDag::from_execution_dag).collect(),
             sections: self.sections.clone(),
         };
         bincode::serialize(&payload)
@@ -161,15 +186,15 @@ impl Artifact {
 
         let ArtifactPayload {
             metadata,
-            dag,
+            dags,
             sections,
         } = bincode::deserialize(payload)?;
 
-        let dag = dag.into_execution_dag();
+        let dags = dags.into_iter().map(|d| d.into_execution_dag()).collect();
 
         Ok(Self {
             metadata,
-            dag,
+            dags,
             sections,
             flags,
         })
@@ -214,6 +239,7 @@ mod tests {
             exit_nodes: vec![1],
             metadata: DagMetadata {
                 name: Some("test".into()),
+                is_entry: false,
             },
         }
     }
@@ -222,7 +248,7 @@ mod tests {
     fn artifact_round_trip() {
         let dag = sample_dag();
         let metadata = ArtifactMetadata::new(Some("sample".into()), "test-compiler");
-        let artifact = Artifact::new(metadata.clone(), dag.clone());
+        let artifact = Artifact::new(metadata.clone(), vec![dag.clone()]);
 
         let bytes = artifact.to_bytes().expect("serialize artifact");
         let stored_len = u64::from_le_bytes(bytes[8..16].try_into().unwrap()) as usize;
@@ -230,28 +256,25 @@ mod tests {
         let payload = &bytes[HEADER_SIZE..];
         let expected_payload = bincode::serialize(&ArtifactPayload {
             metadata: metadata.clone(),
-            dag: wire::WireDag::from_execution_dag(&dag),
+            dags: vec![wire::WireDag::from_execution_dag(&dag)],
             sections: Vec::new(),
         })
         .unwrap();
         assert_eq!(payload, expected_payload.as_slice());
         let raw: ArtifactPayload = bincode::deserialize(payload).expect("payload deserialize");
         assert!(raw.metadata.module_name.as_deref() == Some("sample"));
-        let tuple: (ArtifactMetadata, ExecutionDag, Vec<ArtifactSection>) =
-            bincode::deserialize(payload).expect("tuple deserialize");
-        assert!(tuple.0.module_name.as_deref() == Some("sample"));
         let decoded = Artifact::from_bytes(&bytes).expect("deserialize artifact");
 
         assert_eq!(decoded.metadata.module_name, metadata.module_name);
         assert_eq!(decoded.metadata.compiler_version, metadata.compiler_version);
-        assert_eq!(decoded.dag.nodes.len(), dag.nodes.len());
+        assert_eq!(decoded.dag().nodes.len(), dag.nodes.len());
     }
 
     #[test]
     fn detects_invalid_hash() {
         let dag = sample_dag();
         let metadata = ArtifactMetadata::new(Some("sample".into()), "test-compiler");
-        let artifact = Artifact::new(metadata, dag);
+        let artifact = Artifact::new(metadata, vec![dag]);
         let mut bytes = artifact.to_bytes().expect("serialize artifact");
         let last = bytes.len() - 1;
         bytes[last] ^= 0xFF;

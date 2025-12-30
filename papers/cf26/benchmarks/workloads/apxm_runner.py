@@ -14,13 +14,19 @@ Usage:
     result = run_ais_workflow("workflow.ais", config)
 """
 
-import json
 import os
 import subprocess
+import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
+
+# Add tools directory to path for shared utilities
+_tools_dir = Path(__file__).parent.parent.parent.parent.parent / "tools"
+sys.path.insert(0, str(_tools_dir))
+
+from apxm_env import ApxmConfig as _ApxmConfig, get_conda_prefix, setup_mlir_environment
 
 
 @dataclass
@@ -31,9 +37,10 @@ class APXMConfig:
     conda_prefix: Optional[str] = None
 
     def __post_init__(self):
-        # Auto-detect CONDA_PREFIX if not provided
+        # Auto-detect CONDA_PREFIX if not provided using shared utility
         if self.conda_prefix is None:
-            self.conda_prefix = os.environ.get("CONDA_PREFIX")
+            prefix = get_conda_prefix()
+            self.conda_prefix = str(prefix) if prefix else os.environ.get("CONDA_PREFIX")
 
 
 @dataclass
@@ -59,14 +66,13 @@ class APXMResult:
 
 
 def find_apxm_cli() -> Optional[Path]:
-    """Find the apxm CLI binary."""
-    # Check for cargo-built binary
-    apxm_root = Path(__file__).parent.parent.parent.parent.parent
-    release_bin = apxm_root / "target" / "release" / "apxm"
-    debug_bin = apxm_root / "target" / "debug" / "apxm"
+    """Find the apxm CLI binary using shared configuration."""
+    config = _ApxmConfig.detect()
+    if config.compiler_bin.exists():
+        return config.compiler_bin
 
-    if release_bin.exists():
-        return release_bin
+    # Fallback: check debug build
+    debug_bin = config.target_dir / "debug" / "apxm"
     if debug_bin.exists():
         return debug_bin
 
@@ -88,19 +94,18 @@ def find_apxm_cli() -> Optional[Path]:
 
 def build_apxm_cli() -> Optional[Path]:
     """Build the apxm CLI if not found."""
-    apxm_root = Path(__file__).parent.parent.parent.parent.parent
-    conda_prefix = os.environ.get("CONDA_PREFIX")
+    config = _ApxmConfig.detect()
+    conda_prefix = config.conda_prefix
 
     if not conda_prefix:
         return None
 
     try:
-        env = os.environ.copy()
-        env["CONDA_PREFIX"] = conda_prefix
+        env = setup_mlir_environment(conda_prefix, config.target_dir)
 
         result = subprocess.run(
             ["cargo", "build", "-p", "apxm-cli", "--features", "driver", "--release"],
-            cwd=apxm_root,
+            cwd=config.apxm_dir,
             capture_output=True,
             text=True,
             timeout=300,
@@ -108,7 +113,7 @@ def build_apxm_cli() -> Optional[Path]:
         )
 
         if result.returncode == 0:
-            return apxm_root / "target" / "release" / "apxm"
+            return config.compiler_bin
     except Exception:
         pass
 
@@ -156,7 +161,7 @@ def run_ais_workflow(
         return APXMResult(
             success=False,
             execution_time_ms=0,
-            error="Could not find or build apxm CLI. Set CONDA_PREFIX and run: cargo build -p apxm-cli --features driver --release",
+            error="Could not find apxm CLI. Build with: python tools/apxm_cli.py compiler build",
         )
 
     # Build command
@@ -167,10 +172,12 @@ def run_ais_workflow(
         f"-O{config.opt_level}",
     ]
 
-    # Set up environment
-    env = os.environ.copy()
+    # Set up environment using shared utility
+    shared_config = _ApxmConfig.detect()
     if config.conda_prefix:
-        env["CONDA_PREFIX"] = config.conda_prefix
+        env = setup_mlir_environment(Path(config.conda_prefix), shared_config.target_dir)
+    else:
+        env = os.environ.copy()
 
     # Run with timing
     start_time = time.perf_counter()
@@ -237,8 +244,8 @@ def run_ais_workflow(
 def run_benchmark(
     workflow_path: Path,
     config: Optional[APXMConfig] = None,
-    iterations: int = 3,
-    warmup: int = 1,
+    iterations: int = 10,
+    warmup: int = 3,
 ) -> Dict[str, Any]:
     """
     Run a benchmark with multiple iterations.
@@ -296,7 +303,7 @@ def run_benchmark(
 
 def compare_optimization_levels(
     workflow_path: Path,
-    iterations: int = 3,
+    iterations: int = 10,
 ) -> Dict[str, Any]:
     """
     Compare O0 (no FuseReasoning) vs O1 (with FuseReasoning).

@@ -1,0 +1,17 @@
+// Template for synthetic compilation scaling benchmark
+// The runner generates variants with N operations (10, 25, 50, 100)
+// This file documents the pattern used for synthetic AIS generation
+
+agent ScalingTest {
+    @entry flow main() -> str {
+        // Each task runs in parallel (no dependencies)
+        // The actual benchmark generates N copies of this pattern
+        rsn "Task 0: Process data element" -> result_0
+        rsn "Task 1: Process data element" -> result_1
+        // ... N operations ...
+
+        // Merge all parallel outputs (prevents dead code)
+        merge [result_0, result_1] -> final
+        return final
+    }
+}

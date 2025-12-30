@@ -3,23 +3,26 @@
 // Compiler detects dataflow dependencies and parallelizes where possible.
 
 agent Researcher {
-    flow research(topic: str) {
+    flow research(topic: str) -> str {
         rsn "Conduct deep research on: " + topic -> findings
+        return findings
     }
 }
 
 agent Critic {
-    flow critique(content: str) {
+    flow critique(content: str) -> str {
         rsn "Critically analyze and identify weaknesses: " + content -> feedback
+        return feedback
     }
 
-    flow prepare(topic: str) {
+    flow prepare(topic: str) -> str {
         rsn "Prepare initial critique questions for: " + topic -> questions
+        return questions
     }
 }
 
 agent Coordinator {
-    flow main(topic: str) {
+    @entry flow main(topic: str) -> str {
         // 1. These run in parallel (no dependencies between them)
         Researcher.research(topic) -> research_result
         Critic.prepare(topic) -> critique_prep
@@ -27,7 +30,8 @@ agent Coordinator {
         // 2. This depends on research_result, runs after
         Critic.critique(research_result) -> critique_result
 
-        // 3. Synthesize final report
-        rsn "Synthesize into final report. Research: " + research_result + " | Critique: " + critique_result -> final_report
+        // 3. Synthesize final report (consumes all outputs)
+        rsn "Synthesize into final report. Research: " + research_result + " | Prepared questions: " + critique_prep + " | Critique: " + critique_result -> final_report
+        return final_report
     }
 }

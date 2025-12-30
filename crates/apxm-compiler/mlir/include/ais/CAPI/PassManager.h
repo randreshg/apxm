@@ -22,6 +22,9 @@ bool apxm_pass_manager_add_pass_by_name(ApxmPassManager *pm, const char *pass_na
 bool apxm_pass_manager_has_pass(ApxmPassManager *pm, const char *pass_name);
 
 // Specific pass additions (grouped by category)
+// Analysis passes
+void apxm_pass_manager_add_unconsumed_value_warning(ApxmPassManager *pm);
+
 // Transform passes
 void apxm_pass_manager_add_normalize(ApxmPassManager *pm);
 void apxm_pass_manager_add_fuse_reasoning(ApxmPassManager *pm);

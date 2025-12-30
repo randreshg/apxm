@@ -1,0 +1,15 @@
+// Classification test: Parallel sentiment analysis
+// All operations are independent - ideal for FuseReasoning batching
+
+agent ClassificationTest {
+    @entry flow main() -> str {
+        // Parallel classification (no dependencies)
+        rsn "Classify this sentiment: 'I love this product!'" -> sent1
+        rsn "Classify this sentiment: 'This is terrible'" -> sent2
+        rsn "Classify this sentiment: 'It works okay'" -> sent3
+
+        // Merge to consume all outputs (barrier + aggregation)
+        merge [sent1, sent2, sent3] -> results
+        return results
+    }
+}

@@ -1,376 +1,231 @@
-# A-PXM Paper Testing Plan
+# A‑PXM CF'26 Testing Plan (Runbook)
 
-## Research-Informed Evaluation Methodology
+This document is the **minimum** executable checklist that ties **paper claims (C1–C7)** to **commands**, **outputs**, and **success criteria**. The goal is that once the environment is ready, the only remaining work is to **run the commands** and paste the resulting numbers into `tab/*.tex` / `fig/*.tex`.
 
-Based on analysis of how other PXMs and agent frameworks were evaluated:
+## Related Documentation
 
-### Established Patterns from PXM Literature
+- [Benchmark Architecture](benchmarks/docs/ARCHITECTURE.md) - Execution flow and design decisions
+- [JSON Output Schema](benchmarks/docs/JSON_SCHEMA.md) - Complete output format reference
+- [Compiler Diagnostics](benchmarks/docs/COMPILER_DIAGNOSTICS.md) - `--emit-diagnostics` format
+- [Runtime Metrics](benchmarks/docs/RUNTIME_METRICS.md) - `--emit-metrics` format
 
-1. **Codelet Model Evaluation** (EXADAPT 2014)
-   - 3-tier hierarchy: microbenchmarks → synthetic kernels → real workloads
-   - Overhead characterization through targeted micro-benchmarks
-   - Speedup = S/Tp, Efficiency = Speedup/p
-   - DGEMM: 1.40x avg speedup; Graph 500: 1.15-2.38x speedup
+## Scope and Success Criteria
 
-2. **MLIR Evaluation Philosophy** (CGO 2021)
-   - Multi-dimensional: performance + adoption + developer experience
-   - "Optimizations should pay for themselves"
-   - Code reduction metrics matter for DSLs
+1. **Evidence completeness**: Every quantitative number in the paper (including every `\TODO{}` / `\VERIFY{}` value in `tab/*.tex` and `fig/*.tex`) maps to a specific command and raw JSON output under `papers/cf26/benchmarks/results/`.
+2. **Implementation alignment**: The plan and paper text match the current prototype (including explicit prototype limitations).
+3. **Reproducibility**: A third party can re-run the evaluation from scratch using this runbook and get results within the stated confidence intervals.
 
-3. **LLMCompiler Evaluation** (ICML 2024)
-   - 3.7x latency speedup, 6.7x cost savings, 9% accuracy improvements
-   - Quality preservation is critical for fusion claims
-   - Speedup must not sacrifice correctness
+## Evaluation Assumptions (MVP)
 
-4. **Multi-Agent Framework Metrics**
-   - Node F1, Structural Similarity Index, Graph Edit Distance
-   - Trajectory-level evaluation, not just final accuracy
-   - Scaling laws with explicit R² reporting
+- **Single model per run**: the current MVP evaluates using **one configured default LLM backend/model** per run (multi-model selection is future work).
+- **No “Rust vs Python” performance claim**: cross-framework comparisons are **workflow-level** (LLM calls/tokens, critical-path latency under the *same* LLM backend/model), not language/runtime microbenchmarks.
+- **Statistical policy is enforced by the harness**: workloads and suite runners accept `--warmup` and `--iterations` and also honor `APXM_BENCH_WARMUP` / `APXM_BENCH_ITERATIONS`.
+- **Warmup purpose**: warmup iterations are **excluded from statistics** to amortize first-run effects (backend queueing/connection setup, model load, caches, JIT/init, OS page cache); only post-warmup iterations are used for mean/p50/p99 and confidence intervals.
 
----
+## Configuration (One-time)
 
-## Paper Claims to Validate
+### LLM model (paper numbers)
 
-| #  | Claim                                                           | Source     | Benchmark(s)                        |
-|----|-----------------------------------------------------------------|------------|-------------------------------------|
-| C1 | AAM provides formal agent state model (B,G,C) + 3-tier memory   | Theory     | 5_memory_augmented                  |
-| C2 | AIS provides 19 typed operations with compile-time verification | Theory     | 3_type_verification                 |
-| C3 | Scheduler overhead ~7.5μs (0.0004% of LLM latency)              | Evaluation | Runtime microbenchmark              |
-| C4 | Dataflow enables automatic parallelism (4x+ speedup)            | Evaluation | 1_parallel_research, 4_scalability |
-| C5 | FuseReasoning reduces LLM calls by 5x                           | Evaluation | 2_chain_fusion                      |
-| C6 | 12.6x fewer lines vs LangGraph                                  | Comparison | All 10 workloads                    |
-| C7 | 64x faster error detection (compile-time vs runtime)            | Comparison | 3_type_verification                 |
+- **Primary**: `gpt-oss:120b-cloud`
+- **Fallback**: `gpt-oss:20b-cloud`
+- Avoid DeepSeek-family models for the paper run.
 
----
+Where the model is configured:
 
-## Experiment Groups
+- A‑PXM runtime/driver: `.apxm/config.toml`
+- Bench harness + LangGraph baselines: `papers/cf26/benchmarks/config.json` (`llm.model`) and `APXM_BENCH_OLLAMA_MODEL`.
 
-### Group A: Substrate Properties (AAM/AIS)
+### Config files to verify before running
 
-**Purpose**: Validate the formal model, not performance
+- `.apxm/config.toml` points to the desired provider/model (Ollama cloud preferred).
+- `papers/cf26/benchmarks/config.json`:
+  - `llm.model` is the primary model.
+  - `llm.model_priority` lists fallback models.
+  - `llm.warmup` is `3` and `llm.iterations` is `10` (or higher for final paper runs).
 
-| Experiment            | What it Shows                     | Metric                           |
-|-----------------------|-----------------------------------|----------------------------------|
-| A1: Type Safety       | Compile-time error detection      | Time-to-error, LLM calls wasted  |
-| A2: Memory Tiers      | STM/LTM/Episodic access patterns  | Operations per tier, correctness |
-| A3: Operation Coverage| All 19 AIS operations work        | Pass/fail per operation          |
+## Output Convention (Required)
 
-**Benchmarks**: 3_type_verification, 5_memory_augmented
+Store raw results as JSON under a timestamped directory:
 
-### Group B: Runtime Overhead
+- `papers/cf26/benchmarks/results/YYYYMMDD_HHMMSS/`
 
-**Purpose**: Show overhead is negligible vs LLM latency
+Minimum files per paper refresh:
 
-| Experiment           | What it Shows               | Metric       |
-|----------------------|-----------------------------|--------------|
-| B1: Scheduler μ-bench| Per-node dispatch overhead  | μs/node      |
-| B2: Memory Access    | Tier access latency         | μs/operation |
-| B3: Token Passing    | Dataflow token overhead     | μs/token     |
+- `paper_benchmarks.json` (C3 + memory table inputs)
+- `workloads.json` (C1, C4–C7 + supporting evidence)
+- `loc.json` (C6)
 
-**Target**: Overhead < 0.1% of LLM latency (~2000ms)
+Each JSON should include (or be accompanied by) the exact model string used + `ollama list` digest.
 
-### Group C: Parallelism Efficiency
+## Commands (Run Last)
 
-**Purpose**: Validate automatic parallelism from dataflow
+### Phase 0: Toolchain readiness (no measurements yet)
 
-| Experiment           | What it Shows            | Metric                      |
-|----------------------|--------------------------|-----------------------------|
-| C1: N-way Parallel   | Speedup at N=2,4,8       | Actual/Theoretical speedup  |
-| C2: Research Pattern | 3-way parallel research  | End-to-end latency          |
-| C3: Efficiency Curve | Scaling behavior         | Efficiency %                |
-
-**Benchmarks**: 1_parallel_research, 4_scalability
-
-### Group D: FuseReasoning Optimization
-
-**Purpose**: Validate compiler-level LLM call reduction
-
-| Experiment              | What it Shows          | Metric                    |
-|-------------------------|------------------------|---------------------------|
-| D1: Call Reduction      | N RSN → 1 LLM          | LLM calls O0 vs O1        |
-| D2: Latency Speedup     | End-to-end improvement | Speedup factor            |
-| D3: Quality Preservation| Output equivalence     | Semantic similarity score |
-| D4: Task Type Impact    | Where fusion works     | Per-category speedup      |
-
-**Benchmarks**: 2_chain_fusion (primary)
-
-### Group E: Comparison with LangGraph
-
-**Purpose**: Head-to-head framework comparison
-
-| Experiment             | What it Shows          | Metric            |
-|------------------------|------------------------|-------------------|
-| E1: Lines of Code      | DSL expressiveness     | LOC ratio         |
-| E2: Error Detection    | Compile vs runtime     | Time-to-error ratio|
-| E3: End-to-End Latency | Real workflow speed    | ms, speedup       |
-| E4: LLM Cost           | API call efficiency    | Calls, $          |
-
-**Benchmarks**: All 10 workloads
-
----
-
-## Benchmark-to-Claim Mapping
-
-| Benchmark             | Primary Claim          | Secondary Claims | What it Demonstrates                       |
-|-----------------------|------------------------|------------------|-------------------------------------------|
-| 1_parallel_research   | C4 (auto-parallelism)  | C6 (LOC)         | Dataflow extracts parallelism automatically|
-| 2_chain_fusion        | C5 (5x fewer calls)    | C4               | FuseReasoning compiler pass works          |
-| 3_type_verification   | C7 (64x faster errors) | C2               | Compile-time type checking saves cost      |
-| 4_scalability         | C4 (4x+ speedup)       | -                | Parallelism efficiency at scale            |
-| 5_memory_augmented    | C1 (AAM memory)        | C6               | 3-tier memory model is usable              |
-| 6_tool_invocation     | C2 (typed ops)         | C6               | Native INV operation                       |
-| 7_reflection          | C2 (typed ops)         | C6               | Native REFLECT operation                   |
-| 8_planning            | C2 (typed ops)         | C6               | Native PLAN operation                      |
-| 9_conditional_routing | C4 (parallelism)       | C6               | Dataflow routing vs conditional edges      |
-| 10_multi_agent        | C2 (typed ops)         | C6               | COMMUNICATE operation                      |
-
----
-
-## Proposed Figures
-
-### Figure 1: Scheduler Overhead Distribution
-
-**Type**: Box plot / Histogram
-**X-axis**: Measurement iteration
-**Y-axis**: Dispatch latency (μs)
-**Shows**: Overhead is ~7.5μs, orders of magnitude below LLM latency (~2000ms)
-**Key insight**: "Overhead is 0.0004% of LLM latency"
-
-### Figure 2: Parallelism Efficiency Curve
-
-**Type**: Line chart with error bars
-**X-axis**: Parallelism level (N = 2, 4, 8)
-**Y-axis**: Efficiency (%) = (Actual Speedup / Theoretical Speedup) × 100
-**Lines**: A-PXM (solid), LangGraph (dashed), Ideal (dotted at 100%)
-**Shows**: A-PXM maintains higher efficiency as N increases
-
-### Figure 3: FuseReasoning Speedup
-
-**Type**: Grouped bar chart
-**X-axis**: Workflow (or chain length)
-**Y-axis**: Latency (ms)
-**Groups**: O0 (unfused), O1 (fused)
-**Annotation**: "5x speedup" arrow between bars
-
-### Figure 4: LLM Calls Comparison
-
-**Type**: Stacked bar chart
-**X-axis**: Benchmark workload (1-10)
-**Y-axis**: LLM API calls
-**Stacks**: A-PXM (blue), LangGraph (orange)
-**Shows**: A-PXM uses fewer calls across all workloads
-
-### Figure 5: Lines of Code Comparison
-
-**Type**: Horizontal bar chart
-**Y-axis**: Workload name
-**X-axis**: Lines of code
-**Bars**: A-PXM (blue), LangGraph (orange)
-**Annotation**: "12.6x fewer lines on average"
-
-### Figure 6: Error Detection Timeline
-
-**Type**: Timeline/Gantt visualization
-**Rows**: A-PXM, LangGraph
-**Columns**: Time (ms)
-**Shows**: A-PXM catches error at compile time (50ms), LangGraph at runtime (3200ms after 1 LLM call)
-
----
-
-## Proposed Tables
-
-### Table 1: AAM State Model Validation
-
-| Component        | Operation          | Count | Example                |
-|------------------|--------------------|-------|------------------------|
-| Beliefs (B)      | qmem stm           | X     | Query recent context   |
-| Goals (G)        | plan               | X     | Decompose task         |
-| Capabilities (C) | inv                | X     | Tool invocation        |
-| STM              | qmem/umem stm      | X     | Fast context           |
-| LTM              | qmem/umem ltm      | X     | Persistent knowledge   |
-| Episodic         | qmem/umem episodic | X     | Audit trail            |
-
-### Table 2: Type Error Detection Comparison
-
-| Metric                  | A-PXM        | LangGraph   | Improvement    |
-|-------------------------|--------------|-------------|----------------|
-| Detection time          | ~50ms        | ~3200ms     | 64x faster     |
-| LLM calls before error  | 0            | 1           | 1 call saved   |
-| Cost of error           | $0.00        | ~$0.01+     | 100% savings   |
-| Error location          | Compile-time | Runtime     | Earlier        |
-
-### Table 3: Runtime Overhead Breakdown
-
-| Component          | Latency      | % of LLM Call |
-|--------------------|--------------|---------------|
-| Token dispatch     | X μs         | X%            |
-| Node scheduling    | X μs         | X%            |
-| Memory access      | X μs         | X%            |
-| **Total overhead** | **~7.5 μs**  | **0.0004%**   |
-| LLM call (baseline)| ~2000 ms     | 100%          |
-
-### Table 4: Parallelism Efficiency
-
-| N | Theoretical | A-PXM Actual | Efficiency | LangGraph |
-|---|-------------|--------------|------------|-----------|
-| 2 | 2.00x       | X.XXx        | XX%        | X.XXx     |
-| 4 | 4.00x       | X.XXx        | XX%        | X.XXx     |
-| 8 | 8.00x       | X.XXx        | XX%        | X.XXx     |
-
-### Table 5: FuseReasoning Results
-
-| Workflow     | Chains | O0 (unfused) | O1 (fused) | Speedup | Calls Saved |
-|--------------|--------|--------------|------------|---------|-------------|
-| chain_fusion | 5      | X ms         | X ms       | X.Xx    | 4           |
-
-### Table 6: Fusion Applicability by Task Type
-
-| Task Type             | Fusable  | Quality Impact | Recommendation   |
-|-----------------------|----------|----------------|------------------|
-| Classification        | Yes      | None           | Recommended      |
-| Extraction            | Yes      | Minimal        | Recommended      |
-| Multi-step reasoning  | Partial  | Moderate       | Case-by-case     |
-| Creative/Open-ended   | No       | Significant    | Not recommended  |
-
-### Table 7: A-PXM vs LangGraph Summary
-
-| Metric              | A-PXM     | LangGraph | Ratio           |
-|---------------------|-----------|-----------|-----------------|
-| Avg Lines of Code   | X         | X         | 12.6x fewer     |
-| Error detection     | Compile   | Runtime   | 64x faster      |
-| LLM calls (avg)     | X         | X         | 5x fewer        |
-| Parallelism         | Automatic | Manual    | Implicit        |
-| Type safety         | Static    | Dynamic   | Compile-time    |
-
----
-
-## Statistical Requirements
-
-Based on PXM literature patterns:
-
-1. **Iterations**: Minimum 10 iterations per measurement (warmup: 3)
-2. **Metrics**: Report mean, std, p50, min, max
-3. **Confidence**: 95% confidence intervals for key claims
-4. **Effect size**: Report Cohen's d for speedup claims
-5. **Variance**: Coefficient of variation (CV) < 10% for stable measurements
-
-### Reporting Format
-
-```text
-Mean: X.XX ms (±Y.YY ms, 95% CI)
-Speedup: X.Xx (p < 0.001)
-```
-
----
-
-## Interpretation Guidelines
-
-### For Overhead Claims (C3)
-
-- **Success**: Overhead < 100μs (0.005% of LLM latency)
-- **Excellent**: Overhead < 10μs (0.0005% of LLM latency)
-- **Key message**: "Overhead is negligible; LLM latency dominates"
-
-### For Parallelism Claims (C4)
-
-- **Success**: Efficiency > 50% at N=4
-- **Excellent**: Efficiency > 70% at N=4
-- **Key message**: "Dataflow enables near-linear scaling"
-
-### For FuseReasoning Claims (C5)
-
-- **Success**: 3x+ speedup with quality preservation
-- **Excellent**: 5x+ speedup with <5% quality degradation
-- **Key message**: "Compiler optimization reduces LLM costs"
-
-### For Comparison Claims (C6, C7)
-
-- **LOC**: Must show >10x reduction on average
-- **Error detection**: Must show >50x faster detection
-- **Key message**: "A-PXM improves developer productivity"
-
----
-
-## Execution Checklist
-
-### Phase 1: Infrastructure
-
-- [x] `apxm_runner.py` - Shared runner module
-- [x] CLI `-O` flag for optimization levels
-- [ ] Verify all `run.py` scripts use `apxm_runner`
-
-### Phase 2: Data Collection
-
-- [ ] Run all 10 benchmarks with `--json` output
-- [ ] Collect 10+ iterations per measurement
-- [ ] Record system configuration (CPU, RAM, Ollama version)
-
-### Phase 3: Analysis
-
-- [ ] Compute statistics (mean, std, CI)
-- [ ] Generate figures using matplotlib/seaborn
-- [ ] Populate table values
-
-### Phase 4: Validation
-
-- [ ] Verify claims match data
-- [ ] Cross-check with paper text
-- [ ] Fill in \TODO{} and \VERIFY{} placeholders
-
----
-
-## Files to Update
-
-### Benchmark Scripts (use `apxm_runner`)
-
-All updated to use real CLI execution:
-
-- [x] `2_chain_fusion/run.py`
-- [x] `3_type_verification/run.py`
-- [x] `4_scalability/run.py`
-- [x] `8_planning/run.py`
-- [x] `9_conditional_routing/run.py`
-- [x] `10_multi_agent/run.py`
-- [ ] `1_parallel_research/run.py`
-- [ ] `5_memory_augmented/run.py`
-- [ ] `6_tool_invocation/run.py`
-- [ ] `7_reflection/run.py`
-
-### Paper Files (after data collection)
-
-- `tex/05_evaluation.tex` - Fill in \TODO{} values
-- `tab/*.tex` - Populate table numbers
-- `fig/*.tex` - Generate figures from data
-
----
-
-## Measured Results (Dec 2025)
-
-| Metric                 | Target       | Measured           | Status            |
-|------------------------|--------------|--------------------|-------------------|
-| Substrate overhead     | < 50μs/op    | **7.5μs**          | ✓ Done            |
-| Overhead ratio         | < 0.01%      | **0.0004%**        | ✓ Done            |
-| STM write/read         | —            | 0.28μs / 0.13μs    | ✓ Done            |
-| LTM write/read         | —            | 0.23μs / 0.12μs    | ✓ Done            |
-| Episodic write         | —            | 1.36μs             | ✓ Done            |
-| Chain fusion (5x)      | Nx reduction | —                  | Pending           |
-| Parallelism efficiency | > 70%        | ~85% (claimed)     | Pending           |
-| Type verification      | 50+ checks   | **52+ documented** | ✓ Catalog done    |
-
----
-
-## Commands
+Using Python CLI (recommended - handles environment automatically):
 
 ```bash
-# Substrate overhead benchmark (fast, ~2 seconds)
-cargo run --example paper_benchmarks -p apxm-runtime --release
-
-# With JSON output
-cargo run --example paper_benchmarks -p apxm-runtime --release -- --json
-
-# Run all workload benchmarks
-python papers/cf26/benchmarks/workloads/runner.py --json > results.json
-
-# Run individual benchmark
-python papers/cf26/benchmarks/workloads/2_chain_fusion/run.py --json
+python tools/apxm_cli.py doctor
+python tools/apxm_cli.py compiler build
 ```
+
+Or manually (requires activated conda environment):
+
+```bash
+conda activate apxm
+eval "$(cargo run -p apxm-cli -- activate)"
+./target/release/apxm doctor
+```
+
+If running real LLM mode: `ollama serve` and verify model availability with `ollama list`.
+
+### Phase 0.5: Crate/unit tests (optional but recommended before final runs)
+
+- `cargo test -p apxm-ais -p apxm-driver -p apxm-runtime -p apxm-backends -p apxm-artifact -p apxm-core -p apxm-cli`
+
+### Phase 1: Runtime microbenchmarks (C3 + memory table inputs)
+
+- Scheduler overhead + memory tier latencies (single JSON output contains both):
+  - `cargo run --example paper_benchmarks -p apxm-runtime --release -- --json > papers/cf26/benchmarks/results/YYYYMMDD_HHMMSS/paper_benchmarks.json`
+
+### Phase 2: Workload suite (C1, C4–C7)
+
+**Using Python CLI (recommended):**
+
+```bash
+# Check all workloads compile
+python tools/apxm_cli.py workloads check
+
+# Run a specific workload
+python tools/apxm_cli.py workloads run 10_multi_agent
+
+# Run benchmarks with iteration/warmup control
+python tools/apxm_cli.py workloads benchmark 2_chain_fusion -n 10 -w 3
+python tools/apxm_cli.py workloads benchmark --all --json -o results.json
+```
+
+**Full benchmark run** (honors `papers/cf26/benchmarks/config.json` and selects the first available model from `model_priority` via `ollama list`):
+
+```bash
+python papers/cf26/benchmarks/run_all.py --workloads --iterations 10 --warmup 3 --json > papers/cf26/benchmarks/results/YYYYMMDD_HHMMSS/workloads.json
+```
+
+Optional: run a single workload for debugging (same warmup/iterations policy):
+
+```bash
+python papers/cf26/benchmarks/workloads/runner.py --workload 9 --iterations 10 --warmup 3 --json
+```
+
+### Phase 3: LOC comparison (C6)
+
+- `python papers/cf26/benchmarks/workloads/loc_comparison/count.py > papers/cf26/benchmarks/results/YYYYMMDD_HHMMSS/loc.json`
+
+## Claims (C1–C7) Checklist
+
+### C1 — AAM state model + 3-tier memory
+
+- **Source**: workload `5_memory_augmented` output inside `workloads.json`
+- **Success**:
+  - AAM beliefs/goals/capabilities are inspectable (provide one stable dump for `tab/aam-inspection.tex`).
+  - Memory operations behave correctly across STM/LTM/Episodic for the benchmark scenario.
+- **Paper targets**: `tab/aam-inspection.tex`, `tab/memory-ops.tex`
+
+### C2 — AIS typed operations + compile-time verification
+
+- **Source**:
+  - Workload `3_type_verification`
+  - `papers/cf26/benchmarks/workloads/3_type_verification/VERIFICATION_CATALOG.md` (52+ checks)
+- **Success**:
+  - Invalid programs fail before any LLM calls (compile-time).
+  - The paper’s “**19 typed operations**” claim matches the implementation (see “AIS Operation Coverage” below).
+- **Paper targets**: `tab/type-errors.tex` + AIS discussion
+
+### C3 — Scheduler overhead
+
+- **Source**: `paper_benchmarks.json` (`table_4_overhead` + `table_5_memory`)
+- **Success**:
+  - `table_4_overhead.per_op_overhead_us < 10` (target) on `--release`
+  - Ratio to LLM latency is computed from the **same** model run used in `tab/real-llm.tex`.
+- **Paper targets**: `tab/runtime-overhead.tex`, `tab/real-llm.tex` ratio line
+
+### C4 — Automatic parallelism
+
+- **Source**: workloads `1_parallel_research` and `4_scalability`
+- **Success**:
+  - Report speedup/efficiency under the same model/backend for both A‑PXM and LangGraph baselines.
+  - Efficiency target: `> 70%` at `N=4` (paper thresholds may be revised if the data differs).
+- **Paper targets**: `fig/speedup-plot.tex`, `fig/dataflow-extraction.tex`
+
+### C5 — FuseReasoning (5× fewer calls; latency reduction; quality)
+
+- **Source**: workload `2_chain_fusion` (`O0` vs `O1`)
+- **Success**:
+  - Call reduction: `5 -> 1`
+  - Measured speedup meets paper claim or the paper updates to the measured value.
+  - Quality results are explicitly treated as **empirical** (see paper threats-to-validity); populate `tab/fusion-applicability.tex`.
+- **Paper targets**: `fig/fuse-reasoning-demo.tex`, `tab/fusion-applicability.tex`
+
+### C6 — LOC reduction (>10×)
+
+- **Source**: `loc.json`
+- **Success**: average semantic LOC ratio `> 10×` across the 10 workloads.
+- **Paper targets**: `tab/apxm-vs-langgraph.tex`
+
+### C7 — Faster error detection (>50×)
+
+- **Source**: workload `3_type_verification`
+- **Success**: compile-time failure is orders of magnitude faster than runtime failure and wastes `0` LLM calls for A‑PXM.
+- **Paper targets**: `tab/apxm-vs-langgraph.tex`
+
+## AIS Operation Coverage (Paper-facing)
+
+### Operation count to keep consistent everywhere
+
+The paper should present a **core 19-op AIS** (typed, verifier-checked) and treat additional syntax/features as **extensions** unless/until the paper text is updated to count them.
+
+- **Core 19 (paper claim)**: `QMEM`, `UMEM`, `RSN`, `PLAN`, `REFLECT`, `VERIFY`, `INV`, `EXC`, `JUMP`, `BRANCH_ON_VALUE`, `LOOP_START`, `LOOP_END`, `RETURN`, `MERGE`, `FENCE`, `WAIT_ALL`, `TRY_CATCH`, `ERR`, `COMMUNICATE`.
+- **Implementation extensions**: `SWITCH`, `FLOW_CALL` (now artifact-emittable; see “What changed recently”).
+- **Metadata/internal** (not counted in the “19”): `AGENT` (metadata), `CONST_STR` (compiler internal).
+
+### Prototype limitations (must match paper wording)
+
+These ops exist and are exercised in workloads, but their semantics are prototype-level and must be presented as such:
+
+- `COMMUNICATE`: acknowledgment stub (no transport).
+- `FLOW_CALL`: records invocation and returns a structured “invoked” object (does not execute the target agent flow yet).
+- `EXC`: currently behaves as “raise exception” (not “execute sandboxed code”).
+- `TRY_CATCH` / `ERR`: minimal placeholder behavior.
+
+## Paper Consistency Sweep (Do Before Submission)
+
+In the paper repo:
+
+- `rg -n \"\\\\\\\\(TODO|VERIFY)\\\\\\\\{\"` should be empty (or remaining TODOs are explicitly non-numeric and permitted).
+- Ensure the evaluation section contains:
+  - “Threats to Validity” (backend variability, prompt sensitivity, caching/warmup; workflow-level comparisons).
+  - “Prototype scope” table (implemented vs planned).
+- Ensure single-model MVP limitation is stated (and multi-model routing is future work).
+
+## Paper Table/Figure Fill Map (What to run to get each number)
+
+This section is intentionally short; it exists to prevent “where did this number come from?” drift.
+
+- `tab/runtime-overhead.tex` + `tab/memory-ops.tex`: `paper_benchmarks.json` (`table_4_overhead`, `table_5_memory`)
+- `tab/aam-inspection.tex`: `workloads.json` → workload `5_memory_augmented` (plus one stable AAM dump snippet)
+- `tab/type-errors.tex`: `workloads.json` → workload `3_type_verification` + `VERIFICATION_CATALOG.md`
+- `tab/apxm-vs-langgraph.tex`: `loc.json` + `workloads.json` (`3_type_verification` time-to-error, plus any LLM-call counts used)
+- `tab/fusion-applicability.tex`: workload `2_chain_fusion` **plus a quality-by-task harness** (not fully wired yet; see below)
+- `tab/real-llm.tex`: requires a **real-LLM probe script** that records mean/p99 latency + token usage under `gpt-oss:120b-cloud` / `gpt-oss:20b-cloud` (not fully wired yet; see below)
+- `tab/compilation-scaling.tex`: requires a **compiler profiling harness** (not fully wired yet; see below)
+- `fig/speedup-plot.tex`: `workloads.json` (`1_parallel_research`, `4_scalability`) plus any synthetic scaling run used for the 32-way `\VERIFY{}` placeholders
+
+### Known missing “paper fill” harness pieces (must exist before final run)
+
+- [ ] Real‑LLM probe script (latency p99 + token usage) to populate `tab/real-llm.tex`
+- [ ] Compilation scaling/profiling harness to populate `tab/compilation-scaling.tex`
+- [ ] Synthetic DAG parallelism experiment (1..32) if the paper keeps the 32-way `\VERIFY{}` claims
+- [ ] FuseReasoning quality-by-task harness (classification/extraction vs reasoning) to populate `tab/fusion-applicability.tex`
+
+## What changed recently (keep this plan in sync)
+
+- Workloads `9_conditional_routing` and `10_multi_agent` are **artifact-emittable** (artifact wire format supports `SWITCH` + `FLOW_CALL`).
+- Benchmark scripts enforce `warmup=3` / `iterations=10` by default and allow overrides via flags/env.

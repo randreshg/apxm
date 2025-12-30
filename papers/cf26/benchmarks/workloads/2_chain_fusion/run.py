@@ -14,10 +14,11 @@ This benchmark runs the ACTUAL AIS workflow through the full A-PXM pipeline:
 
 import argparse
 import json
+import os
 import statistics
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Add parent directory to import apxm_runner
@@ -25,13 +26,23 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from apxm_runner import APXMConfig, run_benchmark, compare_optimization_levels
 
 
-WARMUP_ITERATIONS = 1
-BENCHMARK_ITERATIONS = 3
+def _get_int_env(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+WARMUP_ITERATIONS = _get_int_env("APXM_BENCH_WARMUP", 3)
+BENCHMARK_ITERATIONS = _get_int_env("APXM_BENCH_ITERATIONS", 10)
 CHAIN_LENGTH = 5  # Number of RSN calls in the chain
 WORKFLOW_FILE = Path(__file__).parent / "workflow.ais"
 
 
-def run_langgraph(iterations: int = BENCHMARK_ITERATIONS) -> dict:
+def run_langgraph(iterations: int = BENCHMARK_ITERATIONS, warmup: int = WARMUP_ITERATIONS) -> dict:
     """Run LangGraph workflow and collect timing."""
     from workflow import graph, HAS_OLLAMA
 
@@ -45,7 +56,7 @@ def run_langgraph(iterations: int = BENCHMARK_ITERATIONS) -> dict:
     }
 
     # Warmup
-    for _ in range(WARMUP_ITERATIONS):
+    for _ in range(warmup):
         graph.invoke(initial_state)
 
     # Benchmark
@@ -67,7 +78,7 @@ def run_langgraph(iterations: int = BENCHMARK_ITERATIONS) -> dict:
     }
 
 
-def run_apxm(iterations: int = BENCHMARK_ITERATIONS) -> dict:
+def run_apxm(iterations: int = BENCHMARK_ITERATIONS, warmup: int = WARMUP_ITERATIONS) -> dict:
     """Run A-PXM workflow through the REAL pipeline.
 
     This runs workflow.ais through:
@@ -76,7 +87,7 @@ def run_apxm(iterations: int = BENCHMARK_ITERATIONS) -> dict:
     """
     # Run with O1 (FuseReasoning enabled) for the main benchmark
     config = APXMConfig(opt_level=1)
-    result = run_benchmark(WORKFLOW_FILE, config, iterations, warmup=WARMUP_ITERATIONS)
+    result = run_benchmark(WORKFLOW_FILE, config, iterations, warmup=warmup)
 
     if result.get("success"):
         result["llm_calls"] = 1  # FuseReasoning batches into single call
@@ -95,29 +106,30 @@ def main():
     parser = argparse.ArgumentParser(description="Chain Fusion Benchmark")
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--iterations", type=int, default=BENCHMARK_ITERATIONS)
+    parser.add_argument("--warmup", type=int, default=WARMUP_ITERATIONS)
     args = parser.parse_args()
 
     results = {
         "meta": {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "benchmark": "chain_fusion",
             "chain_length": CHAIN_LENGTH,
         },
         "config": {
             "iterations": args.iterations,
-            "warmup": WARMUP_ITERATIONS,
+            "warmup": args.warmup,
         },
         "results": {},
     }
 
     # Run LangGraph benchmark
     try:
-        results["results"]["langgraph"] = run_langgraph(args.iterations)
+        results["results"]["langgraph"] = run_langgraph(args.iterations, warmup=args.warmup)
     except ImportError as e:
         results["results"]["langgraph"] = {"error": str(e)}
 
     # Run A-PXM benchmark
-    results["results"]["apxm"] = run_apxm(args.iterations)
+    results["results"]["apxm"] = run_apxm(args.iterations, warmup=args.warmup)
 
     # Calculate comparison metrics
     if "error" not in results["results"].get("langgraph", {}):

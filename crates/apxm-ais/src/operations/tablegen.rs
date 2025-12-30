@@ -3,8 +3,8 @@
 //! This module generates `.td` files from Rust operation definitions,
 //! enabling Rust to be the single source of truth for AIS operations.
 
-use super::definitions::{get_all_operations, AISOperationType, OperationSpec};
 use super::OperationCategory;
+use super::definitions::{AISOperationType, OperationSpec, get_all_operations};
 
 // ============================================================================
 // MLIR-Specific Types for TableGen Generation
@@ -296,7 +296,11 @@ fn generate_op_def(spec: &MlirOperationSpec) -> String {
 
     // Add memory effects as a trait
     if !spec.memory_effects.is_empty() {
-        let effects: Vec<String> = spec.memory_effects.iter().map(|e| e.to_tablegen()).collect();
+        let effects: Vec<String> = spec
+            .memory_effects
+            .iter()
+            .map(|e| e.to_tablegen())
+            .collect();
         traits.push(format!("MemoryEffects<[{}]>", effects.join(", ")));
     }
 
@@ -354,7 +358,10 @@ fn generate_op_def(spec: &MlirOperationSpec) -> String {
 
     // Combine all parts
     let mut parts = vec![
-        format!("def {} : AIS_Op<\"{}\", [{}]> {{", op_name, mnemonic, traits_str),
+        format!(
+            "def {} : AIS_Op<\"{}\", [{}]> {{",
+            op_name, mnemonic, traits_str
+        ),
         format!("  let summary = \"{}\";", base.name),
         format!(
             "  let description = [{{{}}}];",

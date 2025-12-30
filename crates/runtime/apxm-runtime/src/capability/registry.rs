@@ -1,8 +1,8 @@
 //! Capability registry for registration and lookup
 
 use super::{executor::CapabilityExecutor, metadata::CapabilityMetadata};
-use apxm_core::error::RuntimeError;
 use apxm_backends::JsonSchema;
+use apxm_core::error::RuntimeError;
 use dashmap::DashMap;
 use std::sync::Arc;
 

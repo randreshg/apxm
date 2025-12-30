@@ -34,10 +34,10 @@ pub use aam::{
     Aam, CapabilityRecord, Goal, GoalId, GoalStatus, STAGED_BELIEF_PREFIX, TransitionLabel,
     effects::{AamComponent, OperationEffects, operation_effects},
 };
-pub use capability::CapabilitySystem;
+pub use capability::{flow_registry::FlowRegistry, CapabilitySystem};
 pub use executor::{ExecutionContext, ExecutorEngine, InnerPlanLinker, NoOpLinker};
 pub use memory::{MemoryConfig, MemorySpace, MemorySystem};
-pub use observability::MetricsCollector;
+pub use observability::{MetricsCollector, SchedulerMetrics};
 pub use runtime::{Runtime, RuntimeConfig, RuntimeExecutionResult};
 pub use scheduler::{DataflowScheduler, SchedulerConfig};
 

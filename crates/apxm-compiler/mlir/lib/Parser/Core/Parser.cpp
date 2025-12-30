@@ -22,3 +22,15 @@ Parser::Parser(Lexer &lexer)
 std::unique_ptr<AgentDecl> Parser::parseAgent() {
   return declParser.parseAgent();
 }
+
+std::vector<std::unique_ptr<AgentDecl>> Parser::parseAgents() {
+  std::vector<std::unique_ptr<AgentDecl>> agents;
+  while (lexer.peek().kind != TokenKind::eof) {
+    if (auto agent = parseAgent()) {
+      agents.push_back(std::move(agent));
+    } else {
+      break;
+    }
+  }
+  return agents;
+}

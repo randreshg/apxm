@@ -13,6 +13,7 @@ The project is inspired by the “Agent Programming eXecution Model” paper: ag
 
 ## Docs Map
 
+- `docs/AGENTS.md`: **Python CLI reference** (recommended)
 - `docs/getting_started.md`: setup and toolchain
 - `docs/hello_ais.md`: minimal end-to-end example
 - `docs/architecture.md`: system architecture
@@ -30,19 +31,38 @@ git clone https://github.com/randreshg/apxm
 cd apxm
 
 # Create the conda environment (installs MLIR/LLVM toolchain)
-conda env create -f environment.yaml
-conda activate apxm
-source scripts/apxm-activate.sh
+cargo run -p apxm-cli -- install
 
-# Build the Rust workspace (compiler excluded by default)
-cargo build --workspace --exclude apxm-compiler
+# Install Python CLI dependencies
+pip install typer rich
 ```
+
+### Using the Python CLI (Recommended)
+
+The Python CLI automatically handles environment setup and MLIR configuration:
+
+```bash
+# Check environment status
+python tools/apxm_cli.py doctor
+
+# Build the compiler (auto-sets MLIR environment)
+python tools/apxm_cli.py compiler build
+
+# Run an AIS file
+python tools/apxm_cli.py compiler run examples/hello_world.ais
+
+# Check all benchmark workloads
+python tools/apxm_cli.py workloads check
+```
+
+See `docs/AGENTS.md` for the complete CLI reference.
 
 ### Prerequisites
 
 - **mamba** or **conda** (install [miniforge](https://github.com/conda-forge/miniforge) recommended)
 - **git**
 - **Rust nightly** (managed via `rust-toolchain.toml`)
+- **Python 3.10+** with `typer` and `rich`
 
 ### Development Commands
 
@@ -54,7 +74,7 @@ make test       # Run tests
 make help       # Show all targets
 ```
 
-APXM keeps workspace state under `.apxm/` (artifacts, sessions, logs). A minimal CLI is available for compile/run workflows.
+APXM keeps workspace state under `.apxm/` (artifacts, sessions, logs).
 
 ---
 
@@ -64,21 +84,15 @@ Runtime and driver configuration live in `crates/apxm-driver`. A minimal example
 
 ```toml
 [chat]
-providers = ["ollama", "gemini"]
+providers = ["ollama"]
 default_model = "ollama"
 planning_model = "ollama"
 
 [[llm_backends]]
 name = "ollama"
 provider = "ollama"
-model = "qwen3-coder:480b-cloud"
+model = "gpt-oss:120b-cloud" # or: "gpt-oss:20b-cloud"
 endpoint = "http://localhost:11434"
-
-[[llm_backends]]
-name = "gemini"
-provider = "google"
-model = "gemini-flash-latest"
-api_key = "env:GEMINI_API_KEY"
 ```
 
 Key sections:
@@ -88,6 +102,10 @@ Key sections:
 - `capabilities`, `tools`, `execpolicy`: declare available external actions and sandboxing policies.
 
 The driver instantiates each backend, registers them with the LLM registry, and sets defaults. Ollama endpoints skip API-key validation; cloud providers must provide `api_key`.
+
+**MVP note**: for now we assume a single default backend/model. The runtime can register multiple backends, but the DSL does not yet expose per-operation model selection.
+
+See `docs/getting_started.md` for ready-to-copy examples (Ollama cloud, OpenAI, Gemini).
 
 ---
 
@@ -110,28 +128,45 @@ examples/         # Sample AIS programs
 
 ## Frequently Used Commands
 
-```bash
-# Build runtime and driver
-cargo build -p apxm-runtime -p apxm-driver
+### Python CLI (Recommended)
 
-# Run runtime examples
+```bash
+# Environment check
+python tools/apxm_cli.py doctor
+
+# Build compiler
+python tools/apxm_cli.py compiler build
+
+# Run AIS file
+python tools/apxm_cli.py compiler run examples/hello_world.ais
+
+# Compile only
+python tools/apxm_cli.py compiler compile file.ais -o output.apxmobj
+
+# Workload validation
+python tools/apxm_cli.py workloads list
+python tools/apxm_cli.py workloads check
+```
+
+### Manual Commands (Alternative)
+
+For advanced users who prefer manual environment management:
+
+```bash
+# Activate environment first
+conda activate apxm
+eval "$(cargo run -p apxm-cli -- activate)"
+
+# Build and use the compiled binary
+cargo build -p apxm-cli --features driver --release
+./target/release/apxm run examples/hello_world.ais
+./target/release/apxm compile examples/hello_world.ais -o output.apxmobj
+
+# Runtime examples (no compiler required)
 cargo run -p apxm-runtime --example substrate_demo
 cargo run -p apxm-runtime --example ollama_llm_demo
 
-# Enable metrics (LLM tokens + timing) in runtime/driver
-cargo test -p apxm-runtime --features metrics
-
-# CLI (compile/run)
-cargo run -p apxm-cli --features driver -- compile examples/hello_world.ais
-cargo run -p apxm-cli --features driver -- run examples/hello_world.ais
-
-# CLI diagnostics
-cargo run -p apxm-cli -- doctor
-
-# CLI env exports (after conda activate)
-eval "$(cargo run -p apxm-cli -- activate)"
-
-# Install/update env (mamba)
+# Install/update conda environment
 cargo run -p apxm-cli -- install
 ```
 

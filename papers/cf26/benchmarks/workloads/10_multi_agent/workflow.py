@@ -6,6 +6,7 @@ Compare with workflow.ais which has native agent definitions
 and communicate operations for inter-agent messaging.
 """
 
+import os
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
 
@@ -17,7 +18,11 @@ except ImportError:
     HAS_OLLAMA = False
 
 # Ollama model configuration
-OLLAMA_MODEL = "phi3:mini"
+OLLAMA_MODEL = (
+    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
+    or os.environ.get("OLLAMA_MODEL")
+    or "phi3:mini"
+)
 
 
 class MultiAgentState(TypedDict):

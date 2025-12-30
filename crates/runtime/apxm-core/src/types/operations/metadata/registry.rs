@@ -4,7 +4,7 @@
 
 // Re-export everything from apxm-ais operations
 pub use apxm_ais::operations::{
-    find_operation_by_name, get_all_operations, get_operation_spec, get_public_operations,
-    AISOperationType, AIS_OPERATIONS, INTERNAL_OPERATIONS, OperationCategory, OperationField,
-    OperationSpec,
+    AIS_OPERATIONS, AISOperationType, INTERNAL_OPERATIONS, OperationCategory, OperationField,
+    OperationSpec, find_operation_by_name, get_all_operations, get_operation_spec,
+    get_public_operations,
 };

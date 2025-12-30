@@ -3,7 +3,7 @@
 //! Provides shared validation logic used by both compiler and runtime to ensure
 //! operations have all required fields and correct types.
 
-use crate::operations::{get_operation_spec, AISOperationType};
+use crate::operations::{AISOperationType, get_operation_spec};
 use crate::types::Value;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -19,7 +19,9 @@ pub enum ValidationError {
     },
 
     /// A field has an invalid type.
-    #[error("Invalid type for field '{field}' in operation {operation}: expected {expected}, got {actual}")]
+    #[error(
+        "Invalid type for field '{field}' in operation {operation}: expected {expected}, got {actual}"
+    )]
     InvalidFieldType {
         operation: String,
         field: String,
@@ -108,7 +110,8 @@ pub fn validate_operation_strict(
 /// Does not provide error details - use `validate_operation` for that.
 pub fn has_required_fields(op_type: AISOperationType, attributes: &HashMap<String, Value>) -> bool {
     let spec = get_operation_spec(op_type);
-    spec.required_fields().all(|f| attributes.contains_key(f.name))
+    spec.required_fields()
+        .all(|f| attributes.contains_key(f.name))
 }
 
 /// Get the list of missing required fields for an operation.
@@ -160,7 +163,10 @@ mod tests {
         // Missing "value" field
 
         let result = validate_operation(AISOperationType::UMem, &attrs);
-        assert!(matches!(result, Err(ValidationError::MissingField { field: "value", .. })));
+        assert!(matches!(
+            result,
+            Err(ValidationError::MissingField { field: "value", .. })
+        ));
     }
 
     #[test]
@@ -178,7 +184,10 @@ mod tests {
         // LoopEnd has no required fields
         let attrs = HashMap::new();
         let result = validate_operation(AISOperationType::LoopEnd, &attrs);
-        assert!(result.is_ok(), "LoopEnd should validate with empty attributes");
+        assert!(
+            result.is_ok(),
+            "LoopEnd should validate with empty attributes"
+        );
     }
 
     #[test]
@@ -202,7 +211,10 @@ mod tests {
     fn test_strict_validation_unknown_field() {
         let mut attrs = HashMap::new();
         attrs.insert("prompt".to_string(), Value::String("test".to_string()));
-        attrs.insert("unknown_field".to_string(), Value::String("value".to_string()));
+        attrs.insert(
+            "unknown_field".to_string(),
+            Value::String("value".to_string()),
+        );
 
         // Normal validation should pass
         assert!(validate_operation(AISOperationType::Rsn, &attrs).is_ok());

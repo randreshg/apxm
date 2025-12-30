@@ -1,17 +1,16 @@
 use anyhow::{Context, Result};
 use std::{
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
 };
 
+use apxm_ais::generate_tablegen;
 use apxm_core::utils::build::{
     LibraryConfig, LinkSpec, Platform, detect_llvm_version, emit_link_directives,
     find_versioned_mlir_library, get_target_dir, get_workspace_root, locate_library,
 };
 use apxm_core::{log_debug, log_info};
-use apxm_ais::generate_tablegen;
 
 /// Build configuration derived from environment variables
 struct BuildConfig {
@@ -81,7 +80,12 @@ impl MlirLayout {
 
 /// Set up cargo rerun triggers for relevant files
 fn setup_rerun_triggers() {
-    for path in ["CMakeLists.txt", "mlir/lib/CMakeLists.txt", "mlir/lib", "mlir/include"] {
+    for path in [
+        "CMakeLists.txt",
+        "mlir/lib/CMakeLists.txt",
+        "mlir/lib",
+        "mlir/include",
+    ] {
         println!("cargo:rerun-if-changed={}", path);
     }
     // Also rerun if apxm-ais changes (for TableGen regeneration)

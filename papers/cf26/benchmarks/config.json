@@ -6,9 +6,10 @@
   },
   "llm": {
     "iterations": 10,
-    "warmup": 2,
+    "warmup": 3,
     "provider": "ollama",
-    "model": "phi3:mini",
+    "model": "gpt-oss:120b-cloud",
+    "model_priority": ["gpt-oss:120b-cloud", "gpt-oss:20b-cloud"],
     "base_url": "http://localhost:11434"
   },
   "workloads": {

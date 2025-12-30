@@ -3,7 +3,7 @@
 // Memory tiers: stm (short-term), ltm (long-term), episodic (audit trail).
 
 agent MemoryAgent {
-    flow main(query: str) {
+    @entry flow main(query: str) -> str {
         // 1. Query long-term memory for cached knowledge
         qmem ltm "domain_knowledge" -> cached
 
@@ -18,5 +18,7 @@ agent MemoryAgent {
 
         // 5. Persist new knowledge to long-term memory
         umem ltm "last_answer" <- answer
+
+        return answer
     }
 }

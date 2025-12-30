@@ -9,6 +9,7 @@ Measures the cost of runtime errors vs compile-time errors:
 Paper claim: "Compile-time errors save $0.15+ per error vs runtime"
 """
 
+import os
 import json
 import subprocess
 import time
@@ -22,7 +23,11 @@ try:
 except ImportError:
     HAS_OLLAMA = False
 
-OLLAMA_MODEL = "phi3:mini"
+OLLAMA_MODEL = (
+    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
+    or os.environ.get("OLLAMA_MODEL")
+    or "phi3:mini"
+)
 
 # Approximate token costs (GPT-4 pricing as reference)
 # Input: $0.03/1K tokens, Output: $0.06/1K tokens

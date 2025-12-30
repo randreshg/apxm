@@ -9,9 +9,7 @@ use apxm_core::log_info;
 use apxm_core::types::OptimizationLevel;
 use apxm_runtime::{RuntimeConfig, RuntimeExecutionResult};
 
-use crate::{
-    compiler::Compiler, config::ApXmConfig, error::DriverError, runtime::RuntimeExecutor,
-};
+use crate::{compiler::Compiler, config::ApXmConfig, error::DriverError, runtime::RuntimeExecutor};
 
 /// Linker configuration that drives compiler and runtime orchestration.
 #[derive(Debug, Clone)]
@@ -133,7 +131,8 @@ impl Linker {
 
         #[cfg(feature = "metrics")]
         let runtime_start = std::time::Instant::now();
-        let execution = self.runtime.execute(artifact.dag().clone()).await?;
+        // Use execute_artifact_auto to enforce @entry flow requirement
+        let execution = self.runtime.execute_artifact_auto(artifact.clone()).await?;
         #[cfg(feature = "metrics")]
         let runtime_time = runtime_start.elapsed();
 

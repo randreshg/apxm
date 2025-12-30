@@ -144,6 +144,9 @@ Token Lexer::lexImpl() {
       return Token(TokenKind::greater_equal, ">=", getCurrentLocation());
     }
     return Token(TokenKind::greater, ">", getCurrentLocation());
+
+  case '@':
+    return Token(TokenKind::at_sign, "@", getCurrentLocation());
   }
 
   // Report unknown character
@@ -228,16 +231,16 @@ Token Lexer::lexIdentifierOrKeyword() {
       .Case("LTM", TokenKind::kw_LTM)
       .Case("STM", TokenKind::kw_STM)
 
-      // Types
-      .Case("agent", TokenKind::kw_agent_type)
-      .Case("capability", TokenKind::kw_capability_type)
-      .Case("context", TokenKind::kw_context_type)
+      // Types (note: agent/capability/context already defined above as keywords)
       .Case("goal", TokenKind::kw_goal_type)
       .Case("handle", TokenKind::kw_handle)
       .Case("response", TokenKind::kw_response)
       .Case("result", TokenKind::kw_result)
       .Case("token", TokenKind::kw_token)
       .Case("void", TokenKind::kw_void)
+
+      // Annotations
+      .Case("entry", TokenKind::kw_entry)
 
       .Default(TokenKind::identifier);
 

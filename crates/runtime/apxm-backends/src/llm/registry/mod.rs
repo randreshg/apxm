@@ -3,17 +3,17 @@
 //! Provides backend registration, intelligent routing, health monitoring,
 //! and fallback chain execution for robust LLM request handling.
 
-use crate::llm::backends::{LLMBackend, LLMRequest, LLMResponse};
-use crate::llm::provider::Provider;
 #[cfg(feature = "metrics")]
 use crate::llm::RequestMetrics;
+use crate::llm::backends::{LLMBackend, LLMRequest, LLMResponse};
+use crate::llm::provider::Provider;
 use anyhow::{Context as AnyhowContext, Result};
+#[cfg(feature = "metrics")]
+use apxm_core::types::TokenUsage;
 use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
-#[cfg(feature = "metrics")]
-use apxm_core::types::TokenUsage;
 
 mod health;
 mod resolver;

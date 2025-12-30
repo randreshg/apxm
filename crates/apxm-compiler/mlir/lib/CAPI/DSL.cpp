@@ -97,9 +97,11 @@ ApxmModule* parse_internal(ApxmCompilerContext* ctx, llvm::SourceMgr& srcMgr, un
 
   apxm::parser::Lexer lexer(srcMgr, bufferId);
   apxm::parser::Parser parser(lexer);
-  auto agent = parser.parseAgent();
 
-  if (!agent || parser.hadError()) {
+  // Parse all agents in the file (multi-agent support)
+  auto agents = parser.parseAgents();
+
+  if (agents.empty() || parser.hadError()) {
     // Convert diagnostics to errors
     for (auto& entry : capture.entries) {
       apxm_error_collector_add(static_cast<uint32_t>(entry.severity),
@@ -122,7 +124,7 @@ ApxmModule* parse_internal(ApxmCompilerContext* ctx, llvm::SourceMgr& srcMgr, un
   }
 
   apxm::parser::MLIRGen mlirGen(*ctx->mlir_context, srcMgr);
-  auto module = mlirGen.generateModule(agent.get());
+  auto module = mlirGen.generateModuleFromAgents(agents);
   return module ? new (std::nothrow) ApxmModule(ctx, module.release()) : nullptr;
 }
 

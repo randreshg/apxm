@@ -44,3 +44,6 @@ __pycache__/
 *~
 .vscode/
 .idea/
+
+# Clangd cache
+.cache/

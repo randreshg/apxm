@@ -329,7 +329,8 @@ mod tests {
     #[test]
     fn test_aam() {
         let mut aam = AAM::new();
-        aam.beliefs.set("agent_name", Value::String("TestAgent".to_string()));
+        aam.beliefs
+            .set("agent_name", Value::String("TestAgent".to_string()));
         aam.goals.push(Goal {
             id: "goal1".to_string(),
             description: "Test goal".to_string(),

@@ -13,9 +13,10 @@ Paper claim: "~85% parallelism efficiency"
 
 import asyncio
 import json
+import os
 import statistics
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Try to import Ollama
 try:
@@ -25,9 +26,25 @@ except ImportError:
     HAS_OLLAMA = False
     print("WARNING: langchain_ollama not installed. Using mock LLM.")
 
-OLLAMA_MODEL = "phi3:mini"
-WARMUP_ITERATIONS = 2
-BENCHMARK_ITERATIONS = 5
+OLLAMA_MODEL = (
+    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
+    or os.environ.get("OLLAMA_MODEL")
+    or "phi3:mini"
+)
+
+
+def _get_int_env(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+WARMUP_ITERATIONS = _get_int_env("APXM_BENCH_WARMUP", 3)
+BENCHMARK_ITERATIONS = _get_int_env("APXM_BENCH_ITERATIONS", 10)
 
 # Prompts for the 3 parallel research tasks
 PROMPTS = [
@@ -99,25 +116,33 @@ def calculate_efficiency(sequential_time: float, parallel_time: float, n_ops: in
 
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Parallelism Efficiency Benchmark")
+    parser.add_argument("--json", action="store_true", help="Output JSON only")
+    parser.add_argument("--iterations", type=int, default=BENCHMARK_ITERATIONS)
+    parser.add_argument("--warmup", type=int, default=WARMUP_ITERATIONS)
+    args = parser.parse_args()
+
     print("=" * 60)
     print("PARALLELISM EFFICIENCY BENCHMARK")
     print("=" * 60)
     print(f"Ollama available: {HAS_OLLAMA}")
     print(f"Model: {OLLAMA_MODEL}")
     print(f"Prompts: {len(PROMPTS)}")
-    print(f"Iterations: {BENCHMARK_ITERATIONS}")
+    print(f"Iterations: {args.iterations}")
     print()
 
     # Warmup
     print("Warming up...")
-    for _ in range(WARMUP_ITERATIONS):
+    for _ in range(args.warmup):
         run_sequential(PROMPTS[:1])  # Just one prompt for warmup
         run_parallel(PROMPTS[:1])
 
     # Benchmark sequential
     print("\nRunning sequential benchmark...")
     sequential_times = []
-    for i in range(BENCHMARK_ITERATIONS):
+    for i in range(args.iterations):
         elapsed, _ = run_sequential(PROMPTS)
         sequential_times.append(elapsed)
         print(f"  Iteration {i+1}: {elapsed:.2f}s")
@@ -125,7 +150,7 @@ def main():
     # Benchmark parallel
     print("\nRunning parallel benchmark...")
     parallel_times = []
-    for i in range(BENCHMARK_ITERATIONS):
+    for i in range(args.iterations):
         elapsed, _ = run_parallel(PROMPTS)
         parallel_times.append(elapsed)
         print(f"  Iteration {i+1}: {elapsed:.2f}s")
@@ -150,12 +175,13 @@ def main():
 
     results = {
         "meta": {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "benchmark": "parallelism_efficiency",
             "has_ollama": HAS_OLLAMA,
             "model": OLLAMA_MODEL,
             "n_prompts": len(PROMPTS),
-            "iterations": BENCHMARK_ITERATIONS,
+            "iterations": args.iterations,
+            "warmup": args.warmup,
         },
         "sequential": {
             "mean_s": seq_mean,
@@ -204,9 +230,12 @@ def main():
         print("CLAIM: NEEDS UPDATE")
     print()
 
-    # Output JSON
-    print("\n--- JSON OUTPUT ---")
-    print(json.dumps(results, indent=2))
+    if args.json:
+        print(json.dumps(results, indent=2))
+    else:
+        # Output JSON
+        print("\n--- JSON OUTPUT ---")
+        print(json.dumps(results, indent=2))
 
 
 if __name__ == "__main__":

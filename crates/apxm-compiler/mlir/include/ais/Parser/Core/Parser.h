@@ -27,6 +27,9 @@ public:
   /// Parse a complete agent definition
   std::unique_ptr<AgentDecl> parseAgent();
 
+  /// Parse all agent definitions in the file
+  std::vector<std::unique_ptr<AgentDecl>> parseAgents();
+
   /// Check if any errors were emitted during parsing
   bool hadError() const {
     return hadErrorFlag;

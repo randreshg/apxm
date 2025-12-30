@@ -42,6 +42,27 @@ mlir::OwningOpRef<mlir::ModuleOp> MLIRGen::generateModule(AgentDecl *agent) {
   return module;
 }
 
+mlir::OwningOpRef<mlir::ModuleOp> MLIRGen::generateModuleFromAgents(
+    const std::vector<std::unique_ptr<AgentDecl>> &agents) {
+  auto module = mlir::ModuleOp::create(builder.getUnknownLoc());
+
+  for (const auto &agent : agents) {
+    if (failed(generateAgentDecl(module, agent.get()))) {
+      module->print(llvm::errs());
+      module->erase();
+      return nullptr;
+    }
+  }
+
+  if (failed(mlir::verify(module.getOperation()))) {
+    module->print(llvm::errs());
+    module->erase();
+    return nullptr;
+  }
+
+  return module;
+}
+
 void MLIRGen::emitError(parser::Location loc, llvm::StringRef message) {
   emitError(getLocation(loc), message);
 }
@@ -212,7 +233,7 @@ mlir::LogicalResult MLIRGen::generateAgentDecl(mlir::ModuleOp module, AgentDecl 
 
   // Generate flow declarations as functions
   for (const auto &flow : agent->getFlowDecls()) {
-    if (failed(generateFlowDecl(module, flow.get())))
+    if (failed(generateFlowDecl(module, flow.get(), agent->getName())))
       return mlir::failure();
   }
 
@@ -349,7 +370,8 @@ std::string MLIRGen::stringifyMetadataExpr(Expr *expr) const {
       .Default([&](auto *) { return "<expr>"; });
 }
 
-mlir::LogicalResult MLIRGen::generateFlowDecl(mlir::ModuleOp module, FlowDecl *flow) {
+mlir::LogicalResult MLIRGen::generateFlowDecl(mlir::ModuleOp module, FlowDecl *flow,
+                                               llvm::StringRef agentName) {
   mlir::Location loc = getLocation(flow->getLocation());
 
   // Ensure functions are always inserted at module scope
@@ -369,8 +391,16 @@ mlir::LogicalResult MLIRGen::generateFlowDecl(mlir::ModuleOp module, FlowDecl *f
 
   mlir::Type resultType = funcType.getNumResults() ? funcType.getResult(0) : builder.getNoneType();
 
+  // Create qualified function name: "AgentName.flowName"
+  std::string qualifiedName = llvm::formatv("{0}.{1}", agentName, flow->getName()).str();
+
   // Create function
-  auto funcOp = builder.create<mlir::func::FuncOp>(loc, flow->getName(), funcType);
+  auto funcOp = builder.create<mlir::func::FuncOp>(loc, qualifiedName, funcType);
+
+  // Mark entry flow with ais.entry attribute
+  if (flow->isEntryFlow()) {
+    funcOp->setAttr("ais.entry", builder.getUnitAttr());
+  }
 
   // Create entry block
   auto &entryBlock = *funcOp.addEntryBlock();
@@ -387,6 +417,17 @@ mlir::LogicalResult MLIRGen::generateFlowDecl(mlir::ModuleOp module, FlowDecl *f
   for (const auto &stmt : flow->getBody()) {
     if (failed(generateStatement(stmt.get())))
       return mlir::failure();
+  }
+
+  // Check for missing return in non-void flows
+  bool hasExplicitReturn = blockHasReturn(flow->getBody());
+  bool isNonVoidFlow = !llvm::isa<mlir::NoneType>(resultType);
+
+  if (isNonVoidFlow && !hasExplicitReturn) {
+    // Emit warning for non-void flows without explicit return
+    mlir::emitWarning(loc) << "flow '" << flow->getName()
+                           << "' declares return type but has no explicit return statement; "
+                           << "returning default value";
   }
 
   // Add implicit return if no explicit return

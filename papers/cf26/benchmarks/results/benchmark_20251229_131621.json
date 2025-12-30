@@ -1,0 +1,104 @@
+{
+  "meta": {
+    "timestamp": "2025-12-29T18:14:20.912024Z",
+    "suite": "apxm_benchmarks",
+    "mode": "partial"
+  },
+  "config": {
+    "iterations": 3,
+    "warmup": 1,
+    "quick": true
+  },
+  "dependencies": {
+    "python": true,
+    "ollama": true,
+    "apxm": false,
+    "cargo": true,
+    "langgraph": false
+  },
+  "paper": {
+    "paper_benchmarks": {
+      "compilation_scaling": {
+        "meta": {
+          "benchmark": "compilation_scaling",
+          "timestamp": "2025-12-29T18:14:21.089683Z",
+          "iterations": 2,
+          "opt_level": 1
+        },
+        "data": [
+          {
+            "num_ops": 10,
+            "error": "No successful runs"
+          },
+          {
+            "num_ops": 25,
+            "error": "No successful runs"
+          },
+          {
+            "num_ops": 50,
+            "error": "No successful runs"
+          },
+          {
+            "num_ops": 100,
+            "error": "No successful runs"
+          }
+        ]
+      },
+      "real_llm_probe": {
+        "meta": {
+          "benchmark": "real_llm_probe",
+          "timestamp": "2025-12-29T18:14:21.179718Z",
+          "iterations": 2
+        },
+        "data": [
+          {
+            "success": false,
+            "error": "dyld[23740]: Library not loaded: @rpath/libLLVM.21.1.dylib\n  Referenced from: <AF4015D1-4052-3AEC-96AF-71E12FE28619> /Users/randreshg/Documents/apxm/target/release/apxm\n  Reason: tried: '/Users/randreshg/miniforge3/lib/libLLVM.21.1.dylib' (no such file), '/Users/randreshg/Documents/apxm/target/release/lib/libLLVM.21.1.dylib' (no such file), '/Users/randreshg/Documents/apxm/target/release/libLLVM.21.1.dylib' (no such file)\n",
+            "wall_time_ms": 3.164333989843726
+          },
+          {
+            "success": false,
+            "error": "dyld[23741]: Library not loaded: @rpath/libLLVM.21.1.dylib\n  Referenced from: <AF4015D1-4052-3AEC-96AF-71E12FE28619> /Users/randreshg/Documents/apxm/target/release/apxm\n  Reason: tried: '/Users/randreshg/miniforge3/lib/libLLVM.21.1.dylib' (no such file), '/Users/randreshg/Documents/apxm/target/release/lib/libLLVM.21.1.dylib' (no such file), '/Users/randreshg/Documents/apxm/target/release/libLLVM.21.1.dylib' (no such file)\n",
+            "wall_time_ms": 3.767334041185677
+          }
+        ]
+      },
+      "fusion_quality": {
+        "meta": {
+          "benchmark": "fusion_quality",
+          "timestamp": "2025-12-29T18:14:21.230223Z",
+          "iterations": 2
+        },
+        "data": [
+          {
+            "task_type": "classification",
+            "description": "Parallel classification queries",
+            "iterations": 2,
+            "error": "Insufficient successful runs"
+          },
+          {
+            "task_type": "extraction",
+            "description": "Parallel entity extraction",
+            "iterations": 2,
+            "error": "Insufficient successful runs"
+          },
+          {
+            "task_type": "reasoning",
+            "description": "Sequential reasoning chain",
+            "iterations": 2,
+            "error": "Insufficient successful runs"
+          },
+          {
+            "task_type": "creative",
+            "description": "Creative generation",
+            "iterations": 2,
+            "error": "Insufficient successful runs"
+          }
+        ]
+      },
+      "substrate_overhead": {
+        "error": "Timeout"
+      }
+    }
+  }
+}

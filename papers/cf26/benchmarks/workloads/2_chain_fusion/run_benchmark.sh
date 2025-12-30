@@ -8,9 +8,12 @@
 #   cd /path/to/apxm
 #   ./papers/cf26/benchmarks/workloads/2_chain_fusion/run_benchmark.sh
 #
+# Alternative (recommended): Use the Python CLI
+#   python tools/apxm_cli.py workloads run 2_chain_fusion
+#
 # Prerequisites:
 #   - Ollama running with gpt-oss:120b-cloud model
-#   - CONDA_PREFIX set to the apxm conda environment
+#   - Compiler built (python tools/apxm_cli.py compiler build)
 
 set -e
 

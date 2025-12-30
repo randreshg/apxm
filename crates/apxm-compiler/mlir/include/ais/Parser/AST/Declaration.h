@@ -183,14 +183,17 @@ class FlowDecl final : public ASTNode {
   const std::string name;
   llvm::SmallVector<std::pair<std::string, std::string>, 4> params;
   const std::string returnType;
+  const bool isEntry;  // @entry annotation marker
   llvm::SmallVector<std::unique_ptr<Stmt>, 8> body;
 
 public:
   FlowDecl(Location loc, llvm::StringRef name,
            llvm::ArrayRef<std::pair<llvm::StringRef, llvm::StringRef>> params,
            llvm::StringRef returnType,
+           bool isEntry,
            llvm::MutableArrayRef<std::unique_ptr<Stmt>> body)
-      : ASTNode(Kind::FlowDecl, loc), name(name.str()), returnType(returnType.str()) {
+      : ASTNode(Kind::FlowDecl, loc), name(name.str()), returnType(returnType.str()),
+        isEntry(isEntry) {
     assert(!name.empty() && "Flow name cannot be empty");
     assert(!returnType.empty() && "Return type cannot be empty");
 
@@ -210,6 +213,7 @@ public:
     return params;
   }
   llvm::StringRef getReturnType() const noexcept { return returnType; }
+  bool isEntryFlow() const noexcept { return isEntry; }
   llvm::ArrayRef<std::unique_ptr<Stmt>> getBody() const noexcept {
     return {body.data(), body.size()};
   }

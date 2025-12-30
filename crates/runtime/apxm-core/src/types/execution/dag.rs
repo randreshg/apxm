@@ -13,8 +13,12 @@ use crate::types::{Edge, Node, NodeId, TokenId};
 /// Metadata associated with the execution DAG.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct DagMetadata {
-    /// Optional name for the DAG.
+    /// Optional name for the DAG (typically "AgentName.flowName").
     pub name: Option<String>,
+    /// Whether this DAG represents an @entry flow.
+    /// Entry flows are automatically executed when the artifact is loaded.
+    #[serde(default)]
+    pub is_entry: bool,
 }
 
 /// Represents a complete execution DAG (Directed Acyclic Graph).

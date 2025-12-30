@@ -202,7 +202,9 @@ async fn execute_with_retries(
         #[cfg(feature = "metrics")]
         let exec_start = Instant::now();
 
-        let result = executor.execute_with_context(node, inputs.to_vec(), ctx).await;
+        let result = executor
+            .execute_with_context(node, inputs.to_vec(), ctx)
+            .await;
 
         #[cfg(feature = "metrics")]
         let exec_duration = exec_start.elapsed();

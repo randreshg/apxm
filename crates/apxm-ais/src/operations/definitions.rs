@@ -157,10 +157,7 @@ impl AISOperationType {
 
     /// Returns true if this is a public AIS operation (part of the 19).
     pub fn is_public(&self) -> bool {
-        !matches!(
-            self,
-            AISOperationType::ConstStr | AISOperationType::Agent
-        )
+        !matches!(self, AISOperationType::ConstStr | AISOperationType::Agent)
     }
 
     /// Returns true if this is a metadata operation.
@@ -545,7 +542,10 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Merge",
         category: OperationCategory::Synchronization,
         description: "Sync parallel paths; aggregate tokens into one",
-        fields: &[OperationField::required("tokens", "List of tokens to merge")],
+        fields: &[OperationField::required(
+            "tokens",
+            "List of tokens to merge",
+        )],
         needs_submission: true,
         min_inputs: 1,
         produces_output: true,
@@ -555,7 +555,10 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Fence",
         category: OperationCategory::Synchronization,
         description: "Memory barrier; order prior QMEM/UMEM operations",
-        fields: &[OperationField::optional("ordering", "Memory ordering constraint")],
+        fields: &[OperationField::optional(
+            "ordering",
+            "Memory ordering constraint",
+        )],
         needs_submission: true,
         min_inputs: 0,
         produces_output: false,
@@ -624,7 +627,10 @@ pub static INTERNAL_OPERATIONS: &[OperationSpec] = &[OperationSpec {
     name: "ConstStr",
     category: OperationCategory::Internal,
     description: "String constant (compiler internal for string literals)",
-    fields: &[OperationField::required("value", "The string constant value")],
+    fields: &[OperationField::required(
+        "value",
+        "The string constant value",
+    )],
     needs_submission: false,
     min_inputs: 0,
     produces_output: true,
@@ -705,9 +711,21 @@ mod tests {
 
     #[test]
     fn test_operation_counts() {
-        assert_eq!(METADATA_OPERATIONS.len(), 1, "Expected 1 metadata operation");
-        assert_eq!(AIS_OPERATIONS.len(), 21, "Expected 21 public AIS operations");
-        assert_eq!(INTERNAL_OPERATIONS.len(), 1, "Expected 1 internal operation");
+        assert_eq!(
+            METADATA_OPERATIONS.len(),
+            1,
+            "Expected 1 metadata operation"
+        );
+        assert_eq!(
+            AIS_OPERATIONS.len(),
+            21,
+            "Expected 21 public AIS operations"
+        );
+        assert_eq!(
+            INTERNAL_OPERATIONS.len(),
+            1,
+            "Expected 1 internal operation"
+        );
         assert_eq!(
             AISOperationType::all_operations().len(),
             23,

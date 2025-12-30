@@ -6,23 +6,38 @@ use apxm_core::types::execution::{DagMetadata, ExecutionDag};
 use apxm_core::types::values::{Number, Value};
 use apxm_core::types::{AISOperationType, DependencyType, Edge, Node, NodeMetadata};
 
-const WIRE_VERSION: u32 = 1;
+const WIRE_VERSION: u32 = 3;
 
-pub fn parse_wire_dag(bytes: &[u8]) -> Result<ExecutionDag, CompilerError> {
+/// Parse multiple DAGs from wire format v3 (multi-DAG support)
+pub fn parse_wire_dags(bytes: &[u8]) -> Result<Vec<ExecutionDag>, CompilerError> {
     let mut reader = BinaryReader::new(bytes);
     let version = reader.read_u32()?;
+
     if version != WIRE_VERSION {
         return Err(invalid_input_error(format!(
-            "Artifact wire format version mismatch: {version}"
+            "Unsupported artifact version {version}, expected {WIRE_VERSION}"
         )));
     }
 
+    let num_dags = reader.read_u64()? as usize;
+    let mut dags = Vec::with_capacity(num_dags);
+
+    for _ in 0..num_dags {
+        dags.push(parse_single_dag(&mut reader)?);
+    }
+
+    Ok(dags)
+}
+
+/// Parse a single DAG from the reader (shared logic)
+fn parse_single_dag(reader: &mut BinaryReader) -> Result<ExecutionDag, CompilerError> {
     let module_name = reader.read_string()?;
+    let is_entry = reader.read_bool()?;
 
     let node_count = reader.read_u64()? as usize;
     let mut nodes = Vec::with_capacity(node_count);
     for _ in 0..node_count {
-        nodes.push(read_node(&mut reader)?);
+        nodes.push(read_node(reader)?);
     }
 
     let edge_count = reader.read_u64()? as usize;
@@ -67,6 +82,7 @@ pub fn parse_wire_dag(bytes: &[u8]) -> Result<ExecutionDag, CompilerError> {
         } else {
             Some(module_name)
         },
+        is_entry,
     };
 
     Ok(ExecutionDag {
@@ -76,6 +92,19 @@ pub fn parse_wire_dag(bytes: &[u8]) -> Result<ExecutionDag, CompilerError> {
         exit_nodes,
         metadata,
     })
+}
+
+/// Parse wire format and return the @entry DAG (or first DAG if no @entry)
+/// Legacy function for backward compatibility with single-DAG consumers
+pub fn parse_wire_dag(bytes: &[u8]) -> Result<ExecutionDag, CompilerError> {
+    let dags = parse_wire_dags(bytes)?;
+
+    // Prefer @entry DAG, fall back to first
+    dags.iter()
+        .find(|d| d.metadata.is_entry)
+        .cloned()
+        .or_else(|| dags.into_iter().next())
+        .ok_or_else(|| invalid_input_error("No DAGs found in artifact"))
 }
 
 fn read_node(reader: &mut BinaryReader) -> Result<Node, CompilerError> {
@@ -220,7 +249,7 @@ impl<'a> BinaryReader<'a> {
     }
 }
 
-const OP_KIND_MAP: [AISOperationType; 20] = [
+const OP_KIND_MAP: [AISOperationType; 22] = [
     AISOperationType::Inv,
     AISOperationType::Rsn,
     AISOperationType::QMem,
@@ -241,4 +270,6 @@ const OP_KIND_MAP: [AISOperationType; 20] = [
     AISOperationType::LoopEnd,
     AISOperationType::TryCatch,
     AISOperationType::ConstStr,
+    AISOperationType::Switch,
+    AISOperationType::FlowCall,
 ];

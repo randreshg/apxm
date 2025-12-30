@@ -24,25 +24,39 @@ uses `apxm-core` diagnostics for environment checks.
 
 ## Usage
 
+### Python CLI (Recommended)
+
+The Python CLI (`tools/apxm_cli.py`) handles environment setup automatically:
+
 ```bash
-# Compile an AIS file
-cargo run -p apxm-cli --features driver -- compile examples/hello_world.ais
+python tools/apxm_cli.py doctor
+python tools/apxm_cli.py compiler build
+python tools/apxm_cli.py compiler run examples/hello_world.ais
+```
 
-# Run an AIS file
-cargo run -p apxm-cli --features driver -- run examples/hello_world.ais
+See `docs/AGENTS.md` for the complete CLI reference.
 
-# MLIR input
-cargo run -p apxm-cli --features driver -- run examples/pipeline.mlir --mlir
+### Binary Usage (After Building)
 
-# Diagnostics
-cargo run -p apxm-cli -- doctor
+```bash
+# Build the compiler
+cargo build -p apxm-cli --features driver --release
+
+# Use the compiled binary
+./target/release/apxm run examples/hello_world.ais
+./target/release/apxm compile examples/hello_world.ais -o output.apxmobj
+./target/release/apxm doctor
+```
+
+### Environment Setup Commands
+
+```bash
+# Install/update conda environment
+cargo run -p apxm-cli -- install
 
 # Emit exports for your shell
 eval "$(cargo run -p apxm-cli -- activate)"
 eval "$(cargo run -p apxm-cli -- activate --shell fish)"
-
-# Install/update env (mamba)
-cargo run -p apxm-cli -- install
 ```
 
 ## Metrics (Optional)

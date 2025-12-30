@@ -157,6 +157,10 @@ pub enum ErrorCode {
     /// Example: `expected recipient in talk() call`
     ExpectedRecipient = 33,
 
+    /// E034: Syntax error
+    /// Example: `syntax error in expression`
+    SyntaxError = 34,
+
     // ========================================================================
     // Type Errors (E101-E199)
     // ========================================================================
@@ -322,6 +326,7 @@ impl ErrorCode {
             ErrorCode::ExpectedGoalString => "E031",
             ErrorCode::ExpectedTemplateString => "E032",
             ErrorCode::ExpectedRecipient => "E033",
+            ErrorCode::SyntaxError => "E034",
             ErrorCode::TypeMismatch => "E101",
             ErrorCode::UndefinedVariable => "E102",
             ErrorCode::InvalidTypeAnnotation => "E103",
@@ -412,6 +417,7 @@ impl ErrorCode {
             31 => Some(ErrorCode::ExpectedGoalString),
             32 => Some(ErrorCode::ExpectedTemplateString),
             33 => Some(ErrorCode::ExpectedRecipient),
+            34 => Some(ErrorCode::SyntaxError),
             101 => Some(ErrorCode::TypeMismatch),
             102 => Some(ErrorCode::UndefinedVariable),
             103 => Some(ErrorCode::InvalidTypeAnnotation),

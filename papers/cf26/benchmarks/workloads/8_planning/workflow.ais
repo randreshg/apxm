@@ -2,7 +2,7 @@
 // Demonstrates A-PXM's native PLAN operation for task decomposition.
 
 agent PlannerAgent {
-    flow main(goal: str) {
+    @entry flow main(goal: str) -> str {
         // 1. Decompose goal into executable steps
         plan goal -> steps
 
@@ -16,5 +16,6 @@ agent PlannerAgent {
 
         // 4. Synthesize final result
         rsn "Synthesize all step results: " + combined -> final_result
+        return final_result
     }
 }
