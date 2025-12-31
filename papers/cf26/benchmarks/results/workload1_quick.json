@@ -1,0 +1,206 @@
+{
+  "meta": {
+    "timestamp": "2025-12-30T14:06:44.227767+00:00",
+    "benchmark_suite": "apxm_dsl_comparison",
+    "version": "2.0",
+    "platform": {
+      "os": "Darwin",
+      "os_version": "25.1.0",
+      "python_version": "3.11.14",
+      "machine": "arm64"
+    }
+  },
+  "config": {
+    "iterations": 3,
+    "warmup": 1,
+    "note": "Warmup iterations are executed but discarded from results"
+  },
+  "workloads": {
+    "parallel_research": {
+      "workload": "parallel_research",
+      "description": "Automatic parallelism from dataflow",
+      "config": {
+        "iterations": 3,
+        "warmup": 1
+      },
+      "langgraph": {
+        "mean_ms": 16010.985541681293,
+        "std_ms": 1342.084497253787,
+        "min_ms": 14492.79883300187,
+        "max_ms": 17039.379167021252,
+        "p50_ms": 16500.778625020757,
+        "samples": [
+          16500.778625020757,
+          17039.379167021252,
+          14492.79883300187
+        ],
+        "llm": {
+          "total_ms_mean": 20391.848583026633,
+          "total_ms_std": 1600.290798966682,
+          "total_ms_min": 18559.429999964777,
+          "total_ms_max": 21514.48520703707,
+          "total_ms_p50": 21101.630542078055,
+          "calls_mean": 4,
+          "calls_min": 4,
+          "calls_max": 4,
+          "wall_llm_ms_mean": 16010.985541681293,
+          "non_llm_ms_mean": 0.0
+        },
+        "llm_samples": [
+          {
+            "count": 4,
+            "total_ms": 21514.48520703707,
+            "mean_ms": 5378.621301759267,
+            "p50_ms": 4483.723333047237,
+            "p99_ms": 11985.182290954981,
+            "min_ms": 2296.988042013254,
+            "max_ms": 11985.182290954981
+          },
+          {
+            "count": 4,
+            "total_ms": 21101.630542078055,
+            "mean_ms": 5275.407635519514,
+            "p50_ms": 4084.148959023878,
+            "p99_ms": 12930.098167038523,
+            "min_ms": 2011.0947079956532,
+            "max_ms": 12930.098167038523
+          },
+          {
+            "count": 4,
+            "total_ms": 18559.429999964777,
+            "mean_ms": 4639.857499991194,
+            "p50_ms": 3783.8828340172768,
+            "p99_ms": 10681.827707972843,
+            "min_ms": 1865.5162919894792,
+            "max_ms": 10681.827707972843
+          }
+        ],
+        "has_ollama": true
+      },
+      "apxm": {
+        "success": true,
+        "mean_ms": 7464.261513669044,
+        "std_ms": 2679.552486939143,
+        "min_ms": 5136.315750016365,
+        "max_ms": 10393.313125008717,
+        "p50_ms": 6863.155665982049,
+        "samples": [
+          6863.155665982049,
+          10393.313125008717,
+          5136.315750016365
+        ],
+        "iterations": 3,
+        "opt_level": 1,
+        "compiler": {
+          "success": true,
+          "stdout": "Wrote diagnostics to /var/folders/7z/7_hrgq652jdg25_rczwmffk40000gn/T/apxm_diag_ykbe35o9.json\nWrote artifact to /var/folders/7z/7_hrgq652jdg25_rczwmffk40000gn/T/apxm_artifact_m57oyto4.apxmobj\nCompiled in 96.72ms, artifact generated in 0.54ms\n",
+          "stderr": "warning: result of merge operation is not consumed; consider binding with '-> name' or removing if unused\n  --> \"/Users/randreshg/Documents/apxm/papers/CF26/benchmarks/workloads/1_parallel_research/workflow.ais\":7:50\nwarning: result of merge operation is not consumed; consider binding with '-> name' or removing if unused\n  --> \"/Users/randreshg/Documents/apxm/papers/CF26/benchmarks/workloads/1_parallel_research/workflow.ais\":8:49\nwarning: result of merge operation is not consumed; consider binding with '-> name' or removing if unused\n  --> \"/Users/randreshg/Documents/apxm/papers/CF26/benchmarks/workloads/1_parallel_research/workflow.ais\":9:48\nwarning: result of merge operation is not consumed; consider binding with '-> name' or removing if unused\n  --> \"/Users/randreshg/Documents/apxm/papers/CF26/benchmarks/workloads/1_parallel_research/workflow.ais\":15:52\n",
+          "diagnostics": {
+            "compilation_phases": {
+              "artifact_gen_ms": 0.539542,
+              "total_ms": 96.723958
+            },
+            "dag_statistics": {
+              "entry_nodes": 4,
+              "exit_nodes": 1,
+              "total_edges": 12,
+              "total_nodes": 13
+            },
+            "input": "/Users/randreshg/Documents/apxm/papers/CF26/benchmarks/workloads/1_parallel_research/workflow.ais",
+            "optimization_level": "O1",
+            "passes_applied": [
+              "normalize",
+              "scheduling",
+              "fuse-reasoning",
+              "canonicalizer",
+              "cse",
+              "symbol-dce",
+              "lower-to-async"
+            ]
+          },
+          "diagnostics_path": null
+        },
+        "metrics": {
+          "runtime_ms": {
+            "mean_ms": 7344.9669306666665,
+            "std_ms": 2681.297870320419,
+            "min_ms": 5015.515917,
+            "max_ms": 10275.931875,
+            "p50_ms": 6743.4529999999995
+          },
+          "compile_ms": {
+            "mean_ms": 0.601514,
+            "std_ms": 0.041422798227546166,
+            "min_ms": 0.56175,
+            "max_ms": 0.644417,
+            "p50_ms": 0.598375
+          },
+          "artifact_ms": {
+            "mean_ms": 0.051403000000000004,
+            "std_ms": 0.0013797612112246063,
+            "min_ms": 0.049959,
+            "max_ms": 0.052708,
+            "p50_ms": 0.051542000000000004
+          },
+          "validation_ms": {
+            "mean_ms": 0.006125,
+            "std_ms": 8.300000000000017e-05,
+            "min_ms": 0.006042,
+            "max_ms": 0.006208,
+            "p50_ms": 0.006125
+          },
+          "llm_total_ms": {
+            "mean_ms": 11088.0,
+            "std_ms": 2938.1381859946614,
+            "min_ms": 8064.0,
+            "max_ms": 13932.0,
+            "p50_ms": 11268.0
+          },
+          "llm_requests": {
+            "mean_ms": 4.0,
+            "std_ms": 0.0,
+            "min_ms": 4.0,
+            "max_ms": 4.0,
+            "p50_ms": 4.0
+          },
+          "runtime_non_llm_ms": {
+            "mean_ms": 0.0,
+            "std_ms": 0.0,
+            "min_ms": 0.0,
+            "max_ms": 0.0,
+            "p50_ms": 0.0
+          }
+        },
+        "metrics_samples": [
+          {
+            "wall_time_ms": 6863.155665982049,
+            "runtime_ms": 6743.4529999999995,
+            "compile_ms": 0.644417,
+            "artifact_ms": 0.051542000000000004,
+            "validation_ms": 0.006125,
+            "llm_total_ms": 11268.0,
+            "llm_requests": 4.0
+          },
+          {
+            "wall_time_ms": 10393.313125008717,
+            "runtime_ms": 10275.931875,
+            "compile_ms": 0.598375,
+            "artifact_ms": 0.052708,
+            "validation_ms": 0.006208,
+            "llm_total_ms": 13932.0,
+            "llm_requests": 4.0
+          },
+          {
+            "wall_time_ms": 5136.315750016365,
+            "runtime_ms": 5015.515917,
+            "compile_ms": 0.56175,
+            "artifact_ms": 0.049959,
+            "validation_ms": 0.006042,
+            "llm_total_ms": 8064.0,
+            "llm_requests": 4.0
+          }
+        ]
+      }
+    }
+  }
+}

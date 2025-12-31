@@ -16,12 +16,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Try to import Ollama
-try:
-    from langchain_ollama import ChatOllama
-    HAS_OLLAMA = True
-except ImportError:
-    HAS_OLLAMA = False
+from llm_instrumentation import HAS_OLLAMA
 
 OLLAMA_MODEL = (
     os.environ.get("APXM_BENCH_OLLAMA_MODEL")

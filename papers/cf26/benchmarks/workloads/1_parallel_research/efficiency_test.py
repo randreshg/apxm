@@ -18,13 +18,7 @@ import statistics
 import time
 from datetime import datetime, timezone
 
-# Try to import Ollama
-try:
-    from langchain_ollama import ChatOllama
-    HAS_OLLAMA = True
-except ImportError:
-    HAS_OLLAMA = False
-    print("WARNING: langchain_ollama not installed. Using mock LLM.")
+from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
 
 OLLAMA_MODEL = (
     os.environ.get("APXM_BENCH_OLLAMA_MODEL")
@@ -56,18 +50,12 @@ PROMPTS = [
 
 def get_llm():
     """Get LLM instance."""
-    if HAS_OLLAMA:
-        return ChatOllama(model=OLLAMA_MODEL, temperature=0)
-    return None
+    return get_ollama_llm(OLLAMA_MODEL)
 
 
 def run_sequential(prompts: list[str]) -> tuple[float, list[str]]:
     """Run prompts sequentially, return total time and responses."""
     llm = get_llm()
-    if not llm:
-        # Mock timing
-        time.sleep(0.1 * len(prompts))
-        return 0.1 * len(prompts), ["mock"] * len(prompts)
 
     start = time.perf_counter()
     responses = []
@@ -81,9 +69,6 @@ def run_sequential(prompts: list[str]) -> tuple[float, list[str]]:
 async def run_parallel_async(prompts: list[str]) -> tuple[float, list[str]]:
     """Run prompts in parallel using asyncio."""
     llm = get_llm()
-    if not llm:
-        await asyncio.sleep(0.1)
-        return 0.1, ["mock"] * len(prompts)
 
     async def call_llm(prompt):
         # LangChain's invoke is sync, run in executor

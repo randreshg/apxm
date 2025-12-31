@@ -61,16 +61,44 @@ pub struct SchedulerState {
 }
 
 impl SchedulerState {
+    /// Create scheduler state, optionally with initial input values for entry tokens.
+    ///
+    /// When `inputs` is non-empty, the values are assigned to flow parameter tokens
+    /// (input tokens that have no producer) in order.
     pub fn new(
         dag: ExecutionDag,
         cfg: SchedulerConfig,
         metrics: Arc<MetricsCollector>,
         start: Instant,
+        inputs: Vec<Value>,
     ) -> RuntimeResult<(Self, Vec<Worker<NodeId>>)> {
         // Validate configuration
         cfg.validate().map_err(|msg| RuntimeError::Scheduler {
             message: format!("Invalid scheduler config: {}", msg),
         })?;
+
+        // Only compute input_map if we have inputs (zero-cost when empty)
+        let input_map: Option<HashMap<TokenId, Value>> = if inputs.is_empty() {
+            None
+        } else {
+            // Find tokens with no producer (flow parameters)
+            let output_tokens: std::collections::HashSet<TokenId> = dag
+                .nodes
+                .iter()
+                .flat_map(|n| n.output_tokens.iter().copied())
+                .collect();
+
+            let mut seen = std::collections::HashSet::new();
+            let entry_tokens: Vec<TokenId> = dag
+                .nodes
+                .iter()
+                .flat_map(|n| n.input_tokens.iter().copied())
+                .filter(|tid| !output_tokens.contains(tid))
+                .filter(|tid| seen.insert(*tid))
+                .collect();
+
+            Some(entry_tokens.into_iter().zip(inputs).collect())
+        };
 
         // Build node and priority maps
         let nodes: Arc<DashMap<NodeId, Arc<Node>>> = Arc::new(
@@ -90,7 +118,7 @@ impl SchedulerState {
         // Initialize token and operation state
         let tokens = Arc::new(DashMap::new());
         let op_states = Arc::new(DashMap::new());
-        materialize_graph_state(&dag, &tokens, &op_states)?;
+        materialize_graph_state(&dag, &tokens, &op_states, input_map.as_ref())?;
 
         // Create priority queue and work-stealing scheduler
         let queue = Arc::new(PriorityQueue::new());
@@ -130,10 +158,9 @@ impl SchedulerState {
             last_progress_ms: Arc::new(AtomicU64::new(0)),
             exit_nodes: dag.exit_nodes.clone(),
 
-            // Initialize promise tracking
             pending_promises: Arc::new(DashMap::new()),
             execution_stack: Arc::new(Mutex::new(Vec::new())),
-            next_promise_token_id: Arc::new(AtomicU64::new(1_000_000)), // Start high to avoid collisions
+            next_promise_token_id: Arc::new(AtomicU64::new(1_000_000)),
         };
 
         // Initialize readiness tracking and seed ready nodes
@@ -322,11 +349,13 @@ impl SchedulerState {
 /// Initialize token and operation state from the DAG.
 ///
 /// This validates that each token has exactly one producer and registers
-/// consumers for each token.
+/// consumers for each token. If `input_values` is provided, those values
+/// are used for tokens that have no producer (flow parameters).
 fn materialize_graph_state(
     dag: &ExecutionDag,
     tokens: &DashMap<TokenId, TokenState>,
     op_states: &DashMap<NodeId, OpState>,
+    input_values: Option<&HashMap<TokenId, Value>>,
 ) -> RuntimeResult<()> {
     for node in dag.nodes.iter() {
         op_states.insert(
@@ -342,14 +371,18 @@ fn materialize_graph_state(
             tokens.insert(token_id, TokenState::new());
         }
 
-        // Inputs: if missing, treat as pre-ready null, and register consumer.
+        // Inputs: use provided value if available, otherwise treat as pre-ready null.
         for &token_id in &node.input_tokens {
             tokens
                 .entry(token_id)
                 .or_insert({
                     let mut ts = TokenState::new();
                     ts.ready = true;
-                    ts.value = Some(Value::Null);
+                    ts.value = Some(
+                        input_values
+                            .and_then(|m| m.get(&token_id).cloned())
+                            .unwrap_or(Value::Null),
+                    );
                     ts
                 })
                 .consumers

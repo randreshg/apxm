@@ -9,13 +9,7 @@ and communicate operations for inter-agent messaging.
 import os
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
-
-# Try to import Ollama for real LLM calls
-try:
-    from langchain_ollama import ChatOllama
-    HAS_OLLAMA = True
-except ImportError:
-    HAS_OLLAMA = False
+from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
 
 # Ollama model configuration
 OLLAMA_MODEL = (
@@ -34,10 +28,8 @@ class MultiAgentState(TypedDict):
 
 
 def get_llm():
-    """Get the LLM instance (Ollama or mock)."""
-    if HAS_OLLAMA:
-        return ChatOllama(model=OLLAMA_MODEL, temperature=0)
-    return None
+    """Get the LLM instance (Ollama only)."""
+    return get_ollama_llm(OLLAMA_MODEL)
 
 
 def researcher_agent(state: MultiAgentState) -> dict:
@@ -49,14 +41,9 @@ def researcher_agent(state: MultiAgentState) -> dict:
     llm = get_llm()
     topic = state["topic"]
 
-    if llm:
-        prompt = f"Conduct thorough research on this topic and provide key findings:\n\n{topic}"
-        response = llm.invoke(prompt)
-        research = response.content
-    else:
-        research = f"Research findings on {topic}: Key discovery 1, Key discovery 2, Key discovery 3."
-
-    return {"research_result": research}
+    prompt = f"Conduct thorough research on this topic and provide key findings:\n\n{topic}"
+    response = llm.invoke(prompt)
+    return {"research_result": response.content}
 
 
 def critic_agent(state: MultiAgentState) -> dict:
@@ -68,14 +55,9 @@ def critic_agent(state: MultiAgentState) -> dict:
     llm = get_llm()
     research = state["research_result"]
 
-    if llm:
-        prompt = f"Critically analyze this research and identify weaknesses or gaps:\n\n{research}"
-        response = llm.invoke(prompt)
-        critique = response.content
-    else:
-        critique = f"Critique: The research could be improved by addressing limitations."
-
-    return {"critique_result": critique}
+    prompt = f"Critically analyze this research and identify weaknesses or gaps:\n\n{research}"
+    response = llm.invoke(prompt)
+    return {"critique_result": response.content}
 
 
 def coordinator_synthesize(state: MultiAgentState) -> dict:
@@ -84,8 +66,7 @@ def coordinator_synthesize(state: MultiAgentState) -> dict:
     research = state["research_result"]
     critique = state["critique_result"]
 
-    if llm:
-        prompt = f"""Synthesize a final report combining research and critique.
+    prompt = f"""Synthesize a final report combining research and critique.
 
 Research:
 {research}
@@ -94,12 +75,8 @@ Critique:
 {critique}
 
 Provide a balanced final report addressing the critique."""
-        response = llm.invoke(prompt)
-        report = response.content
-    else:
-        report = f"Final report synthesizing research and addressing critique."
-
-    return {"final_report": report}
+    response = llm.invoke(prompt)
+    return {"final_report": response.content}
 
 
 def build_graph() -> StateGraph:

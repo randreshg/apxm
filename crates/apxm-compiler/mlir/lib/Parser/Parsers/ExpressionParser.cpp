@@ -21,34 +21,20 @@ namespace {
 bool isOperationIdentifier(TokenKind kind) noexcept {
   switch (kind) {
   case TokenKind::identifier:
-  case TokenKind::kw_llm:
-  case TokenKind::kw_tool:
-  case TokenKind::kw_mem:
-  case TokenKind::kw_think:
-  case TokenKind::kw_rsn:
-  case TokenKind::kw_plan:
-  case TokenKind::kw_reflect:
-  case TokenKind::kw_verify:
+  case TokenKind::kw_ask:     // Simple Q&A - LOW latency
   case TokenKind::kw_exec:
-  case TokenKind::kw_talk:
-  case TokenKind::kw_wait:
-  case TokenKind::kw_merge:
-    return true;
-  default:
-    return false;
-  }
-}
-
-// Check if a token kind is a DSL operation that supports direct string argument
-// e.g., `rsn "prompt"` instead of `rsn("prompt")`
-bool isDSLOperation(TokenKind kind) noexcept {
-  switch (kind) {
-  case TokenKind::kw_rsn:
-  case TokenKind::kw_think:
   case TokenKind::kw_llm:
-  case TokenKind::kw_reflect:
-  case TokenKind::kw_verify:
+  case TokenKind::kw_mem:
+  case TokenKind::kw_merge:
   case TokenKind::kw_plan:
+  case TokenKind::kw_print:
+  case TokenKind::kw_reason:  // Structured reasoning - MEDIUM latency
+  case TokenKind::kw_reflect:
+  case TokenKind::kw_talk:
+  case TokenKind::kw_think:   // Extended thinking - HIGH latency
+  case TokenKind::kw_tool:
+  case TokenKind::kw_verify:
+  case TokenKind::kw_wait:
     return true;
   default:
     return false;
@@ -167,30 +153,7 @@ std::unique_ptr<Expr> ExpressionParser::parsePrimaryExpr() {
   Location loc = getCurrentLocation();
   std::unique_ptr<Expr> base;
 
-  // Handle DSL operations with direct string/expression argument
-  // e.g., `rsn "prompt"` or `rsn "prefix" + var`
-  if (isDSLOperation(peek().kind)) {
-    llvm::StringRef opName = peek().spelling;
-    advance();
-
-    // Check if next token is a string literal or expression (not parenthesis)
-    // This allows: `rsn "string"` and `rsn "prefix" + var`
-    if (!peek(TokenKind::l_paren) && !peek(TokenKind::semicolon) &&
-        !peek(TokenKind::arrow) && !peek(TokenKind::r_brace)) {
-      // Parse the argument expression
-      auto arg = parseAdditiveExpr();
-      if (!arg) {
-        synchronize();
-        return nullptr;
-      }
-      llvm::SmallVector<std::unique_ptr<Expr>, 1> args;
-      args.push_back(std::move(arg));
-      base = std::make_unique<CallExpr>(loc, opName, args);
-    } else {
-      // No argument - treat as variable (will be handled by postfix for call syntax)
-      base = std::make_unique<VarExpr>(loc, opName);
-    }
-  } else if (isOperationIdentifier(peek().kind)) {
+  if (isOperationIdentifier(peek().kind)) {
     llvm::StringRef name = peek().spelling;
     advance();
     base = std::make_unique<VarExpr>(loc, name);
@@ -204,9 +167,9 @@ std::unique_ptr<Expr> ExpressionParser::parsePrimaryExpr() {
       emitError(loc, "Invalid string literal");
       return nullptr;
     }
-    llvm::StringRef strValue = *value;
     advance(); // consume string literal
-    base = std::make_unique<StringLiteralExpr>(loc, strValue);
+    base = parseStringWithInterpolation(loc, *value);
+    if (!base) return nullptr;
   } else if (peek(TokenKind::number_literal)) {
     auto value = getNumericValue(peek());
     if (!value) {
@@ -259,6 +222,92 @@ std::unique_ptr<Expr> ExpressionParser::parseArrayExpr() {
   }
 
   return std::make_unique<ArrayExpr>(loc, elements);
+}
+
+namespace {
+// Convert placeholder chars back to actual braces
+std::string restoreBraces(llvm::StringRef s) {
+  std::string result;
+  result.reserve(s.size());
+  for (char c : s) {
+    if (c == '\x01') result.push_back('{');
+    else if (c == '\x02') result.push_back('}');
+    else result.push_back(c);
+  }
+  return result;
+}
+} // namespace
+
+std::unique_ptr<Expr> ExpressionParser::parseStringWithInterpolation(
+    Location loc, llvm::StringRef unescaped) {
+  // Escaped braces are represented as \x01 and \x02 (from Token.h)
+  // Real interpolation uses {{ and }}
+
+  // Check for {{ patterns - if none found, return simple literal with restored braces
+  size_t firstBrace = unescaped.find("{{");
+  if (firstBrace == llvm::StringRef::npos) {
+    return std::make_unique<StringLiteralExpr>(loc, restoreBraces(unescaped));
+  }
+
+  // Parse segments and build BinaryExpr chain
+  llvm::SmallVector<std::unique_ptr<Expr>, 4> parts;
+  size_t pos = 0;
+
+  while (pos < unescaped.size()) {
+    // Find next {{
+    size_t bracePos = unescaped.find("{{", pos);
+
+    // Add literal segment before {{
+    if (bracePos == llvm::StringRef::npos) {
+      // No more interpolations - add remaining text
+      if (pos < unescaped.size()) {
+        parts.push_back(std::make_unique<StringLiteralExpr>(
+            loc, restoreBraces(unescaped.substr(pos))));
+      }
+      break;
+    }
+
+    if (bracePos > pos) {
+      parts.push_back(std::make_unique<StringLiteralExpr>(
+          loc, restoreBraces(unescaped.substr(pos, bracePos - pos))));
+    }
+
+    // Find closing }}
+    size_t closePos = unescaped.find("}}", bracePos + 2);
+    if (closePos == llvm::StringRef::npos) {
+      emitError(loc, "Unterminated interpolation: missing }}");
+      return nullptr;
+    }
+
+    // Extract variable name
+    llvm::StringRef varName = unescaped.substr(bracePos + 2, closePos - bracePos - 2).trim();
+    if (varName.empty()) {
+      emitError(loc, "Empty interpolation {{}}");
+      return nullptr;
+    }
+
+    // Create VarExpr for the variable
+    parts.push_back(std::make_unique<VarExpr>(loc, varName));
+
+    pos = closePos + 2;
+  }
+
+  if (parts.empty()) {
+    return std::make_unique<StringLiteralExpr>(loc, "");
+  }
+
+  if (parts.size() == 1) {
+    return std::move(parts[0]);
+  }
+
+  // Chain into BinaryExpr with + operator (left-associative)
+  auto result = std::move(parts[0]);
+  for (size_t i = 1; i < parts.size(); ++i) {
+    result = std::make_unique<BinaryExpr>(
+        loc, BinaryExpr::Operator::Add, std::move(result), std::move(parts[i]));
+  }
+
+  return result;
 }
 
 std::unique_ptr<Expr> ExpressionParser::parsePostfixExpr(std::unique_ptr<Expr> base) {

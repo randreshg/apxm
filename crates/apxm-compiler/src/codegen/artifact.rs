@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::api::module::invalid_input_error;
 use apxm_core::error::compiler::CompilerError;
-use apxm_core::types::execution::{DagMetadata, ExecutionDag};
+use apxm_core::types::execution::{DagMetadata, ExecutionDag, FlowParameter};
 use apxm_core::types::values::{Number, Value};
 use apxm_core::types::{AISOperationType, DependencyType, Edge, Node, NodeMetadata};
 
@@ -33,6 +33,15 @@ pub fn parse_wire_dags(bytes: &[u8]) -> Result<Vec<ExecutionDag>, CompilerError>
 fn parse_single_dag(reader: &mut BinaryReader) -> Result<ExecutionDag, CompilerError> {
     let module_name = reader.read_string()?;
     let is_entry = reader.read_bool()?;
+
+    // Read parameter metadata
+    let param_count = reader.read_u64()? as usize;
+    let mut parameters = Vec::with_capacity(param_count);
+    for _ in 0..param_count {
+        let name = reader.read_string()?;
+        let type_name = reader.read_string()?;
+        parameters.push(FlowParameter { name, type_name });
+    }
 
     let node_count = reader.read_u64()? as usize;
     let mut nodes = Vec::with_capacity(node_count);
@@ -83,6 +92,7 @@ fn parse_single_dag(reader: &mut BinaryReader) -> Result<ExecutionDag, CompilerE
             Some(module_name)
         },
         is_entry,
+        parameters,
     };
 
     Ok(ExecutionDag {
@@ -249,7 +259,7 @@ impl<'a> BinaryReader<'a> {
     }
 }
 
-const OP_KIND_MAP: [AISOperationType; 22] = [
+const OP_KIND_MAP: [AISOperationType; 23] = [
     AISOperationType::Inv,
     AISOperationType::Rsn,
     AISOperationType::QMem,
@@ -272,4 +282,5 @@ const OP_KIND_MAP: [AISOperationType; 22] = [
     AISOperationType::ConstStr,
     AISOperationType::Switch,
     AISOperationType::FlowCall,
+    AISOperationType::Print,
 ];

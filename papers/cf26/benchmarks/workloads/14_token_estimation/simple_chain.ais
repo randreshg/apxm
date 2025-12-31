@@ -1,11 +1,13 @@
 // Simple 3-step reasoning chain with EXPLICIT dependencies
-// Each step consumes the previous step's output via {token} interpolation
+// Each step consumes the previous step's output via {{token}} interpolation
 
 agent SimpleChain {
     @entry flow main() -> str {
-        rsn "Analyze this problem: How can we improve software testing?" -> step1
-        rsn "Based on this analysis: {step1}. Generate 3 potential solutions." -> step2
-        rsn "Given these solutions: {step2}. Evaluate and select the best one." -> step3
+        ask("Analyze this problem: How can we improve software testing?") -> step1
+        ask("Based on this analysis: {{step1}}. Generate 3 potential solutions.") -> step2
+        ask("Given these solutions: {{step2}}. Evaluate and select the best one.") -> step3
+        print("=== Best Solution ===")
+        print(step3)
         return step3
     }
 }

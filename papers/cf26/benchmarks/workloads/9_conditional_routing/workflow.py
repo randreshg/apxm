@@ -9,13 +9,7 @@ A-PXM automatically parallelizes independent response preparation.
 import os
 from typing import TypedDict, Literal
 from langgraph.graph import StateGraph, START, END
-
-# Try to import Ollama for real LLM calls
-try:
-    from langchain_ollama import ChatOllama
-    HAS_OLLAMA = True
-except ImportError:
-    HAS_OLLAMA = False
+from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
 
 # Ollama model configuration
 OLLAMA_MODEL = (
@@ -33,10 +27,8 @@ class RoutingState(TypedDict):
 
 
 def get_llm():
-    """Get the LLM instance (Ollama or mock)."""
-    if HAS_OLLAMA:
-        return ChatOllama(model=OLLAMA_MODEL, temperature=0)
-    return None
+    """Get the LLM instance (Ollama only)."""
+    return get_ollama_llm(OLLAMA_MODEL)
 
 
 def classify_input(state: RoutingState) -> dict:
@@ -44,26 +36,23 @@ def classify_input(state: RoutingState) -> dict:
     llm = get_llm()
     user_input = state["input"]
 
-    if llm:
-        prompt = f"""Classify this input into exactly one category.
+    prompt = f"""Classify this input into exactly one category.
 Categories: technical, creative, factual
 
 Input: {user_input}
 
 Respond with only the category name (technical, creative, or factual)."""
-        response = llm.invoke(prompt)
-        category = response.content.strip().lower()
-        # Normalize category
-        if "technical" in category:
-            category = "technical"
-        elif "creative" in category:
-            category = "creative"
-        elif "factual" in category:
-            category = "factual"
-        else:
-            category = "general"
-    else:
+    response = llm.invoke(prompt)
+    category = response.content.strip().lower()
+    # Normalize category
+    if "technical" in category:
         category = "technical"
+    elif "creative" in category:
+        category = "creative"
+    elif "factual" in category:
+        category = "factual"
+    else:
+        category = "general"
 
     return {"category": category}
 
@@ -90,11 +79,9 @@ def technical_response(state: RoutingState) -> dict:
     llm = get_llm()
     user_input = state["input"]
 
-    if llm:
-        prompt = f"Provide a detailed technical explanation for: {user_input}"
-        response = llm.invoke(prompt)
-        return {"response": response.content}
-    return {"response": f"Technical explanation for: {user_input}"}
+    prompt = f"Provide a detailed technical explanation for: {user_input}"
+    response = llm.invoke(prompt)
+    return {"response": response.content}
 
 
 def creative_response(state: RoutingState) -> dict:
@@ -102,11 +89,9 @@ def creative_response(state: RoutingState) -> dict:
     llm = get_llm()
     user_input = state["input"]
 
-    if llm:
-        prompt = f"Provide a creative, imaginative response for: {user_input}"
-        response = llm.invoke(prompt)
-        return {"response": response.content}
-    return {"response": f"Creative response for: {user_input}"}
+    prompt = f"Provide a creative, imaginative response for: {user_input}"
+    response = llm.invoke(prompt)
+    return {"response": response.content}
 
 
 def factual_response(state: RoutingState) -> dict:
@@ -114,11 +99,9 @@ def factual_response(state: RoutingState) -> dict:
     llm = get_llm()
     user_input = state["input"]
 
-    if llm:
-        prompt = f"Provide accurate, factual information for: {user_input}"
-        response = llm.invoke(prompt)
-        return {"response": response.content}
-    return {"response": f"Factual information for: {user_input}"}
+    prompt = f"Provide accurate, factual information for: {user_input}"
+    response = llm.invoke(prompt)
+    return {"response": response.content}
 
 
 def general_response(state: RoutingState) -> dict:
@@ -126,11 +109,9 @@ def general_response(state: RoutingState) -> dict:
     llm = get_llm()
     user_input = state["input"]
 
-    if llm:
-        prompt = f"Provide a helpful response for: {user_input}"
-        response = llm.invoke(prompt)
-        return {"response": response.content}
-    return {"response": f"General response for: {user_input}"}
+    prompt = f"Provide a helpful response for: {user_input}"
+    response = llm.invoke(prompt)
+    return {"response": response.content}
 
 
 def build_graph() -> StateGraph:

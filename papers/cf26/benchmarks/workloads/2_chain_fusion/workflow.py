@@ -8,13 +8,7 @@ Compare with workflow.ais where the compiler fuses 5 calls into 1.
 import os
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
-
-# Try to import Ollama for real LLM calls
-try:
-    from langchain_ollama import ChatOllama
-    HAS_OLLAMA = True
-except ImportError:
-    HAS_OLLAMA = False
+from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
 
 # Ollama model configuration
 OLLAMA_MODEL = (
@@ -34,21 +28,17 @@ class ChainState(TypedDict):
 
 
 def get_llm():
-    """Get the LLM instance (Ollama or mock)."""
-    if HAS_OLLAMA:
-        return ChatOllama(model=OLLAMA_MODEL, temperature=0)
-    return None
+    """Get the LLM instance (Ollama only)."""
+    return get_ollama_llm(OLLAMA_MODEL)
 
 
 def define_quantum(state: ChainState) -> dict:
     """Step 1: Define quantum computing."""
     llm = get_llm()
 
-    if llm:
-        prompt = "Define quantum computing in 1-2 sentences."
-        response = llm.invoke(prompt)
-        return {"step1": response.content}
-    return {"step1": "Quantum computing uses quantum-mechanical phenomena..."}
+    prompt = "Define quantum computing in 1-2 sentences."
+    response = llm.invoke(prompt)
+    return {"step1": response.content}
 
 
 def explain_qubits(state: ChainState) -> dict:
@@ -56,11 +46,9 @@ def explain_qubits(state: ChainState) -> dict:
     llm = get_llm()
     context = state["step1"]
 
-    if llm:
-        prompt = f"Using this context: {context}\n\nExplain qubits in 1-2 sentences."
-        response = llm.invoke(prompt)
-        return {"step2": response.content}
-    return {"step2": f"Based on {context[:50]}..., qubits are..."}
+    prompt = f"Using this context: {context}\n\nExplain qubits in 1-2 sentences."
+    response = llm.invoke(prompt)
+    return {"step2": response.content}
 
 
 def explain_superposition(state: ChainState) -> dict:
@@ -68,11 +56,9 @@ def explain_superposition(state: ChainState) -> dict:
     llm = get_llm()
     context = state["step2"]
 
-    if llm:
-        prompt = f"Using this context: {context}\n\nExplain superposition in 1-2 sentences."
-        response = llm.invoke(prompt)
-        return {"step3": response.content}
-    return {"step3": f"Based on {context[:50]}..., superposition means..."}
+    prompt = f"Using this context: {context}\n\nExplain superposition in 1-2 sentences."
+    response = llm.invoke(prompt)
+    return {"step3": response.content}
 
 
 def explain_entanglement(state: ChainState) -> dict:
@@ -80,11 +66,9 @@ def explain_entanglement(state: ChainState) -> dict:
     llm = get_llm()
     context = state["step3"]
 
-    if llm:
-        prompt = f"Using this context: {context}\n\nExplain quantum entanglement in 1-2 sentences."
-        response = llm.invoke(prompt)
-        return {"step4": response.content}
-    return {"step4": f"Based on {context[:50]}..., entanglement is..."}
+    prompt = f"Using this context: {context}\n\nExplain quantum entanglement in 1-2 sentences."
+    response = llm.invoke(prompt)
+    return {"step4": response.content}
 
 
 def summarize(state: ChainState) -> dict:
@@ -92,11 +76,9 @@ def summarize(state: ChainState) -> dict:
     llm = get_llm()
     context = state["step4"]
 
-    if llm:
-        prompt = f"Summarize all the quantum computing concepts discussed: {context}"
-        response = llm.invoke(prompt)
-        return {"summary": response.content}
-    return {"summary": f"Summary of all concepts: {context[:100]}..."}
+    prompt = f"Summarize all the quantum computing concepts discussed: {context}"
+    response = llm.invoke(prompt)
+    return {"summary": response.content}
 
 
 def build_graph() -> StateGraph:
@@ -108,19 +90,20 @@ def build_graph() -> StateGraph:
     builder = StateGraph(ChainState)
 
     # Add nodes - each is a separate LLM call
-    builder.add_node("step1", define_quantum)
-    builder.add_node("step2", explain_qubits)
-    builder.add_node("step3", explain_superposition)
-    builder.add_node("step4", explain_entanglement)
-    builder.add_node("summary", summarize)
+    # Node names must differ from state keys
+    builder.add_node("node_step1", define_quantum)
+    builder.add_node("node_step2", explain_qubits)
+    builder.add_node("node_step3", explain_superposition)
+    builder.add_node("node_step4", explain_entanglement)
+    builder.add_node("node_summary", summarize)
 
     # Sequential chain - no fusion possible
-    builder.add_edge(START, "step1")
-    builder.add_edge("step1", "step2")
-    builder.add_edge("step2", "step3")
-    builder.add_edge("step3", "step4")
-    builder.add_edge("step4", "summary")
-    builder.add_edge("summary", END)
+    builder.add_edge(START, "node_step1")
+    builder.add_edge("node_step1", "node_step2")
+    builder.add_edge("node_step2", "node_step3")
+    builder.add_edge("node_step3", "node_step4")
+    builder.add_edge("node_step4", "node_summary")
+    builder.add_edge("node_summary", END)
 
     return builder.compile()
 

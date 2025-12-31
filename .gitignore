@@ -47,3 +47,30 @@ __pycache__/
 
 # Clangd cache
 .cache/
+
+# APXM compiled artifacts
+*.apxmobj
+bin/
+
+# Compiled workflow binaries (extensionless)
+papers/**/workloads/**/workflow
+papers/**/workloads/**/compile
+papers/**/workloads/**/classification
+papers/**/workloads/**/creative
+papers/**/workloads/**/extraction
+papers/**/workloads/**/reasoning
+papers/**/workloads/**/parallel_research
+papers/**/workloads/**/sequential_reasoning
+papers/**/workloads/**/simple_chain
+papers/**/workloads/**/workflow_n2
+papers/**/workloads/**/workflow_n4
+papers/**/workloads/**/workflow_n8
+papers/**/workloads/**/03_empty_capability
+papers/**/workloads/**/05_switch_empty_cases
+
+# Python cache
+.python-cache
+
+# Benchmark results (optional - uncomment to track)
+# papers/**/results/*.json
+# papers/**/results/*.csv

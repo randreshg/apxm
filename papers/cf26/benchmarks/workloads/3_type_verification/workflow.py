@@ -8,13 +8,7 @@ LangGraph discovers this at RUNTIME, after the first LLM call.
 import os
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
-
-# Try to import Ollama for real LLM calls
-try:
-    from langchain_ollama import ChatOllama
-    HAS_OLLAMA = True
-except ImportError:
-    HAS_OLLAMA = False
+from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
 
 # Ollama model configuration
 OLLAMA_MODEL = (
@@ -31,10 +25,8 @@ class BrokenState(TypedDict):
 
 
 def get_llm():
-    """Get the LLM instance (Ollama or mock)."""
-    if HAS_OLLAMA:
-        return ChatOllama(model=OLLAMA_MODEL, temperature=0)
-    return None
+    """Get the LLM instance (Ollama only)."""
+    return get_ollama_llm(OLLAMA_MODEL)
 
 
 def first_step(state: BrokenState) -> dict:
@@ -45,11 +37,9 @@ def first_step(state: BrokenState) -> dict:
     """
     llm = get_llm()
 
-    if llm:
-        prompt = "Do something simple: say 'Hello World'"
-        response = llm.invoke(prompt)
-        return {"result": response.content}
-    return {"result": "First step completed successfully"}
+    prompt = "Do something simple: say 'Hello World'"
+    response = llm.invoke(prompt)
+    return {"result": response.content}
 
 
 def second_step(state: BrokenState) -> dict:

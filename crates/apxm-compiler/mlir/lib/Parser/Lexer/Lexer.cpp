@@ -204,13 +204,15 @@ Token Lexer::lexIdentifierOrKeyword() {
       .Case("try", TokenKind::kw_try)
 
       // Operations
+      .Case("ask", TokenKind::kw_ask)
       .Case("exec", TokenKind::kw_exec)
       .Case("llm", TokenKind::kw_llm)
       .Case("merge", TokenKind::kw_merge)
       .Case("mem", TokenKind::kw_mem)
       .Case("plan", TokenKind::kw_plan)
+      .Case("print", TokenKind::kw_print)
+      .Case("reason", TokenKind::kw_reason)
       .Case("reflect", TokenKind::kw_reflect)
-      .Case("rsn", TokenKind::kw_rsn)
       .Case("talk", TokenKind::kw_talk)
       .Case("think", TokenKind::kw_think)
       .Case("tool", TokenKind::kw_tool)
@@ -235,7 +237,6 @@ Token Lexer::lexIdentifierOrKeyword() {
       .Case("goal", TokenKind::kw_goal_type)
       .Case("handle", TokenKind::kw_handle)
       .Case("response", TokenKind::kw_response)
-      .Case("result", TokenKind::kw_result)
       .Case("token", TokenKind::kw_token)
       .Case("void", TokenKind::kw_void)
 

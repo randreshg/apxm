@@ -7,6 +7,6 @@
 agent EmptyCapabilityTest {
     flow main {
         // ERROR: Empty string is not a valid capability name
-        inv "" ({}) -> result
+        inv("", "{}") -> result
     }
 }

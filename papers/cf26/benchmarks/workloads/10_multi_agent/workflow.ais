@@ -4,19 +4,19 @@
 
 agent Researcher {
     flow research(topic: str) -> str {
-        rsn "Conduct deep research on: " + topic -> findings
+        ask("Conduct deep research on: " + topic) -> findings
         return findings
     }
 }
 
 agent Critic {
     flow critique(content: str) -> str {
-        rsn "Critically analyze and identify weaknesses: " + content -> feedback
+        ask("Critically analyze and identify weaknesses: " + content) -> feedback
         return feedback
     }
 
     flow prepare(topic: str) -> str {
-        rsn "Prepare initial critique questions for: " + topic -> questions
+        ask("Prepare initial critique questions for: " + topic) -> questions
         return questions
     }
 }
@@ -31,7 +31,9 @@ agent Coordinator {
         Critic.critique(research_result) -> critique_result
 
         // 3. Synthesize final report (consumes all outputs)
-        rsn "Synthesize into final report. Research: " + research_result + " | Prepared questions: " + critique_prep + " | Critique: " + critique_result -> final_report
+        ask("Synthesize into final report. Research: " + research_result + " | Prepared questions: " + critique_prep + " | Critique: " + critique_result) -> final_report
+        print("=== Multi-Agent Final Report ===")
+        print(final_report)
         return final_report
     }
 }

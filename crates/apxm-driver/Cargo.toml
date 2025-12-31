@@ -31,3 +31,5 @@ tracing = "0.1.43"
 
 [features]
 metrics = ["apxm-runtime/metrics", "apxm-backends/metrics"]
+# Compile out all tracing for zero overhead (propagates through chain)
+no-trace = ["apxm-runtime/no-trace", "apxm-core/no-trace"]

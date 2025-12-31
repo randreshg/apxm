@@ -12,7 +12,6 @@
  *
  * Fusion is guarded by:
  *   - single use of the producer
- *   - absence of inner_plan regions
  *   - identical dialect attribute compatibility
  *
  * On success the pass increments `ais.fused_pairs` on the module so that
@@ -41,9 +40,7 @@ APXM_AIS_DEBUG_SETUP(fusion)
 // Declarative fusion condition predicate
 static bool isFusibleProducer(RsnOp producer, RsnOp consumer) {
   return producer && producer->hasOneUse() &&
-         producer->getUses().begin()->getOwner() == consumer.getOperation() &&
-         !producer->hasAttr("inner_plan") &&
-         !consumer->hasAttr("inner_plan");
+         producer->getUses().begin()->getOwner() == consumer.getOperation();
 }
 
 // Template fusion strategy
@@ -70,12 +67,6 @@ struct FuseReasoningPass : impl::FuseReasoningBase<FuseReasoningPass> {
     // Single-pass fusion with clear termination conditions
     module.walk([&](RsnOp consumer) {
       stats.scanned++;
-
-      // Skip non-fusible consumers immediately
-      if (consumer->hasAttr("inner_plan")) {
-        APXM_AIS_DEBUG("  Skip (has inner_plan): " << consumer.getTemplateStrAttr());
-        return WalkResult::advance();
-      }
 
       // Find first fusible producer in operands
       auto fusibleProducer = llvm::find_if(consumer.getOperands(), [&](Value operand) {

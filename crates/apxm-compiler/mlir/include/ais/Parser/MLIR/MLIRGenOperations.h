@@ -4,6 +4,12 @@
  *
  * This file provides an interface for generating MLIR operations based on the
  * provided arguments and location information.
+ *
+ * LLM Operations (ask/think/reason):
+ *   Three distinct ops for critical path analysis. Each has different latency:
+ *   - ask:    LOW latency  - simple Q&A
+ *   - think:  HIGH latency - extended thinking
+ *   - reason: MEDIUM latency - structured reasoning
  */
 
 #ifndef APXM_PARSER_MLIR_MLIRGENOPERATIONS_H
@@ -46,8 +52,15 @@ private:
   static mlir::Value generateInvOp(MLIRGen &gen, llvm::StringRef callee,
                                   llvm::ArrayRef<std::unique_ptr<Expr>> args,
                                   mlir::Location loc);
-  static mlir::Value generateRsnOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,
-                                  mlir::Location loc);
+
+  // LLM Operations - three distinct ops for critical path analysis
+  static mlir::Value generateAskOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,
+                                   mlir::Location loc);    // LOW latency
+  static mlir::Value generateThinkOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,
+                                     mlir::Location loc);  // HIGH latency
+  static mlir::Value generateReasonOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,
+                                      mlir::Location loc); // MEDIUM latency
+
   static mlir::Value generateReflectOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,
                                       mlir::Location loc,
                                       llvm::SmallVectorImpl<mlir::Value> &contextArgs);
@@ -57,6 +70,9 @@ private:
   static mlir::Value generateExcOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,
                                   mlir::Location loc,
                                   llvm::SmallVectorImpl<mlir::Value> &contextArgs);
+  static mlir::Value generatePrintOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,
+                                    mlir::Location loc,
+                                    llvm::SmallVectorImpl<mlir::Value> &contextArgs);
 
   /// Extract string literal from expression if possible
   static llvm::StringRef extractStringArg(Expr *expr);

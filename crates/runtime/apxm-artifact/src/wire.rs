@@ -1,9 +1,15 @@
 use std::collections::HashMap;
 
-use apxm_core::types::execution::{DagMetadata, ExecutionDag, Node, NodeMetadata};
+use apxm_core::types::execution::{DagMetadata, ExecutionDag, FlowParameter, Node, NodeMetadata};
 use apxm_core::types::values::{Number, Value};
 use apxm_core::types::{AISOperationType, DependencyType, Edge};
 use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WireFlowParameter {
+    pub name: String,
+    pub type_name: String,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WireDag {
@@ -15,6 +21,9 @@ pub struct WireDag {
     /// Whether this DAG represents an @entry flow.
     #[serde(default)]
     pub is_entry: bool,
+    /// Parameters for entry flows.
+    #[serde(default)]
+    pub parameters: Vec<WireFlowParameter>,
 }
 
 impl WireDag {
@@ -26,6 +35,15 @@ impl WireDag {
             exit_nodes: dag.exit_nodes.clone(),
             metadata_name: dag.metadata.name.clone(),
             is_entry: dag.metadata.is_entry,
+            parameters: dag
+                .metadata
+                .parameters
+                .iter()
+                .map(|p| WireFlowParameter {
+                    name: p.name.clone(),
+                    type_name: p.type_name.clone(),
+                })
+                .collect(),
         }
     }
 
@@ -53,6 +71,14 @@ impl WireDag {
             metadata: DagMetadata {
                 name: self.metadata_name,
                 is_entry: self.is_entry,
+                parameters: self
+                    .parameters
+                    .into_iter()
+                    .map(|p| FlowParameter {
+                        name: p.name,
+                        type_name: p.type_name,
+                    })
+                    .collect(),
             },
         }
     }

@@ -7,8 +7,8 @@
 
 agent InvalidMemoryTest {
     flow main {
-        rsn "Generate some data" -> data
+        ask("Generate some data") -> data
         // ERROR: 'permanent' is not a valid memory space
-        umem permanent "key" <- data
+        umem(data, "permanent")
     }
 }

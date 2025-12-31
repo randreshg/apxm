@@ -29,6 +29,23 @@ namespace {
 
 APXM_AIS_DEBUG_SETUP(dce_warning)
 
+/// Checks if a value is used as an operand in any operation within the function.
+/// This is a fallback check when use_empty() incorrectly returns true due to
+/// MLIR builder issues with variadic operands.
+static bool isUsedInAnyOperation(Value value, func::FuncOp func) {
+  bool found = false;
+  func.walk([&](Operation *op) {
+    for (Value operand : op->getOperands()) {
+      if (operand == value) {
+        found = true;
+        return WalkResult::interrupt();
+      }
+    }
+    return WalkResult::advance();
+  });
+  return found;
+}
+
 /// Returns true if the operation has side effects that make its execution
 /// valuable even if the result is unused.
 static bool hasSideEffects(Operation *op) {
@@ -124,6 +141,14 @@ struct UnconsumedValueWarningPass
         // Check each result of the operation
         for (OpResult result : op->getResults()) {
           if (result.use_empty()) {
+            // Fallback check: scan all operations for this value as an operand.
+            // This handles cases where MLIR's use-def chain wasn't properly
+            // updated (e.g., variadic operands in ops with regions).
+            if (isUsedInAnyOperation(result, func)) {
+              APXM_AIS_DEBUG("  Skip (found use via scan): " << op->getName());
+              continue;
+            }
+
             // Emit warning for unconsumed value
             op->emitWarning()
                 << "result of " << getOpDisplayName(op)

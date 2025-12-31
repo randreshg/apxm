@@ -36,6 +36,7 @@ private:
   [[nodiscard]] std::unique_ptr<Expr> parsePrimaryExpr();
   [[nodiscard]] std::unique_ptr<Expr> parsePostfixExpr(std::unique_ptr<Expr> base);
   [[nodiscard]] std::unique_ptr<Expr> parseArrayExpr();
+  [[nodiscard]] std::unique_ptr<Expr> parseStringWithInterpolation(Location loc, llvm::StringRef unescaped);
   [[nodiscard]] std::unique_ptr<Expr> parseMemberAccess(std::unique_ptr<Expr> base);
   [[nodiscard]] std::unique_ptr<Expr> parseCallExpr(llvm::StringRef callee, Location loc);
   [[nodiscard]] std::unique_ptr<Expr> parsePipelineExpr();

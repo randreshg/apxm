@@ -10,10 +10,10 @@ pub fn build_pipeline(pm: &mut PassManager, level: OptimizationLevel) -> Result<
             pm.lower_to_async()?;
         }
         OptimizationLevel::O1 | OptimizationLevel::O2 | OptimizationLevel::O3 => {
-            // Run analysis passes first to warn about potential issues
-            pm.unconsumed_value_warning()?;
-
+            // Normalize first to deduplicate context operands and properly link IR
+            // Then run analysis passes to warn about potential issues
             pm.normalize()?
+                .unconsumed_value_warning()?
                 .scheduling()?
                 .fuse_reasoning()?
                 .canonicalizer()?

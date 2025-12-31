@@ -31,9 +31,15 @@ pub enum AISOperationType {
     /// Update memory (write to memory system).
     UMem,
 
-    // Reasoning Operations (4)
-    /// Reasoning operation (LLM call for reasoning).
-    Rsn,
+    // LLM Operations (3) - Compiler markers for critical path analysis
+    /// Simple Q&A (no extended thinking) - LOW latency marker.
+    Ask,
+    /// Extended thinking with budget - HIGH latency marker.
+    Think,
+    /// Structured reasoning with beliefs/goals - MEDIUM latency marker.
+    Reason,
+
+    // Planning & Analysis Operations (3)
     /// Planning operation (generate a plan using LLM).
     Plan,
     /// Reflection operation (analyze execution trace).
@@ -41,11 +47,13 @@ pub enum AISOperationType {
     /// Verification operation (fact-check against evidence).
     Verify,
 
-    // Tool Operations (2)
+    // Tool Operations (3)
     /// Invoke a capability (tool/function call).
     Inv,
     /// Execute code in sandbox.
     Exc,
+    /// Print output to stdout.
+    Print,
 
     // Control Flow Operations (7)
     /// Unconditional jump to label.
@@ -84,6 +92,8 @@ pub enum AISOperationType {
     // Internal Operations (not part of public AIS)
     /// String constant (compiler internal).
     ConstStr,
+    /// Yield value from switch case region (compiler internal).
+    Yield,
 }
 
 impl fmt::Display for AISOperationType {
@@ -94,14 +104,18 @@ impl fmt::Display for AISOperationType {
             // Memory
             AISOperationType::QMem => write!(f, "QMEM"),
             AISOperationType::UMem => write!(f, "UMEM"),
-            // Reasoning
-            AISOperationType::Rsn => write!(f, "RSN"),
+            // LLM Operations (markers for runtime config lookup)
+            AISOperationType::Ask => write!(f, "ASK"),
+            AISOperationType::Think => write!(f, "THINK"),
+            AISOperationType::Reason => write!(f, "REASON"),
+            // Planning & Analysis
             AISOperationType::Plan => write!(f, "PLAN"),
             AISOperationType::Reflect => write!(f, "REFLECT"),
             AISOperationType::Verify => write!(f, "VERIFY"),
             // Tools
             AISOperationType::Inv => write!(f, "INV"),
             AISOperationType::Exc => write!(f, "EXC"),
+            AISOperationType::Print => write!(f, "PRINT"),
             // Control Flow
             AISOperationType::Jump => write!(f, "JUMP"),
             AISOperationType::BranchOnValue => write!(f, "BRANCH_ON_VALUE"),
@@ -121,6 +135,7 @@ impl fmt::Display for AISOperationType {
             AISOperationType::Communicate => write!(f, "COMMUNICATE"),
             // Internal
             AISOperationType::ConstStr => write!(f, "CONST_STR"),
+            AISOperationType::Yield => write!(f, "YIELD"),
         }
     }
 }
@@ -132,12 +147,15 @@ impl AISOperationType {
             AISOperationType::Agent => "agent",
             AISOperationType::QMem => "qmem",
             AISOperationType::UMem => "umem",
-            AISOperationType::Rsn => "rsn",
+            AISOperationType::Ask => "ask",
+            AISOperationType::Think => "think",
+            AISOperationType::Reason => "reason",
             AISOperationType::Plan => "plan",
             AISOperationType::Reflect => "reflect",
             AISOperationType::Verify => "verify",
             AISOperationType::Inv => "inv",
             AISOperationType::Exc => "exc",
+            AISOperationType::Print => "print",
             AISOperationType::Jump => "jump",
             AISOperationType::BranchOnValue => "branch_on_value",
             AISOperationType::LoopStart => "loop_start",
@@ -152,12 +170,13 @@ impl AISOperationType {
             AISOperationType::Err => "err",
             AISOperationType::Communicate => "communicate",
             AISOperationType::ConstStr => "const_str",
+            AISOperationType::Yield => "yield",
         }
     }
 
     /// Returns true if this is a public AIS operation (part of the 19).
     pub fn is_public(&self) -> bool {
-        !matches!(self, AISOperationType::ConstStr | AISOperationType::Agent)
+        !matches!(self, AISOperationType::ConstStr | AISOperationType::Yield | AISOperationType::Agent)
     }
 
     /// Returns true if this is a metadata operation.
@@ -167,15 +186,17 @@ impl AISOperationType {
 
     /// Returns true if this is an internal operation.
     pub fn is_internal(&self) -> bool {
-        matches!(self, AISOperationType::ConstStr)
+        matches!(self, AISOperationType::ConstStr | AISOperationType::Yield)
     }
 
-    /// Get all public operation types (21 operations).
+    /// Get all public operation types (22 operations).
     pub fn public_operations() -> &'static [AISOperationType] {
         &[
             AISOperationType::QMem,
             AISOperationType::UMem,
-            AISOperationType::Rsn,
+            AISOperationType::Ask,
+            AISOperationType::Think,
+            AISOperationType::Reason,
             AISOperationType::Plan,
             AISOperationType::Reflect,
             AISOperationType::Verify,
@@ -197,13 +218,15 @@ impl AISOperationType {
         ]
     }
 
-    /// Get all operation types (23 total).
+    /// Get all operation types (25 total).
     pub fn all_operations() -> &'static [AISOperationType] {
         &[
             AISOperationType::Agent,
             AISOperationType::QMem,
             AISOperationType::UMem,
-            AISOperationType::Rsn,
+            AISOperationType::Ask,
+            AISOperationType::Think,
+            AISOperationType::Reason,
             AISOperationType::Plan,
             AISOperationType::Reflect,
             AISOperationType::Verify,
@@ -223,6 +246,7 @@ impl AISOperationType {
             AISOperationType::Err,
             AISOperationType::Communicate,
             AISOperationType::ConstStr,
+            AISOperationType::Yield,
         ]
     }
 }
@@ -368,21 +392,52 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         min_inputs: 0,
         produces_output: true,
     },
-    // ========== Reasoning Operations (4) ==========
+    // ========== LLM Operations (3) - Compiler markers for critical path analysis ==========
     OperationSpec {
-        op_type: AISOperationType::Rsn,
-        name: "Reason",
+        op_type: AISOperationType::Ask,
+        name: "Ask",
         category: OperationCategory::Reasoning,
-        description: "LLM reasoning with controlled context; updates Beliefs/Goals",
+        description: "Simple Q&A with LLM (no extended thinking) - LOW latency",
         fields: &[
-            OperationField::required("prompt", "Prompt template for reasoning"),
-            OperationField::optional("model", "LLM model to use"),
-            OperationField::optional("context", "Additional context for reasoning"),
+            OperationField::required("template_str", "Prompt template for the question"),
+            OperationField::optional("temperature", "Sampling temperature (0.0-1.0)"),
+            OperationField::optional("model", "LLM model override (uses config default)"),
         ],
         needs_submission: true,
         min_inputs: 0,
         produces_output: true,
     },
+    OperationSpec {
+        op_type: AISOperationType::Think,
+        name: "Think",
+        category: OperationCategory::Reasoning,
+        description: "Extended thinking with budget_tokens - HIGH latency",
+        fields: &[
+            OperationField::required("template_str", "Prompt template for deep reasoning"),
+            OperationField::optional("budget", "Token budget for extended thinking"),
+            OperationField::optional("temperature", "Sampling temperature (0.0-1.0)"),
+            OperationField::optional("model", "LLM model override (uses config default)"),
+        ],
+        needs_submission: true,
+        min_inputs: 0,
+        produces_output: true,
+    },
+    OperationSpec {
+        op_type: AISOperationType::Reason,
+        name: "Reason",
+        category: OperationCategory::Reasoning,
+        description: "Structured reasoning with belief/goal updates - MEDIUM latency",
+        fields: &[
+            OperationField::required("template_str", "Prompt template for structured reasoning"),
+            OperationField::optional("temperature", "Sampling temperature (0.0-1.0)"),
+            OperationField::optional("model", "LLM model override (uses config default)"),
+            OperationField::optional("structured", "Enable structured JSON output"),
+        ],
+        needs_submission: true,
+        min_inputs: 0,
+        produces_output: true,
+    },
+    // ========== Planning & Analysis Operations (3) ==========
     OperationSpec {
         op_type: AISOperationType::Plan,
         name: "Plan",
@@ -622,19 +677,34 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
 // ============================================================================
 
 /// Internal operations used by the compiler but not exposed in the public AIS.
-pub static INTERNAL_OPERATIONS: &[OperationSpec] = &[OperationSpec {
-    op_type: AISOperationType::ConstStr,
-    name: "ConstStr",
-    category: OperationCategory::Internal,
-    description: "String constant (compiler internal for string literals)",
-    fields: &[OperationField::required(
-        "value",
-        "The string constant value",
-    )],
-    needs_submission: false,
-    min_inputs: 0,
-    produces_output: true,
-}];
+pub static INTERNAL_OPERATIONS: &[OperationSpec] = &[
+    OperationSpec {
+        op_type: AISOperationType::ConstStr,
+        name: "ConstStr",
+        category: OperationCategory::Internal,
+        description: "String constant (compiler internal for string literals)",
+        fields: &[OperationField::required(
+            "value",
+            "The string constant value",
+        )],
+        needs_submission: false,
+        min_inputs: 0,
+        produces_output: true,
+    },
+    OperationSpec {
+        op_type: AISOperationType::Yield,
+        name: "Yield",
+        category: OperationCategory::Internal,
+        description: "Yield value from switch case region (terminates region)",
+        fields: &[OperationField::required(
+            "value",
+            "The value to yield from the region",
+        )],
+        needs_submission: false,
+        min_inputs: 1,
+        produces_output: true,
+    },
+];
 
 // ============================================================================
 // Lookup Functions
@@ -718,18 +788,18 @@ mod tests {
         );
         assert_eq!(
             AIS_OPERATIONS.len(),
-            21,
-            "Expected 21 public AIS operations"
+            23,
+            "Expected 23 public AIS operations"
         );
         assert_eq!(
             INTERNAL_OPERATIONS.len(),
-            1,
-            "Expected 1 internal operation"
+            2,
+            "Expected 2 internal operations (ConstStr, Yield)"
         );
         assert_eq!(
             AISOperationType::all_operations().len(),
-            23,
-            "Expected 23 total operations"
+            26,
+            "Expected 26 total operations"
         );
     }
 
@@ -748,16 +818,23 @@ mod tests {
     }
 
     #[test]
-    fn test_rsn_is_public() {
-        assert!(AISOperationType::Rsn.is_public());
-        assert!(!AISOperationType::Rsn.is_internal());
-        assert!(!AISOperationType::Rsn.is_metadata());
+    fn test_llm_ops_are_public() {
+        // All three LLM ops are public
+        assert!(AISOperationType::Ask.is_public());
+        assert!(AISOperationType::Think.is_public());
+        assert!(AISOperationType::Reason.is_public());
+        // None are internal or metadata
+        assert!(!AISOperationType::Ask.is_internal());
+        assert!(!AISOperationType::Think.is_internal());
+        assert!(!AISOperationType::Reason.is_internal());
     }
 
     #[test]
     fn test_mlir_mnemonics() {
         assert_eq!(AISOperationType::Agent.mlir_mnemonic(), "agent");
-        assert_eq!(AISOperationType::Rsn.mlir_mnemonic(), "rsn");
+        assert_eq!(AISOperationType::Ask.mlir_mnemonic(), "ask");
+        assert_eq!(AISOperationType::Think.mlir_mnemonic(), "think");
+        assert_eq!(AISOperationType::Reason.mlir_mnemonic(), "reason");
         assert_eq!(AISOperationType::QMem.mlir_mnemonic(), "qmem");
         assert_eq!(AISOperationType::WaitAll.mlir_mnemonic(), "wait_all");
     }

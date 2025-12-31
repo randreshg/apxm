@@ -9,13 +9,7 @@ import os
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.constants import Send
-
-# Try to import Ollama for real LLM calls
-try:
-    from langchain_ollama import ChatOllama
-    HAS_OLLAMA = True
-except ImportError:
-    HAS_OLLAMA = False
+from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
 
 # Ollama model configuration
 OLLAMA_MODEL = (
@@ -36,10 +30,8 @@ class ResearchState(TypedDict):
 
 
 def get_llm():
-    """Get the LLM instance (Ollama or mock)."""
-    if HAS_OLLAMA:
-        return ChatOllama(model=OLLAMA_MODEL, temperature=0)
-    return None
+    """Get the LLM instance (Ollama only)."""
+    return get_ollama_llm(OLLAMA_MODEL)
 
 
 def research_background(state: ResearchState) -> dict:
@@ -47,11 +39,9 @@ def research_background(state: ResearchState) -> dict:
     llm = get_llm()
     topic = state["topic"]
 
-    if llm:
-        prompt = f"Explain the domain background of {topic} in 2-3 sentences."
-        response = llm.invoke(prompt)
-        return {"background": response.content}
-    return {"background": f"Background research on {topic}..."}
+    prompt = f"Explain the domain background of {topic} in 2-3 sentences."
+    response = llm.invoke(prompt)
+    return {"background": response.content}
 
 
 def research_advances(state: ResearchState) -> dict:
@@ -59,11 +49,9 @@ def research_advances(state: ResearchState) -> dict:
     llm = get_llm()
     topic = state["topic"]
 
-    if llm:
-        prompt = f"What are the recent advances in {topic}? Answer in 2-3 sentences."
-        response = llm.invoke(prompt)
-        return {"advances": response.content}
-    return {"advances": f"Recent advances in {topic}..."}
+    prompt = f"What are the recent advances in {topic}? Answer in 2-3 sentences."
+    response = llm.invoke(prompt)
+    return {"advances": response.content}
 
 
 def research_impact(state: ResearchState) -> dict:
@@ -71,11 +59,9 @@ def research_impact(state: ResearchState) -> dict:
     llm = get_llm()
     topic = state["topic"]
 
-    if llm:
-        prompt = f"What is the societal impact of {topic}? Answer in 2-3 sentences."
-        response = llm.invoke(prompt)
-        return {"impact": response.content}
-    return {"impact": f"Societal impact of {topic}..."}
+    prompt = f"What is the societal impact of {topic}? Answer in 2-3 sentences."
+    response = llm.invoke(prompt)
+    return {"impact": response.content}
 
 
 def merge_results(state: ResearchState) -> dict:
@@ -93,19 +79,17 @@ def synthesize(state: ResearchState) -> dict:
     llm = get_llm()
     combined = state["combined"]
 
-    if llm:
-        prompt = f"Synthesize this research into a coherent report:\n\n{combined}"
-        response = llm.invoke(prompt)
-        return {"report": response.content}
-    return {"report": f"Synthesized report from: {combined}"}
+    prompt = f"Synthesize this research into a coherent report:\n\n{combined}"
+    response = llm.invoke(prompt)
+    return {"report": response.content}
 
 
 def fan_out_research(state: ResearchState) -> List[Send]:
     """Fan out to parallel research nodes."""
     return [
-        Send("background", state),
-        Send("advances", state),
-        Send("impact", state),
+        Send("research_background", state),
+        Send("research_advances", state),
+        Send("research_impact", state),
     ]
 
 
@@ -114,9 +98,9 @@ def build_graph() -> StateGraph:
     builder = StateGraph(ResearchState)
 
     # Add nodes
-    builder.add_node("background", research_background)
-    builder.add_node("advances", research_advances)
-    builder.add_node("impact", research_impact)
+    builder.add_node("research_background", research_background)
+    builder.add_node("research_advances", research_advances)
+    builder.add_node("research_impact", research_impact)
     builder.add_node("merge", merge_results)
     builder.add_node("synthesize", synthesize)
 
@@ -124,9 +108,9 @@ def build_graph() -> StateGraph:
     builder.add_conditional_edges(START, fan_out_research)
 
     # All parallel branches merge
-    builder.add_edge("background", "merge")
-    builder.add_edge("advances", "merge")
-    builder.add_edge("impact", "merge")
+    builder.add_edge("research_background", "merge")
+    builder.add_edge("research_advances", "merge")
+    builder.add_edge("research_impact", "merge")
 
     # Sequential synthesis after merge
     builder.add_edge("merge", "synthesize")

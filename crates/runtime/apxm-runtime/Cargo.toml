@@ -39,6 +39,9 @@ chrono = "0.4"
 num_cpus = "1.16"
 priority-queue = "1.3"
 
+# Terminal output
+termimad = "0.30"
+
 [dev-dependencies]
 apxm-driver = { path = "../../apxm-driver" }
 
@@ -48,6 +51,8 @@ dashmap = ["dep:dashmap"]
 fxhash = ["dep:fxhash"]
 smallvec = ["dep:smallvec"]
 metrics = ["apxm-backends/metrics"]
+# Compile out all tracing for zero overhead (propagates to apxm-core)
+no-trace = ["apxm-core/no-trace"]
 
 [[example]]
 name = "paper_benchmarks"

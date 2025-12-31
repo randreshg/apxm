@@ -150,6 +150,69 @@ impl Linker {
         })
     }
 
+    /// Compile the user file and execute with provided arguments for entry flow parameters.
+    pub async fn run_with_args(
+        &self,
+        input: &Path,
+        mlir: bool,
+        args: Vec<String>,
+    ) -> Result<LinkResult, DriverError> {
+        log_info!(
+            "driver",
+            "Compiling {} as {} with {} args",
+            input.display(),
+            if mlir { "MLIR" } else { "DSL" },
+            args.len()
+        );
+        #[cfg(feature = "metrics")]
+        let compile_start = std::time::Instant::now();
+        let module = self.compiler.compile(input, mlir)?;
+        #[cfg(feature = "metrics")]
+        let compile_time = compile_start.elapsed();
+
+        #[cfg(feature = "metrics")]
+        let artifact_start = std::time::Instant::now();
+        let artifact_bytes = module.generate_artifact_bytes()?;
+        #[cfg(feature = "metrics")]
+        let artifact_time = artifact_start.elapsed();
+
+        let artifact = Artifact::from_bytes(&artifact_bytes)
+            .map_err(|e| DriverError::Runtime(RuntimeError::State(e.to_string())))?;
+
+        #[cfg(feature = "metrics")]
+        let validation_start = std::time::Instant::now();
+        if let Err(e) = artifact.dag().validate() {
+            return Err(DriverError::Runtime(RuntimeError::State(format!(
+                "Artifact DAG validation failed: {}",
+                e
+            ))));
+        }
+        #[cfg(feature = "metrics")]
+        let validation_time = validation_start.elapsed();
+
+        #[cfg(feature = "metrics")]
+        let runtime_start = std::time::Instant::now();
+        let execution = self
+            .runtime
+            .execute_artifact_with_args(artifact.clone(), args)
+            .await?;
+        #[cfg(feature = "metrics")]
+        let runtime_time = runtime_start.elapsed();
+
+        Ok(LinkResult {
+            module,
+            artifact,
+            execution,
+            #[cfg(feature = "metrics")]
+            metrics: LinkMetrics {
+                compile_time,
+                artifact_time,
+                validation_time,
+                runtime_time,
+            },
+        })
+    }
+
     /// Get the LLM registry from the runtime
     pub fn runtime_llm_registry(&self) -> std::sync::Arc<apxm_backends::LLMRegistry> {
         self.runtime.llm_registry()

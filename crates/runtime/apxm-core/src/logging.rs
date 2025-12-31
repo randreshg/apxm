@@ -91,6 +91,111 @@ macro_rules! log_trace {
     }
 }
 
+// =============================================================================
+// APXM Runtime Tracing Macros
+// =============================================================================
+// These macros provide structured tracing for runtime execution with worker
+// context, operation tracking, and performance monitoring.
+//
+// When the `no-trace` feature is enabled, all macros compile to nothing
+// for zero overhead in production/benchmark builds.
+
+// ---- With tracing enabled (default) ----
+
+/// Trace scheduler-level events (worker lifecycle, ready queue, etc.)
+#[cfg(not(feature = "no-trace"))]
+#[macro_export]
+macro_rules! apxm_sched {
+    ($level:ident, $($arg:tt)*) => {
+        tracing::$level!(target: "apxm::scheduler", $($arg)*)
+    }
+}
+
+/// Trace operation dispatch/completion with worker context
+#[cfg(not(feature = "no-trace"))]
+#[macro_export]
+macro_rules! apxm_op {
+    ($level:ident, worker = $worker:expr, $($arg:tt)*) => {
+        tracing::$level!(target: "apxm::ops", worker = $worker, $($arg)*)
+    };
+    ($level:ident, $($arg:tt)*) => {
+        tracing::$level!(target: "apxm::ops", $($arg)*)
+    }
+}
+
+/// Trace LLM requests and responses
+#[cfg(not(feature = "no-trace"))]
+#[macro_export]
+macro_rules! apxm_llm {
+    ($level:ident, worker = $worker:expr, $($arg:tt)*) => {
+        tracing::$level!(target: "apxm::llm", worker = $worker, $($arg)*)
+    };
+    ($level:ident, $($arg:tt)*) => {
+        tracing::$level!(target: "apxm::llm", $($arg)*)
+    }
+}
+
+/// Trace token production and consumption
+#[cfg(not(feature = "no-trace"))]
+#[macro_export]
+macro_rules! apxm_token {
+    ($level:ident, worker = $worker:expr, $($arg:tt)*) => {
+        tracing::$level!(target: "apxm::tokens", worker = $worker, $($arg)*)
+    };
+    ($level:ident, $($arg:tt)*) => {
+        tracing::$level!(target: "apxm::tokens", $($arg)*)
+    }
+}
+
+/// Trace artifact loading and DAG operations
+#[cfg(not(feature = "no-trace"))]
+#[macro_export]
+macro_rules! apxm_dag {
+    ($level:ident, $($arg:tt)*) => {
+        tracing::$level!(target: "apxm::dag", $($arg)*)
+    }
+}
+
+// ---- With tracing disabled (no-trace feature) ----
+
+/// Trace scheduler-level events - compiles to nothing when no-trace is enabled
+#[cfg(feature = "no-trace")]
+#[macro_export]
+macro_rules! apxm_sched {
+    ($level:ident, $($arg:tt)*) => {};
+}
+
+/// Trace operation dispatch/completion - compiles to nothing when no-trace is enabled
+#[cfg(feature = "no-trace")]
+#[macro_export]
+macro_rules! apxm_op {
+    ($level:ident, worker = $worker:expr, $($arg:tt)*) => {};
+    ($level:ident, $($arg:tt)*) => {};
+}
+
+/// Trace LLM requests and responses - compiles to nothing when no-trace is enabled
+#[cfg(feature = "no-trace")]
+#[macro_export]
+macro_rules! apxm_llm {
+    ($level:ident, worker = $worker:expr, $($arg:tt)*) => {};
+    ($level:ident, $($arg:tt)*) => {};
+}
+
+/// Trace token production and consumption - compiles to nothing when no-trace is enabled
+#[cfg(feature = "no-trace")]
+#[macro_export]
+macro_rules! apxm_token {
+    ($level:ident, worker = $worker:expr, $($arg:tt)*) => {};
+    ($level:ident, $($arg:tt)*) => {};
+}
+
+/// Trace artifact loading and DAG operations - compiles to nothing when no-trace is enabled
+#[cfg(feature = "no-trace")]
+#[macro_export]
+macro_rules! apxm_dag {
+    ($level:ident, $($arg:tt)*) => {};
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

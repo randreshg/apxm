@@ -42,9 +42,7 @@
 │  │                  │                  │                              │      │
 │  │  agent Research {│                  │  graph = StateGraph(State)   │      │
 │  │    flow main {   │                  │  graph.add_node("a", fn)     │      │
-│  │      rsn "..." →r│                  │  graph.add_node("b", fn)     │      │
-│  │      rsn "..." →s│                  │  graph.add_edge(START, "a")  │      │
-│  │      merge → out │                  │  ...                         │      │
+│  │      rsn("..." →r│                  │  graph.add_node("b", fn)     │      │)│  │      rsn("..." →s│                  │  graph.add_edge(START, "a")  │      │)│  │      merge → out │                  │  ...                         │      │
 │  │    }             │                  │  app = graph.compile()       │      │
 │  │  }               │                  │  app.invoke(state)           │      │
 │  └────────┬─────────┘                  └──────────────┬───────────────┘      │
@@ -215,9 +213,9 @@ Test parallelism at N = 1, 2, 4, 8 concurrent operations.
 │                                                                              │
 │  SOURCE CODE (unfused):                                                      │
 │  ───────────────────────                                                     │
-│  rsn "What is quantum computing?" -> definition                              │
-│  rsn "Based on: " + definition + ", explain qubits" -> qubits               │
-│  rsn "Summarize: " + qubits -> summary                                       │
+│  rsn("What is quantum computing?") -> definition                              │
+│  rsn("Based on: " + definition + ", explain qubits") -> qubits               │
+│  rsn("Summarize: " + qubits) -> summary                                       │
 │                                                                              │
 │  WITHOUT FUSION (LangGraph behavior):                                        │
 │  ────────────────────────────────────                                        │
@@ -267,7 +265,7 @@ Test parallelism at N = 1, 2, 4, 8 concurrent operations.
 │  error[E0308]: undefined variable        Traceback (most recent call last):  │
 │    --> broken.ais:5:12                     File "broken.py", line 47         │
 │    │                                       in invoke                         │
-│  5 │     rsn undefined_var -> result       KeyError: 'missing_key'           │
+│  5 │     rsn(undefined_var) -> result       KeyError: 'missing_key'           │
 │    │         ^^^^^^^^^^^^                                                    │
 │    │         not defined                 # After LLM call already made!      │
 │                                          # Tokens wasted, cost incurred      │
@@ -362,7 +360,7 @@ All benchmarks output JSON for analysis:
       "apxm": "0.1.0",
       "langgraph": "0.2.53",
       "python": "3.12.0",
-      "ollama_model": "phi3:mini"
+      "ollama_model": "gpt-oss:20b-cloud"
     }
   },
   "workload": "parallel_research",

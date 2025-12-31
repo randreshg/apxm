@@ -5,15 +5,20 @@
 agent RouterAgent {
     @entry flow main(input: str) -> str {
         // 1. Classify the input
-        rsn "Classify this input into exactly one word: technical, creative, or factual. Input: " + input -> category
+        ask("Classify this input into exactly one word: technical, creative, or factual. Input: " + input) -> category
 
         // 2. Route based on classification (only selected branch runs)
         switch category {
-            case "technical" => rsn "Provide a detailed technical explanation for: " + input -> output
-            case "creative" => rsn "Provide a creative, imaginative response for: " + input -> output
-            case "factual" => rsn "Provide accurate factual information for: " + input -> output
-            default => rsn "Provide a helpful general response for: " + input -> output
-        }
+            case "technical" => ask("Provide a detailed technical explanation for: " + input)
+            case "creative" => ask("Provide a creative, imaginative response for: " + input)
+            case "factual" => ask("Provide accurate factual information for: " + input)
+            default => ask("Provide a helpful general response for: " + input)
+        } -> routed_response
+
+        // 3. Refine the response with context
+        ask("Refine and summarize this response: ", routed_response) -> output
+        print("=== Routed Response ===")
+        print(output)
         return output
     }
 }

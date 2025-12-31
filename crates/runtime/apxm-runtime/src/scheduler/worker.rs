@@ -14,6 +14,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use apxm_core::types::{Node, NodeId, Number, OpStatus, TokenId, Value};
+use apxm_core::{apxm_op, apxm_token};
 use crossbeam_deque::Worker;
 
 use crate::executor::ExecutionContext;
@@ -65,6 +66,14 @@ pub async fn worker_loop(
         // Mark operation as running
         op_start(&state.op_states, node_id);
 
+        apxm_op!(debug,
+            worker = worker_id,
+            node_id = node_id,
+            op_type = ?node.op_type,
+            inputs = node.input_tokens.len(),
+            "Dispatching operation"
+        );
+
         // Collect inputs (must all be ready) - timed when metrics enabled
         let collected = timed!(state.metrics, record_input_collection, {
             collect_inputs(&state.tokens, &node)
@@ -73,6 +82,11 @@ pub async fn worker_loop(
             // Inputs not ready - requeue at lowest priority and continue
             // This shouldn't normally happen since readiness is tracked,
             // but handle gracefully in case of race conditions
+            apxm_op!(trace,
+                worker = worker_id,
+                node_id = node_id,
+                "Inputs not ready, requeuing"
+            );
             state
                 .queue
                 .push(node_id, crate::scheduler::queue::Priority::Low);
@@ -85,7 +99,7 @@ pub async fn worker_loop(
         let child_ctx = base_ctx.child();
         let outputs = node.output_tokens.clone();
 
-        let outcome = execute_with_retries(&state, &executor, &node, &inputs, &child_ctx).await;
+        let outcome = execute_with_retries(&state, &executor, &node, &inputs, &child_ctx, worker_id).await;
 
         // Handle outcome
         match outcome {
@@ -178,12 +192,14 @@ enum ExecutionOutcome {
 }
 
 /// Execute an operation with retry logic.
+#[allow(unused_variables)] // worker_id only used in tracing
 async fn execute_with_retries(
     state: &SchedulerState,
     executor: &ExecutorEngine,
     node: &Node,
     inputs: &[Value],
     ctx: &ExecutionContext,
+    worker_id: usize,
 ) -> ExecutionOutcome {
     let start_time = Instant::now();
 
@@ -201,6 +217,13 @@ async fn execute_with_retries(
         // Execute operation
         #[cfg(feature = "metrics")]
         let exec_start = Instant::now();
+
+        apxm_op!(trace,
+            worker = worker_id,
+            node_id = node.id,
+            attempt = attempt + 1,
+            "Executing operation"
+        );
 
         let result = executor
             .execute_with_context(node, inputs.to_vec(), ctx)
@@ -228,6 +251,15 @@ async fn execute_with_retries(
                     state.metrics.record_failure();
                     state.metrics.record_execution_time(exec_duration);
                 }
+
+                apxm_op!(debug,
+                    worker = worker_id,
+                    node_id = node.id,
+                    attempt = attempt + 1,
+                    error = %error,
+                    "Operation attempt failed"
+                );
+
                 last_error = Some(error);
                 attempt += 1;
 
@@ -238,6 +270,12 @@ async fn execute_with_retries(
 
                 // Exponential backoff with cap
                 let backoff_ms = calculate_backoff(&state.cfg, attempt);
+                apxm_op!(trace,
+                    worker = worker_id,
+                    node_id = node.id,
+                    backoff_ms = backoff_ms,
+                    "Retry backoff"
+                );
                 tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
             }
         }
@@ -272,6 +310,17 @@ struct WorkerEvent<'a> {
 
 /// Handle successful operation execution.
 async fn handle_success(event: &WorkerEvent<'_>, value: Value, attempts: u32) {
+    let duration_ms = event.start_time.elapsed().as_millis();
+
+    apxm_op!(debug,
+        node_id = event.node_id,
+        op_type = ?event.node.op_type,
+        duration_ms = duration_ms,
+        attempts = attempts,
+        output_tokens = event.outputs.len(),
+        "Operation completed successfully"
+    );
+
     // Update counters
     event.state.executed.fetch_add(1, Ordering::Relaxed);
     event.state.record_progress();
@@ -301,7 +350,7 @@ async fn handle_success(event: &WorkerEvent<'_>, value: Value, attempts: u32) {
         event.node,
         "op_success",
         attempts,
-        Some(event.start_time.elapsed().as_millis()),
+        Some(duration_ms),
     )
     .await;
 
@@ -313,6 +362,17 @@ async fn handle_success(event: &WorkerEvent<'_>, value: Value, attempts: u32) {
 ///
 /// Returns true if execution should abort.
 async fn handle_failure(event: &WorkerEvent<'_>, error: RuntimeError, attempts: u32) -> bool {
+    let duration_ms = event.start_time.elapsed().as_millis();
+
+    apxm_op!(error,
+        node_id = event.node_id,
+        op_type = ?event.node.op_type,
+        duration_ms = duration_ms,
+        attempts = attempts,
+        error = %error,
+        "Operation failed"
+    );
+
     // Update counters
     event.state.failed.fetch_add(1, Ordering::Relaxed);
 
@@ -331,7 +391,7 @@ async fn handle_failure(event: &WorkerEvent<'_>, error: RuntimeError, attempts: 
         event.node,
         "op_failure",
         attempts,
-        Some(event.start_time.elapsed().as_millis()),
+        Some(duration_ms),
     )
     .await;
 
@@ -345,12 +405,20 @@ async fn handle_failure(event: &WorkerEvent<'_>, error: RuntimeError, attempts: 
 
     // Check for fallback value
     if let Some(fallback) = event.node.attributes.get("fallback").cloned() {
+        apxm_op!(info,
+            node_id = event.node_id,
+            "Using fallback value"
+        );
         // Use fallback value instead of failing
         publish_outputs(event.state, event.outputs, fallback).await;
         finish_one(event.state);
         false // Don't abort
     } else {
         // No fallback - abort execution
+        apxm_op!(warn,
+            node_id = event.node_id,
+            "No fallback, aborting execution"
+        );
         event.state.mark_done();
         true // Abort
     }
@@ -362,7 +430,7 @@ async fn publish_outputs(state: &SchedulerState, outputs: &[TokenId], value: Val
         // Mark token as ready with value
         if let Some(mut token) = state.tokens.get_mut(&token_id) {
             if token.ready {
-                tracing::debug!(
+                apxm_token!(trace,
                     token_id = token_id,
                     "Token already ready; skipping duplicate publish"
                 );
@@ -376,6 +444,11 @@ async fn publish_outputs(state: &SchedulerState, outputs: &[TokenId], value: Val
             token_state.value = Some(value.clone());
             state.tokens.insert(token_id, token_state);
         }
+
+        apxm_token!(trace,
+            token_id = token_id,
+            "Token produced and ready"
+        );
 
         // Propagate readiness to consumers
         let _ = state.ready_set.on_token_ready(

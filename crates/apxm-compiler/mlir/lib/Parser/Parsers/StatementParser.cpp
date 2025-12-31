@@ -39,7 +39,7 @@ std::unique_ptr<Stmt> StatementParser::parseStatement() {
     // This is syntactic sugar for: `let varname = expr;`
     if (consume(TokenKind::arrow)) {
       Token varTok = peek();
-      if (!expect(TokenKind::identifier)) {
+      if (!expectIdentifier()) {
         synchronize();
         return nullptr;
       }
@@ -52,10 +52,8 @@ std::unique_ptr<Stmt> StatementParser::parseStatement() {
       return std::make_unique<LetStmt>(loc, varName, std::nullopt, std::move(expr));
     }
 
-    if (!expect(TokenKind::semicolon)) {
-      synchronize();
-      return nullptr;
-    }
+    // Semicolon is optional for expression statements in flow bodies
+    consume(TokenKind::semicolon);
 
     return std::make_unique<ExprStmt>(loc, std::move(expr));
   }
@@ -66,7 +64,7 @@ std::unique_ptr<Stmt> StatementParser::parseLetStmt() {
   if (!expect(TokenKind::kw_let)) return nullptr;
 
   Token nameTok = peek();
-  if (!expect(TokenKind::identifier)) return nullptr;
+  if (!expectIdentifier()) return nullptr;
   llvm::StringRef varName = nameTok.spelling;
 
   std::optional<llvm::StringRef> typeAnnotation;
@@ -89,7 +87,8 @@ std::unique_ptr<Stmt> StatementParser::parseLetStmt() {
     return nullptr;
   }
 
-  if (!expect(TokenKind::semicolon)) return nullptr;
+  // Semicolon is optional for let statements in flow bodies
+  consume(TokenKind::semicolon);
 
   return std::make_unique<LetStmt>(loc, varName, typeAnnotation, std::move(initExpr));
 }
@@ -159,7 +158,7 @@ std::unique_ptr<Stmt> StatementParser::parseLoopStmt() {
   if (!expect(TokenKind::l_paren)) return nullptr;
 
   Token iterTok = peek();
-  if (!expect(TokenKind::identifier)) return nullptr;
+  if (!expectIdentifier()) return nullptr;
   llvm::StringRef varName = iterTok.spelling;
 
   if (!expect(TokenKind::kw_in)) return nullptr;
@@ -296,5 +295,14 @@ std::unique_ptr<Stmt> StatementParser::parseSwitchStmt() {
 
   if (!expect(TokenKind::r_brace)) return nullptr;
 
-  return std::make_unique<SwitchStmt>(loc, std::move(discriminant), cases, defaultBody);
+  // Parse optional result binding: } -> identifier
+  std::string resultBinding;
+  if (peek(TokenKind::arrow)) {
+    advance();  // consume '->'
+    Token identTok = peek();
+    if (!expectIdentifier()) return nullptr;
+    resultBinding = identTok.spelling.str();
+  }
+
+  return std::make_unique<SwitchStmt>(loc, std::move(discriminant), cases, defaultBody, resultBinding);
 }

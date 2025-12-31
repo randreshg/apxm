@@ -337,7 +337,7 @@ mod tests {
 
         let cfg = SchedulerConfig::default();
         let metrics = Arc::new(MetricsCollector::default());
-        let (state, _) = SchedulerState::new(outer_dag, cfg, metrics, Instant::now()).unwrap();
+        let (state, _) = SchedulerState::new(outer_dag, cfg, metrics, Instant::now(), vec![]).unwrap();
         let state = Arc::new(state);
 
         let mut inner_dag = ExecutionDag::new();

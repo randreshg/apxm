@@ -110,8 +110,7 @@ let config = ApXmConfig {
 
 ## Inner Plan Linking
 
-The driver provides `InnerPlanLinker` for dynamic plan compilation:
-
+The driver provides `InnerPlanLinker` for dynamic plan(compilation:)
 ```rust
 use apxm_driver::runtime::CompilerInnerPlanLinker;
 

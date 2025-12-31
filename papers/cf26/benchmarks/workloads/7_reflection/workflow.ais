@@ -4,13 +4,15 @@
 agent ReflectiveAgent {
     @entry flow main(task: str) -> str {
         // 1. Initial attempt at solving the task
-        rsn "Solve this task: " + task -> initial_answer
+        ask("Solve this task: " + task) -> initial_answer
 
         // 2. Reflect on the answer (native reflect operation)
-        reflect initial_answer -> reflection
+        reflect(initial_answer) -> reflection
 
         // 3. Improve based on reflection feedback
-        rsn "Given this feedback: " + reflection + ", improve the answer to: " + task -> improved_answer
+        ask("Given this feedback: " + reflection + ", improve the answer to: " + task) -> improved_answer
+        print("=== Improved Answer (after reflection) ===")
+        print(improved_answer)
         return improved_answer
     }
 }

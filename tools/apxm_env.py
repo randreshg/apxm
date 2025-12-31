@@ -73,6 +73,7 @@ def setup_mlir_environment(conda_prefix: Path, target_dir: Optional[Path] = None
     """Configure environment for MLIR compilation and execution.
 
     Sets up:
+    - CONDA_PREFIX to the correct environment
     - MLIR_DIR, LLVM_DIR for compilation
     - DYLD_LIBRARY_PATH (macOS) or LD_LIBRARY_PATH (Linux) for runtime
 
@@ -85,15 +86,20 @@ def setup_mlir_environment(conda_prefix: Path, target_dir: Optional[Path] = None
     """
     env = os.environ.copy()
 
+    # Set CONDA_PREFIX to the correct environment (critical for Rust runtime)
+    env["CONDA_PREFIX"] = str(conda_prefix)
     env["MLIR_DIR"] = str(conda_prefix / "lib" / "cmake" / "mlir")
     env["LLVM_DIR"] = str(conda_prefix / "lib" / "cmake" / "llvm")
 
-    lib_path = str(conda_prefix / "lib")
-    paths = [lib_path]
-
     if target_dir:
-        target_lib = str(target_dir / "release")
-        paths.append(target_lib)
+        # Add both release/ and release/lib/ for dylib lookup
+        target_release = target_dir / "release"
+        paths = [str(target_release / "lib"), str(target_release)]
+    else:
+        paths = []
+
+    lib_path = str(conda_prefix / "lib")
+    paths.append(lib_path)
 
     if platform.system() == "Darwin":
         existing = env.get("DYLD_LIBRARY_PATH", "")

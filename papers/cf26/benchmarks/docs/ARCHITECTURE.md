@@ -93,11 +93,15 @@ This document explains how the benchmark suite collects and captures metrics for
 
 Two CLI binaries are needed to measure metrics overhead.
 
-**Using Python CLI (recommended):**
+**Using CLI (recommended):**
 
 ```bash
+# Add apxm to PATH (add to ~/.zshrc or ~/.bashrc for persistence)
+export PATH="$PATH:$(pwd)/bin"
+pip install typer rich
+
 # Build the compiler (standard, without metrics)
-python tools/apxm_cli.py compiler build
+apxm compiler build
 ```
 
 **Manual (for metrics comparison):**

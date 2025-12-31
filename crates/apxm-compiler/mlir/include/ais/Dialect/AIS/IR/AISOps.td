@@ -6,13 +6,23 @@
  *   - Agent metadata
  *   - Memory (qmem/umem)
  *   - Capabilities (inv)
- *   - Reasoning (rsn, reflect, verify)
+ *   - LLM Operations (ask/think/reason - three distinct ops for analysis)
+ *   - Reasoning (reflect, verify)
  *   - Planning (plan)
  *   - Execution (exc)
  *   - Synchronization (wait_all, merge, fence)
  *   - Control flow (jump, branch_on_value, loop_*, try_catch, return)
  *   - Error handling (err)
  *   - Communication (communicate)
+ *
+ * LLM Operations Architecture:
+ *   Three separate ops (ask/think/reason) enable compile-time analysis:
+ *   - ask:    LOW latency marker  - simple Q&A
+ *   - think:  HIGH latency marker - extended thinking
+ *   - reason: MEDIUM latency marker - structured reasoning
+ *
+ *   At artifact emission, these lower to runtime markers with config lookup.
+ *   Runtime config (passed at execution) maps markers to LLM parameters.
  *
  * All operations inherit from `AIS_Op<>` defined in AISDialect.td and
  * use the resource-based side-effect interface introduced in AISOps.h.
@@ -145,20 +155,36 @@ def AIS_InvOp : AIS_Op<"inv",
 }
 
 //===----------------------------------------------------------------------===//
-// Reasoning Operations
+// LLM Operations (Three Distinct Ops for Critical Path Analysis)
+//===----------------------------------------------------------------------===//
+//
+// These operations enable compile-time analysis:
+// - Critical path detection (think ops have HIGH latency)
+// - Cost estimation (each op has distinct latency profile)
+// - Optimization passes (fuse adjacent ask ops, batch think ops)
+// - Trait-based analysis (different memory effects per op type)
+//
+// At artifact emission, these lower to runtime markers with config lookup.
 //===----------------------------------------------------------------------===//
 
-def AIS_RsnOp : AIS_Op<"rsn",
-    [MemoryEffects<[MemRead<AIS_BeliefResource>, MemWrite<AIS_BeliefResource>,
-                    MemWrite<AIS_GoalResource>]>]> {
-  let summary = "Reason with LLM/SLM";
+//===----------------------------------------------------------------------===//
+// AskOp - Simple Q&A LLM Call (LOW Latency)
+//===----------------------------------------------------------------------===//
+
+def AIS_AskOp : AIS_Op<"ask",
+    [MemoryEffects<[MemRead<AIS_BeliefResource>]>]> {
+  let summary = "Simple Q&A with LLM (no extended thinking)";
   let description = [{
-    Performs reasoning using a language model with the given template and context.
-    Can optionally include an inner planning region.
+    Performs a quick LLM call for simple questions. No extended thinking,
+    returns plain text. Lowest latency of the LLM operations.
+
+    At compile time: Enables critical path analysis (LOW latency marker).
+    At runtime: Looks up "ask" config for model/temperature/etc.
 
     Example:
     ```mlir
-    %result = ais.rsn "Analyze: {{context}}" [%ctx1, %ctx2 : !ais.token, !ais.handle] : !ais.token
+    %result = ais.ask "What is 2+2?" : !ais.token
+    %result = ais.ask "Summarize: {{context}}" [%ctx : !ais.token] : !ais.token
     ```
   }];
   let arguments = (ins
@@ -166,10 +192,71 @@ def AIS_RsnOp : AIS_Op<"rsn",
     Variadic<AIS_AnyTokenHandleOrGoal>:$context
   );
   let results = (outs AIS_TokenType:$result);
-  let regions = (region AnyRegion:$inner_plan);
   let assemblyFormat = [{
-    $template_str (`[` $context^ `:` type($context) `]`)? $inner_plan
-    attr-dict `:` type($result)
+    $template_str (`[` $context^ `:` type($context) `]`)? attr-dict `:` type($result)
+  }];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ThinkOp - Extended Thinking LLM Call (HIGH Latency)
+//===----------------------------------------------------------------------===//
+
+def AIS_ThinkOp : AIS_Op<"think",
+    [MemoryEffects<[MemRead<AIS_BeliefResource>, MemWrite<AIS_BeliefResource>]>]> {
+  let summary = "Extended thinking with budget_tokens";
+  let description = [{
+    Enables Claude's extended thinking mode with configurable budget.
+    High latency but deep reasoning capabilities. Use for complex problems.
+
+    At compile time: Enables critical path analysis (HIGH latency marker).
+    At runtime: Looks up "think" config and enables extended thinking.
+
+    Example:
+    ```mlir
+    %result = ais.think "Solve this complex problem" : !ais.token
+    %result = ais.think "Analyze deeply: {{data}}" [%data : !ais.token] : !ais.token
+    ```
+  }];
+  let arguments = (ins
+    StrAttr:$template_str,
+    Variadic<AIS_AnyTokenHandleOrGoal>:$context
+  );
+  let results = (outs AIS_TokenType:$result);
+  let assemblyFormat = [{
+    $template_str (`[` $context^ `:` type($context) `]`)? attr-dict `:` type($result)
+  }];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ReasonOp - Structured Reasoning LLM Call (MEDIUM Latency)
+//===----------------------------------------------------------------------===//
+
+def AIS_ReasonOp : AIS_Op<"reason",
+    [MemoryEffects<[MemRead<AIS_BeliefResource>, MemWrite<AIS_BeliefResource>,
+                    MemWrite<AIS_GoalResource>]>]> {
+  let summary = "Structured reasoning with belief/goal updates";
+  let description = [{
+    Full structured reasoning that can update beliefs and goals.
+    Returns structured output (JSON) with optional inner_plan support.
+    Medium latency, suitable for analysis tasks.
+
+    At compile time: Enables critical path analysis (MEDIUM latency marker).
+    At runtime: Looks up "reason" config, enables structured output parsing.
+
+    Example:
+    ```mlir
+    %result = ais.reason "Analyze and plan: {{context}}" [%ctx : !ais.token] : !ais.token
+    ```
+  }];
+  let arguments = (ins
+    StrAttr:$template_str,
+    Variadic<AIS_AnyTokenHandleOrGoal>:$context
+  );
+  let results = (outs AIS_TokenType:$result);
+  let assemblyFormat = [{
+    $template_str (`[` $context^ `:` type($context) `]`)? attr-dict `:` type($result)
   }];
   let hasVerifier = 1;
   let hasCanonicalizer = 1;
@@ -271,6 +358,27 @@ def AIS_ExcOp : AIS_Op<"exc"> {
     $code (`(` $context^ `:` type($context) `)`)? attr-dict `:` type($result)
   }];
   let hasVerifier = 1;
+}
+
+def AIS_PrintOp : AIS_Op<"print",
+    [MemoryEffects<[MemWrite<AIS_EpisodicResource>]>]> {
+  let summary = "Print output to stdout";
+  let description = [{
+    Outputs a message to standard output with optional context values.
+    This is a side-effect operation with no return value.
+
+    Example:
+    ```mlir
+    ais.print "Debug: value is" [%data : !ais.token]
+    ```
+  }];
+  let arguments = (ins
+    StrAttr:$message,
+    Variadic<AIS_AnyTokenHandleOrGoal>:$context
+  );
+  let assemblyFormat = [{
+    $message (`[` $context^ `:` type($context) `]`)? attr-dict
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -380,35 +488,95 @@ def AIS_TryCatchOp : AIS_Op<"try_catch"> {
   let hasVerifier = 1;
 }
 
-def AIS_SwitchOp : AIS_Op<"switch"> {
-  let summary = "Multi-way branch based on string value";
+def AIS_YieldOp : AIS_Op<"yield", [Pure, Terminator]> {
+  let summary = "Yield value from switch case region";
   let description = [{
-    Conditionally executes one of several branches based on matching a
-    discriminant value against case labels. Supports a default case.
+    Terminates a switch case region and optionally yields a value as the result
+    of the switch operation when this case is selected. If no value is provided,
+    the switch produces no result (void).
 
     Example:
     ```mlir
-    ais.switch %category : !ais.token {
-      case "technical" -> ^bb1
-      case "creative" -> ^bb2
-      default -> ^bb3
-    }
+    // With value
+    ais.yield %result : !ais.token
+
+    // Without value (void)
+    ais.yield
+    ```
+  }];
+  let arguments = (ins Optional<AIS_TokenType>:$value);
+  let assemblyFormat = "($value^ `:` type($value))? attr-dict";
+}
+
+def AIS_SwitchOp : AIS_Op<"switch", [
+    RecursiveMemoryEffects,
+    SingleBlockImplicitTerminator<"YieldOp">
+]> {
+  let summary = "Multi-way branch with case regions";
+  let description = [{
+    Evaluates discriminant and executes exactly one case region based on
+    matching the discriminant value against case labels. Returns the value
+    yielded by the executed region (if any). Only the matching branch runs.
+
+    The regions array contains N+1 regions: N case regions followed by the
+    default region (always the last entry). The case_labels array has N entries
+    corresponding to the first N regions.
+
+    Example with result:
+    ```mlir
+    %result = ais.switch %category : !ais.token
+        case "technical" {
+            %t = ais.rsn "Technical explanation..." : !ais.token
+            ais.yield %t : !ais.token
+        }
+        case "creative" {
+            %t = ais.rsn "Creative response..." : !ais.token
+            ais.yield %t : !ais.token
+        }
+        default {
+            %t = ais.rsn "Default response..." : !ais.token
+            ais.yield %t : !ais.token
+        } -> !ais.token
+    ```
+
+    Example without result (void):
+    ```mlir
+    ais.switch %action : !ais.token
+        case "log" {
+            ais.umem %data into "ltm" : !ais.token
+            ais.yield
+        }
+        default {
+            ais.yield
+        }
     ```
   }];
   let arguments = (ins
     AIS_TokenType:$discriminant,
-    ArrayAttr:$case_labels,
-    ArrayAttr:$case_destinations,
-    OptionalAttr<StrAttr>:$default_destination
+    ArrayAttr:$case_labels
   );
-  let results = (outs AIS_TokenType:$result);
-  let assemblyFormat = [{
-    $discriminant `:` type($discriminant)
-    `cases` $case_labels `->` $case_destinations
-    (`default` $default_destination^)?
-    attr-dict `->` type($result)
-  }];
+  // N+1 regions: N case regions + 1 default region (last)
+  // Variadic must be the last (and only) region field per TableGen constraints
+  let regions = (region
+    VariadicRegion<SizedRegion<1>>:$regions
+  );
+  let results = (outs Optional<AIS_TokenType>:$result);
   let hasVerifier = 1;
+  let hasCustomAssemblyFormat = 1;
+
+  let extraClassDeclaration = [{
+    /// Get the number of case regions (excludes default)
+    size_t getNumCases() { return getCaseLabels().size(); }
+
+    /// Get case regions (all regions except the last one)
+    auto getCaseRegions() {
+      auto allRegions = getRegions();
+      return llvm::make_range(allRegions.begin(), allRegions.end() - 1);
+    }
+
+    /// Get the default region (the last region)
+    mlir::Region &getDefaultRegion() { return getRegions().back(); }
+  }];
 }
 
 def AIS_FlowCallOp : AIS_Op<"flow_call",

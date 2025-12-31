@@ -8,13 +8,7 @@ Compare with workflow.ais which has native PLAN operation.
 import os
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, START, END
-
-# Try to import Ollama for real LLM calls
-try:
-    from langchain_ollama import ChatOllama
-    HAS_OLLAMA = True
-except ImportError:
-    HAS_OLLAMA = False
+from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
 
 # Ollama model configuration
 OLLAMA_MODEL = (
@@ -33,10 +27,8 @@ class PlanningState(TypedDict):
 
 
 def get_llm():
-    """Get the LLM instance (Ollama or mock)."""
-    if HAS_OLLAMA:
-        return ChatOllama(model=OLLAMA_MODEL, temperature=0)
-    return None
+    """Get the LLM instance (Ollama only)."""
+    return get_ollama_llm(OLLAMA_MODEL)
 
 
 def create_plan(state: PlanningState) -> dict:
@@ -48,22 +40,15 @@ def create_plan(state: PlanningState) -> dict:
     llm = get_llm()
     goal = state["goal"]
 
-    if llm:
-        prompt = f"""Break down this goal into 3 concrete, actionable steps:
+    prompt = f"""Break down this goal into 3 concrete, actionable steps:
 
 Goal: {goal}
 
 Respond with exactly 3 steps, one per line, numbered 1-3."""
-        response = llm.invoke(prompt)
-        # Parse steps from response
-        lines = response.content.strip().split('\n')
-        steps = [line.strip() for line in lines if line.strip()][:3]
-    else:
-        steps = [
-            f"Step 1: Research {goal}",
-            f"Step 2: Analyze {goal}",
-            f"Step 3: Synthesize {goal}",
-        ]
+    response = llm.invoke(prompt)
+    # Parse steps from response
+    lines = response.content.strip().split('\n')
+    steps = [line.strip() for line in lines if line.strip()][:3]
 
     return {"steps": steps}
 
@@ -79,12 +64,9 @@ def execute_steps(state: PlanningState) -> dict:
     results = []
 
     for i, step in enumerate(steps):
-        if llm:
-            prompt = f"Execute this step concisely (1-2 sentences):\n\n{step}"
-            response = llm.invoke(prompt)
-            results.append(response.content)
-        else:
-            results.append(f"Result for {step}")
+        prompt = f"Execute this step concisely (1-2 sentences):\n\n{step}"
+        response = llm.invoke(prompt)
+        results.append(response.content)
 
     return {"step_results": results}
 
@@ -95,19 +77,14 @@ def synthesize(state: PlanningState) -> dict:
     goal = state["goal"]
     results = state["step_results"]
 
-    if llm:
-        results_text = "\n".join([f"- {r}" for r in results])
-        prompt = f"""Given these step results:
+    results_text = "\n".join([f"- {r}" for r in results])
+    prompt = f"""Given these step results:
 {results_text}
 
 Provide a concise final answer for the original goal:
 {goal}"""
-        response = llm.invoke(prompt)
-        final = response.content
-    else:
-        final = f"Final synthesis of {len(results)} steps for: {goal}"
-
-    return {"final_result": final}
+    response = llm.invoke(prompt)
+    return {"final_result": response.content}
 
 
 def build_graph() -> StateGraph:

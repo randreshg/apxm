@@ -14,10 +14,11 @@ pub mod loop_end;
 pub mod loop_start;
 pub mod merge;
 pub mod plan;
+pub mod print;
 pub mod qmem;
 pub mod reflect;
 pub mod return_op;
-pub mod rsn;
+pub mod llm;  // Unified handler for Ask/Think/Reason operations
 pub mod switch;
 pub mod try_catch;
 pub mod umem;

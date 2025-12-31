@@ -2,20 +2,22 @@
 // Demonstrates A-PXM's native PLAN operation for task decomposition.
 
 agent PlannerAgent {
-    @entry flow main(goal: str) -> str {
+    @entry flow main(objective: str) -> str {
         // 1. Decompose goal into executable steps
-        plan goal -> steps
+        plan(objective) -> steps
 
         // 2. Execute each step (compiler detects parallelism opportunities)
-        rsn "Execute step 1: " + steps -> step1_result
-        rsn "Execute step 2: " + steps -> step2_result
-        rsn "Execute step 3: " + steps -> step3_result
+        ask("Execute step 1: ", steps) -> step1_result
+        ask("Execute step 2: ", steps) -> step2_result
+        ask("Execute step 3: ", steps) -> step3_result
 
         // 3. Merge step results
-        merge [step1_result, step2_result, step3_result] -> combined
+        merge(step1_result, step2_result, step3_result) -> combined
 
         // 4. Synthesize final result
-        rsn "Synthesize all step results: " + combined -> final_result
+        ask("Synthesize all step results: " + combined) -> final_result
+        print("=== Planning Result ===")
+        print(final_result)
         return final_result
     }
 }

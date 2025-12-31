@@ -8,13 +8,7 @@ Compare with workflow.ais which has native reflect operation.
 import os
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
-
-# Try to import Ollama for real LLM calls
-try:
-    from langchain_ollama import ChatOllama
-    HAS_OLLAMA = True
-except ImportError:
-    HAS_OLLAMA = False
+from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
 
 # Ollama model configuration
 OLLAMA_MODEL = (
@@ -33,10 +27,8 @@ class ReflectionState(TypedDict):
 
 
 def get_llm():
-    """Get the LLM instance (Ollama or mock)."""
-    if HAS_OLLAMA:
-        return ChatOllama(model=OLLAMA_MODEL, temperature=0)
-    return None
+    """Get the LLM instance (Ollama only)."""
+    return get_ollama_llm(OLLAMA_MODEL)
 
 
 def initial_attempt(state: ReflectionState) -> dict:
@@ -44,14 +36,9 @@ def initial_attempt(state: ReflectionState) -> dict:
     llm = get_llm()
     task = state["task"]
 
-    if llm:
-        prompt = f"Solve this task concisely:\n\n{task}"
-        response = llm.invoke(prompt)
-        answer = response.content
-    else:
-        answer = f"Initial solution for: {task}"
-
-    return {"initial_answer": answer}
+    prompt = f"Solve this task concisely:\n\n{task}"
+    response = llm.invoke(prompt)
+    return {"initial_answer": response.content}
 
 
 def reflect(state: ReflectionState) -> dict:
@@ -63,18 +50,13 @@ def reflect(state: ReflectionState) -> dict:
     llm = get_llm()
     answer = state["initial_answer"]
 
-    if llm:
-        prompt = f"""Critically analyze this answer and identify improvements:
+    prompt = f"""Critically analyze this answer and identify improvements:
 
 Answer: {answer}
 
 Provide specific, actionable feedback for improvement."""
-        response = llm.invoke(prompt)
-        reflection = response.content
-    else:
-        reflection = f"Reflection: The answer could be more detailed."
-
-    return {"reflection": reflection}
+    response = llm.invoke(prompt)
+    return {"reflection": response.content}
 
 
 def improve(state: ReflectionState) -> dict:
@@ -83,18 +65,13 @@ def improve(state: ReflectionState) -> dict:
     task = state["task"]
     reflection = state["reflection"]
 
-    if llm:
-        prompt = f"""Given this feedback:
+    prompt = f"""Given this feedback:
 {reflection}
 
 Provide an improved answer to the original task:
 {task}"""
-        response = llm.invoke(prompt)
-        improved = response.content
-    else:
-        improved = f"Improved solution incorporating: {reflection}"
-
-    return {"improved_answer": improved}
+    response = llm.invoke(prompt)
+    return {"improved_answer": response.content}
 
 
 def build_graph() -> StateGraph:

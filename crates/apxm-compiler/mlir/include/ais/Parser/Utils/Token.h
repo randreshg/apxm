@@ -64,6 +64,8 @@ apxm::parser::getStringValue(const Token &tok) noexcept {
       case 't': result.push_back('\t'); break;
       case '\\': result.push_back('\\'); break;
       case '"': result.push_back('"'); break;
+      case '{': result.push_back('\x01'); break;  // placeholder for escaped {
+      case '}': result.push_back('\x02'); break;  // placeholder for escaped }
       default:
         result.push_back(next);
         break;

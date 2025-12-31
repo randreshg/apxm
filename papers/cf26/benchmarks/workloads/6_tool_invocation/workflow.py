@@ -8,13 +8,7 @@ Compare with workflow.ais which has native capability system.
 import os
 from typing import TypedDict, Any
 from langgraph.graph import StateGraph, START, END
-
-# Try to import Ollama for real LLM calls
-try:
-    from langchain_ollama import ChatOllama
-    HAS_OLLAMA = True
-except ImportError:
-    HAS_OLLAMA = False
+from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
 
 # Ollama model configuration
 OLLAMA_MODEL = (
@@ -33,10 +27,8 @@ class ToolState(TypedDict):
 
 
 def get_llm():
-    """Get the LLM instance (Ollama or mock)."""
-    if HAS_OLLAMA:
-        return ChatOllama(model=OLLAMA_MODEL, temperature=0)
-    return None
+    """Get the LLM instance (Ollama only)."""
+    return get_ollama_llm(OLLAMA_MODEL)
 
 
 def mock_search(query: str) -> str:
@@ -49,14 +41,9 @@ def decide_tool(state: ToolState) -> dict:
     llm = get_llm()
     query = state["query"]
 
-    if llm:
-        prompt = f"Analyze this query and decide which tool is needed. Just respond with a brief tool recommendation.\n\nQuery: {query}"
-        response = llm.invoke(prompt)
-        tool_decision = response.content
-    else:
-        tool_decision = f"Need search tool for: {query}"
-
-    return {"tool_decision": tool_decision}
+    prompt = f"Analyze this query and decide which tool is needed. Just respond with a brief tool recommendation.\n\nQuery: {query}"
+    response = llm.invoke(prompt)
+    return {"tool_decision": response.content}
 
 
 def invoke_tool(state: ToolState) -> dict:
@@ -72,14 +59,9 @@ def synthesize_answer(state: ToolState) -> dict:
     query = state["query"]
     results = state["search_results"]
 
-    if llm:
-        prompt = f"Given these search results:\n{results}\n\nAnswer this query concisely: {query}"
-        response = llm.invoke(prompt)
-        answer = response.content
-    else:
-        answer = f"Based on {results}, the answer to '{query}' is synthesized."
-
-    return {"answer": answer}
+    prompt = f"Given these search results:\n{results}\n\nAnswer this query concisely: {query}"
+    response = llm.invoke(prompt)
+    return {"answer": response.content}
 
 
 def build_graph() -> StateGraph:

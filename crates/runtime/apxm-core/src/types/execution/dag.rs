@@ -10,6 +10,15 @@ use serde::{Deserialize, Serialize};
 use crate::error::runtime::RuntimeError;
 use crate::types::{Edge, Node, NodeId, TokenId};
 
+/// A parameter definition for an entry flow.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct FlowParameter {
+    /// Parameter name (e.g., "topic").
+    pub name: String,
+    /// Type name (e.g., "str", "int").
+    pub type_name: String,
+}
+
 /// Metadata associated with the execution DAG.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct DagMetadata {
@@ -19,6 +28,9 @@ pub struct DagMetadata {
     /// Entry flows are automatically executed when the artifact is loaded.
     #[serde(default)]
     pub is_entry: bool,
+    /// Parameters for entry flows (used for argument validation).
+    #[serde(default)]
+    pub parameters: Vec<FlowParameter>,
 }
 
 /// Represents a complete execution DAG (Directed Acyclic Graph).

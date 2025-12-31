@@ -75,7 +75,7 @@ def FuseReasoning : Pass<"fuse-reasoning", "mlir::ModuleOp"> {
     - Concatenates reasoning templates with separator
     - Combines contexts from both operations
 
-    Only fuses when producer has single use and neither has inner_plan.
+    Only fuses when producer has single use.
   }];
   let constructor = "mlir::ais::createFuseReasoningPass()";
 }

@@ -26,9 +26,11 @@ using llvm::isa;
 
 namespace {
 
+// Operation kinds for artifact serialization
+// LLM ops (Ask/Think/Reason) are markers for runtime config lookup
 enum class OperationKind : uint32_t {
   Inv = 0,
-  Rsn = 1,
+  Ask = 1,     // LOW latency LLM op (was Rsn)
   QMem = 2,
   UMem = 3,
   Plan = 4,
@@ -49,6 +51,9 @@ enum class OperationKind : uint32_t {
   ConstStr = 19,
   Switch = 20,
   FlowCall = 21,
+  Print = 22,
+  Think = 23,  // HIGH latency LLM op
+  Reason = 24, // MEDIUM latency LLM op
 };
 
 enum class DependencyKind : uint8_t {
@@ -117,7 +122,8 @@ struct ArtifactValue {
     return v;
   }
 
-  static ArtifactValue object(std::vector<std::pair<std::string, ArtifactValue>> entries) {
+  static ArtifactValue
+  object(std::vector<std::pair<std::string, ArtifactValue>> entries) {
     ArtifactValue v;
     v.kind = Kind::Object;
     v.objectValues = std::move(entries);
@@ -153,14 +159,24 @@ struct ArtifactEdge {
   DependencyKind dependency = DependencyKind::Data;
 };
 
+struct FlowParameter {
+  std::string name;
+  std::string typeName;
+};
+
 struct ArtifactDag {
   std::vector<ArtifactNode> nodes;
   std::vector<ArtifactEdge> edges;
   std::vector<uint64_t> entryNodes;
   std::vector<uint64_t> exitNodes;
   std::string moduleName;
-  bool isEntry = false;  // True if this flow is marked with @entry
+  bool isEntry = false; // True if this flow is marked with @entry
+  std::vector<FlowParameter> parameters; // Entry flow parameters
 };
+
+// Forward declaration
+void computeEntryAndExit(const ArtifactDag &dag, std::vector<uint64_t> &entry,
+                         std::vector<uint64_t> &exit);
 
 struct DagBuildState {
   uint64_t nextTokenId = 1;
@@ -180,7 +196,8 @@ struct DagBuildState {
   }
 
   void addEdge(uint64_t producerNodeId, uint64_t consumerNodeId,
-               uint64_t tokenId, DependencyKind dependency = DependencyKind::Data) {
+               uint64_t tokenId,
+               DependencyKind dependency = DependencyKind::Data) {
     ArtifactEdge edge;
     edge.from = producerNodeId;
     edge.to = consumerNodeId;
@@ -281,7 +298,14 @@ public:
 
   void writeDag(const ArtifactDag &dag) {
     writeString(dag.moduleName);
-    writeBool(dag.isEntry);  // @entry flow marker
+    writeBool(dag.isEntry); // @entry flow marker
+
+    // Write parameter metadata for entry flows
+    writeU64(dag.parameters.size());
+    for (const auto &param : dag.parameters) {
+      writeString(param.name);
+      writeString(param.typeName);
+    }
 
     writeU64(dag.nodes.size());
     for (const auto &node : dag.nodes)
@@ -316,11 +340,14 @@ std::optional<OperationKind> mapOperation(Operation *op) {
       .Case<QMemOp>([](auto) { return OperationKind::QMem; })
       .Case<UMemOp>([](auto) { return OperationKind::UMem; })
       .Case<InvOp>([](auto) { return OperationKind::Inv; })
-      .Case<RsnOp>([](auto) { return OperationKind::Rsn; })
+      .Case<AskOp>([](auto) { return OperationKind::Ask; })
+      .Case<ThinkOp>([](auto) { return OperationKind::Think; })
+      .Case<ReasonOp>([](auto) { return OperationKind::Reason; })
       .Case<ReflectOp>([](auto) { return OperationKind::Reflect; })
       .Case<VerifyOp>([](auto) { return OperationKind::Verify; })
       .Case<PlanOp>([](auto) { return OperationKind::Plan; })
       .Case<ExcOp>([](auto) { return OperationKind::Exc; })
+      .Case<PrintOp>([](auto) { return OperationKind::Print; })
       .Case<WaitAllOp>([](auto) { return OperationKind::WaitAll; })
       .Case<MergeOp>([](auto) { return OperationKind::Merge; })
       .Case<FenceOp>([](auto) { return OperationKind::Fence; })
@@ -335,8 +362,14 @@ std::optional<OperationKind> mapOperation(Operation *op) {
       .Case<SwitchOp>([](auto) { return OperationKind::Switch; })
       .Case<FlowCallOp>([](auto) { return OperationKind::FlowCall; })
       .Case<TryCatchOp>([](auto) { return OperationKind::TryCatch; })
+      .Case<YieldOp>([](auto) {
+        return std::nullopt;
+      }) // Skip yield - it's a region terminator
       .Default([](Operation *) { return std::nullopt; });
 }
+
+/// Check if an operation is a region terminator that should be skipped
+bool isRegionTerminator(Operation *op) { return isa<YieldOp>(op); }
 
 ArtifactValue convertAttribute(Attribute attr) {
   if (!attr)
@@ -369,7 +402,8 @@ ArtifactValue convertAttribute(Attribute attr) {
     std::vector<std::pair<std::string, ArtifactValue>> entries;
     entries.reserve(dictAttr.size());
     for (NamedAttribute named : dictAttr.getValue()) {
-      entries.emplace_back(named.getName().str(), convertAttribute(named.getValue()));
+      entries.emplace_back(named.getName().str(),
+                           convertAttribute(named.getValue()));
     }
     return ArtifactValue::object(std::move(entries));
   }
@@ -379,6 +413,109 @@ ArtifactValue convertAttribute(Attribute attr) {
   attr.print(os);
   os.flush();
   return ArtifactValue::string(fallback);
+}
+
+// Forward declarations for mutual recursion
+LogicalResult emitNode(Operation *op, DagBuildState &state, ArtifactDag &dag);
+
+/// Emit a region as a sub-DAG serialized to an ArtifactValue
+/// Returns an object with nodes, edges, entry_nodes, exit_nodes
+LogicalResult emitRegionAsSubDag(Region &region, DagBuildState &parentState,
+                                 ArtifactValue &result) {
+  // Create a fresh state for the sub-DAG with unique node IDs
+  // Use a separate ID space starting from a high offset to avoid conflicts
+  DagBuildState subState;
+  subState.nextNodeId = parentState.nextNodeId;
+  subState.nextTokenId = parentState.nextTokenId;
+
+  ArtifactDag subDag;
+
+  for (Block &block : region) {
+    for (Operation &op : block) {
+      // Skip yield operations - they just mark the exit value
+      if (isRegionTerminator(&op))
+        continue;
+
+      if (failed(emitNode(&op, subState, subDag)))
+        return failure();
+    }
+  }
+
+  // Update parent state with consumed IDs
+  parentState.nextNodeId = subState.nextNodeId;
+  parentState.nextTokenId = subState.nextTokenId;
+
+  subDag.edges = std::move(subState.edges);
+
+  // Compute entry and exit nodes for the sub-DAG
+  std::vector<uint64_t> entry, exit;
+  computeEntryAndExit(subDag, entry, exit);
+
+  // Serialize the sub-DAG as an object value
+  std::vector<std::pair<std::string, ArtifactValue>> subDagObj;
+
+  // Serialize nodes
+  std::vector<ArtifactValue> nodesArray;
+  for (const auto &node : subDag.nodes) {
+    std::vector<std::pair<std::string, ArtifactValue>> nodeObj;
+    nodeObj.emplace_back("id", ArtifactValue::integer(node.id));
+    nodeObj.emplace_back(
+        "op_type", ArtifactValue::integer(static_cast<int64_t>(node.opType)));
+
+    std::vector<std::pair<std::string, ArtifactValue>> attrsObj;
+    for (const auto &attr : node.attributes) {
+      attrsObj.emplace_back(attr.first, attr.second);
+    }
+    nodeObj.emplace_back("attributes",
+                         ArtifactValue::object(std::move(attrsObj)));
+
+    std::vector<ArtifactValue> inputTokens;
+    for (uint64_t t : node.inputTokens) {
+      inputTokens.push_back(ArtifactValue::integer(t));
+    }
+    nodeObj.emplace_back("input_tokens",
+                         ArtifactValue::array(std::move(inputTokens)));
+
+    std::vector<ArtifactValue> outputTokens;
+    for (uint64_t t : node.outputTokens) {
+      outputTokens.push_back(ArtifactValue::integer(t));
+    }
+    nodeObj.emplace_back("output_tokens",
+                         ArtifactValue::array(std::move(outputTokens)));
+
+    nodesArray.push_back(ArtifactValue::object(std::move(nodeObj)));
+  }
+  subDagObj.emplace_back("nodes", ArtifactValue::array(std::move(nodesArray)));
+
+  // Serialize edges
+  std::vector<ArtifactValue> edgesArray;
+  for (const auto &edge : subDag.edges) {
+    std::vector<std::pair<std::string, ArtifactValue>> edgeObj;
+    edgeObj.emplace_back("from", ArtifactValue::integer(edge.from));
+    edgeObj.emplace_back("to", ArtifactValue::integer(edge.to));
+    edgeObj.emplace_back("token", ArtifactValue::integer(edge.token));
+    edgeObj.emplace_back(
+        "dependency",
+        ArtifactValue::integer(static_cast<int64_t>(edge.dependency)));
+    edgesArray.push_back(ArtifactValue::object(std::move(edgeObj)));
+  }
+  subDagObj.emplace_back("edges", ArtifactValue::array(std::move(edgesArray)));
+
+  // Entry and exit nodes
+  std::vector<ArtifactValue> entryArray, exitArray;
+  for (uint64_t id : entry) {
+    entryArray.push_back(ArtifactValue::integer(id));
+  }
+  for (uint64_t id : exit) {
+    exitArray.push_back(ArtifactValue::integer(id));
+  }
+  subDagObj.emplace_back("entry_nodes",
+                         ArtifactValue::array(std::move(entryArray)));
+  subDagObj.emplace_back("exit_nodes",
+                         ArtifactValue::array(std::move(exitArray)));
+
+  result = ArtifactValue::object(std::move(subDagObj));
+  return success();
 }
 
 void computeEntryAndExit(const ArtifactDag &dag, std::vector<uint64_t> &entry,
@@ -405,9 +542,14 @@ void computeEntryAndExit(const ArtifactDag &dag, std::vector<uint64_t> &entry,
 }
 
 LogicalResult emitNode(Operation *op, DagBuildState &state, ArtifactDag &dag) {
+  // Skip region terminators - they're handled by their parent ops
+  if (isRegionTerminator(op))
+    return success();
+
   auto kind = mapOperation(op);
   if (!kind)
-    return op->emitError("Unsupported AIS operation for artifact emission"), failure();
+    return op->emitError("Unsupported AIS operation for artifact emission"),
+           failure();
 
   ArtifactNode node;
   node.id = state.nextNodeId++;
@@ -416,11 +558,35 @@ LogicalResult emitNode(Operation *op, DagBuildState &state, ArtifactDag &dag) {
   for (NamedAttribute named : op->getAttrs()) {
     StringRef key = named.getName().getValue();
     StringRef emitKey = key == "parameters" ? "params" : key;
-    node.attributes.emplace_back(emitKey.str(), convertAttribute(named.getValue()));
+    node.attributes.emplace_back(emitKey.str(),
+                                 convertAttribute(named.getValue()));
   }
 
-  if (isa<ais::PlanOp, ais::RsnOp>(op)) {
-    node.attributes.emplace_back("inner_plan_supported", ArtifactValue::boolean(true));
+  // ReasonOp supports inner planning for structured reasoning
+  if (isa<ais::PlanOp, ais::ReasonOp>(op)) {
+    node.attributes.emplace_back("inner_plan_supported",
+                                 ArtifactValue::boolean(true));
+  }
+
+  // Special handling for SwitchOp: emit regions as sub-DAGs
+  if (auto switchOp = dyn_cast<SwitchOp>(op)) {
+    // Emit case regions as sub-DAGs
+    std::vector<ArtifactValue> caseRegionsArray;
+    for (Region &caseRegion : switchOp.getCaseRegions()) {
+      ArtifactValue subDag;
+      if (failed(emitRegionAsSubDag(caseRegion, state, subDag)))
+        return failure();
+      caseRegionsArray.push_back(std::move(subDag));
+    }
+    node.attributes.emplace_back(
+        "case_regions", ArtifactValue::array(std::move(caseRegionsArray)));
+
+    // Emit default region as sub-DAG
+    ArtifactValue defaultSubDag;
+    if (failed(emitRegionAsSubDag(switchOp.getDefaultRegion(), state,
+                                  defaultSubDag)))
+      return failure();
+    node.attributes.emplace_back("default_region", std::move(defaultSubDag));
   }
 
   for (Value operand : op->getOperands()) {
@@ -442,8 +608,9 @@ LogicalResult emitNode(Operation *op, DagBuildState &state, ArtifactDag &dag) {
   return success();
 }
 
-LogicalResult emitFunction(func::FuncOp func, const ArtifactEmitOptions &options,
-                          ArtifactDag &dag) {
+LogicalResult emitFunction(func::FuncOp func,
+                           const ArtifactEmitOptions &options,
+                           ArtifactDag &dag) {
   DagBuildState state;
 
   for (Block &block : func) {
@@ -466,6 +633,22 @@ LogicalResult emitFunction(func::FuncOp func, const ArtifactEmitOptions &options
 
   // Check if this flow is marked as @entry (set by parser)
   dag.isEntry = func->hasAttr("ais.entry");
+
+  // Extract parameter metadata from function arguments
+  for (unsigned i = 0; i < func.getNumArguments(); ++i) {
+    FlowParameter param;
+    if (auto nameAttr = func.getArgAttrOfType<StringAttr>(i, "ais.param_name")) {
+      param.name = nameAttr.getValue().str();
+    } else {
+      param.name = "arg" + std::to_string(i);
+    }
+    if (auto typeAttr = func.getArgAttrOfType<StringAttr>(i, "ais.param_type")) {
+      param.typeName = typeAttr.getValue().str();
+    } else {
+      param.typeName = "any";
+    }
+    dag.parameters.push_back(std::move(param));
+  }
 
   return success();
 }
@@ -495,9 +678,9 @@ LogicalResult ArtifactEmitter::emitModule(ModuleOp module) {
 
   // Serialize multi-DAG format (version 3)
   ArtifactSerializer serializer;
-  serializer.writeU32(3);  // Wire format version 3 = multi-DAG
+  serializer.writeU32(3); // Wire format version 3 = multi-DAG
   serializer.writeU64(dags.size());
-  for (const auto& dag : dags) {
+  for (const auto &dag : dags) {
     serializer.writeDag(dag);
   }
 

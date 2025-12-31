@@ -4,62 +4,62 @@ Instructions for AI agents (Claude Code, etc.) working with the APXM codebase.
 
 ---
 
-## Python CLI (Recommended)
+## CLI Setup
 
-The Python CLI (`tools/apxm_cli.py`) automatically handles environment setup, MLIR configuration, and provides convenient commands. **Use this instead of manual environment activation.**
+Add the `apxm` command to your PATH:
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+export PATH="$PATH:$HOME/path/to/apxm/bin"
+
+# Install dependencies
+pip install typer rich
+```
+
+The CLI automatically handles environment setup, MLIR configuration, and provides convenient commands.
 
 ### Quick Start
 
 ```bash
 # Check environment status
-python tools/apxm_cli.py doctor
+apxm doctor
 
-# Build the compiler (auto-sets MLIR environment)
-python tools/apxm_cli.py compiler build
+# Build the project
+apxm build
 
 # Run an AIS file
-python tools/apxm_cli.py compiler run examples/hello_world.ais
-
-# Compile only
-python tools/apxm_cli.py compiler compile file.ais -o output.apxmobj
+apxm run examples/hello_world.ais
 
 # Check all workloads compile
-python tools/apxm_cli.py workloads check
-
-# List available workloads
-python tools/apxm_cli.py workloads list
-
-# Run a specific workload benchmark
-python tools/apxm_cli.py workloads run 10_multi_agent
+apxm workloads check
 ```
 
 ### CLI Commands Reference
 
 | Command | Description |
 |---------|-------------|
-| `doctor` | Check environment status (conda, MLIR, compiler binary) |
-| `compiler build [--release/--debug] [--clean]` | Build the APXM compiler |
-| `compiler run <file.ais> [-O0/-O1/-O2] [--cargo]` | Compile and run an AIS file |
-| `compiler compile <file.ais> -o <output> [--cargo]` | Compile to artifact only |
-| `workloads list` | List available benchmark workloads |
-| `workloads check [--verbose]` | Compile all workloads to verify syntax |
-| `workloads run <name>` | Run a specific workload benchmark |
-| `workloads benchmark <name> [--all] [-n N] [-w N] [--json]` | Run benchmarks with iterations/warmup |
-
-**Note:** The `--cargo` flag uses `cargo run` instead of the pre-built binary. This is useful for development when iterating on the compiler (auto-rebuilds on each run).
+| `apxm doctor` | Check environment status |
+| `apxm build` | Build full project (compiler + runtime) |
+| `apxm build --compiler` | Build compiler only |
+| `apxm build --runtime` | Build runtime only |
+| `apxm build --no-trace` | Build with tracing compiled out (zero overhead) |
+| `apxm build --trace` | Build with tracing enabled (default) |
+| `apxm run <file.apxmobj>` | Execute a pre-compiled artifact |
+| `apxm run <file.apxmobj> --trace <level>` | Execute with tracing |
+| `apxm compiler compile <file.ais> -o <output>` | Compile to artifact only |
+| `apxm compiler run <file.ais> [-O0/-O1/-O2]` | Compile and run an AIS file |
+| `apxm compiler run <file.ais> --trace <level>` | Compile and run with tracing |
+| `apxm workloads list` | List available benchmark workloads |
+| `apxm workloads check [--verbose]` | Verify all workloads compile |
+| `apxm workloads run <name>` | Run a specific workload |
 
 ### How It Works
 
-The Python CLI:
-1. Auto-detects the `apxm` conda environment (even if not activated)
-2. Sets `MLIR_DIR`, `LLVM_DIR`, `DYLD_LIBRARY_PATH`/`LD_LIBRARY_PATH` automatically
-3. Runs cargo/compiler commands with the correct environment
-
-### Dependencies
-
-```bash
-pip install typer rich
-```
+The CLI wrapper (`bin/apxm`):
+1. Caches the Python path for fast startup
+2. Auto-detects the `apxm` conda environment (even if not activated)
+3. Sets `MLIR_DIR`, `LLVM_DIR`, `DYLD_LIBRARY_PATH`/`LD_LIBRARY_PATH` automatically
+4. Runs cargo/compiler commands with the correct environment
 
 ---
 
@@ -111,159 +111,144 @@ export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH      # Linux
 
 ## Building
 
-### Using Python CLI (Recommended)
-
 ```bash
-# Build compiler with automatic environment setup
-python tools/apxm_cli.py compiler build
+# Build full project
+apxm build
 
-# Build with clean (removes old build artifacts first)
-python tools/apxm_cli.py compiler build --clean
+# Build with clean
+apxm build --clean
+
+# Build specific components
+apxm build --compiler
+apxm build --runtime
+
+# Build without tracing (zero overhead for benchmarks)
+apxm build --no-trace
 ```
 
-### Runtime Only (No MLIR Required)
+---
 
-These crates can be built without the MLIR toolchain:
+## Runtime Tracing
 
-```bash
-cargo build -p apxm-runtime
-cargo build -p apxm-core
-cargo build -p apxm-artifact
-cargo build -p apxm-ais
-cargo build -p apxm-backends
-```
+APXM includes a two-tier tracing system for debugging and understanding execution flow.
 
-### Compiler (Requires MLIR - Manual)
+### Build-Time Control
 
-If not using the Python CLI, activate the MLIR environment manually:
+Control whether tracing code is compiled into the binary:
 
 ```bash
-conda activate apxm
-eval "$(cargo run -p apxm-cli -- activate)"
-cargo build -p apxm-compiler --release
+apxm build              # Default: tracing compiled in
+apxm build --trace      # Explicit: same as default
+apxm build --no-trace   # Zero-overhead: all tracing compiled out
 ```
 
-### CLI with Driver Feature
+When built with `--no-trace`, all tracing macros compile to nothing, providing zero runtime overhead for production/benchmark builds.
 
-The CLI's `driver` feature enables compilation and execution:
+### Runtime Control
+
+When built with tracing enabled (default), control output level at runtime:
 
 ```bash
-cargo build -p apxm-cli --features driver --release
+apxm run workflow.ais                  # Silent execution (no tracing)
+apxm run workflow.ais --trace error    # Only errors
+apxm run workflow.ais --trace warn     # Warnings and errors
+apxm run workflow.ais --trace info     # High-level execution flow
+apxm run workflow.ais --trace debug    # Detailed worker/operation info
+apxm run workflow.ais --trace trace    # Full verbosity
 ```
 
-### Full Workspace
+### Trace Levels and Output
 
+| Level | What You See |
+|-------|--------------|
+| `error` | Operation failures, scheduler errors |
+| `warn` | Retries, fallbacks, potential issues |
+| `info` | Execution start/stop, LLM calls with token counts |
+| `debug` | Worker dispatch, operation completion, timing |
+| `trace` | Token flow, raw LLM responses, internal state |
+
+### Trace Targets
+
+Tracing is organized by subsystem:
+
+| Target | Description |
+|--------|-------------|
+| `apxm::scheduler` | Worker lifecycle, execution start/stop |
+| `apxm::ops` | Operation dispatch, completion, retries |
+| `apxm::llm` | LLM requests, responses, token usage |
+| `apxm::tokens` | Token production and consumption |
+| `apxm::dag` | DAG loading and structure |
+
+### Example Output
+
+**With `--trace info`:**
+```
+INFO apxm::scheduler: Starting DAG execution nodes=6 max_concurrency=4
+INFO apxm::llm: LLM response received tokens_in=12 tokens_out=8
+INFO apxm::scheduler: DAG execution completed duration_ms=1445 executed=6
+```
+
+**With `--trace debug`:**
+```
+DEBUG apxm::scheduler: Worker 0 started
+DEBUG apxm::ops: Dispatching operation node_id=1 op_type=Rsn
+DEBUG apxm::ops: Operation completed successfully duration_ms=425
+DEBUG apxm::scheduler: Worker 0 stopped
+```
+
+### Workflow: Development vs Production
+
+**Development/debugging:**
 ```bash
-cargo build --workspace
+apxm build
+apxm run workflow.ais --trace debug
 ```
 
-**Note:** Full workspace build requires MLIR environment.
+**Production/benchmarks:**
+```bash
+apxm build --no-trace
+apxm run workflow.ais  # --trace flag has no effect
+```
 
 ---
 
 ## Running Examples
 
-### Using Python CLI (Recommended)
-
 ```bash
 # Run an AIS file
-python tools/apxm_cli.py compiler run examples/hello_world.ais
+apxm run examples/hello_world.ais
 
 # Run with optimization level
-python tools/apxm_cli.py compiler run examples/hello_world.ais -O2
+apxm run examples/hello_world.ais -O2
 
 # Compile only
-python tools/apxm_cli.py compiler compile examples/hello_world.ais -o output.apxmobj
-```
-
-### DSL Examples (Manual - After Building Compiler)
-
-If you've built the compiler manually, you can use the binary directly:
-
-```bash
-# Activate environment first
-conda activate apxm
-eval "$(cargo run -p apxm-cli -- activate)"
-
-# Use the compiled binary
-./target/release/apxm run examples/hello_world.ais
-./target/release/apxm compile examples/hello_world.ais -o output.apxmobj
-./target/release/apxm run examples/hello_world.ais -O2
-```
-
-**Note:** The Python CLI handles environment setup automatically. Use it for a simpler experience.
-
-### Runtime Examples (No Compiler Required)
-
-```bash
-cargo run -p apxm-runtime --example basic_runtime
-cargo run -p apxm-runtime --example memory_tiers
-cargo run -p apxm-runtime --example simple_llm
+apxm compiler compile examples/hello_world.ais -o output.apxmobj
 ```
 
 ### Benchmarks
 
 ```bash
-# Using Python CLI
-python tools/apxm_cli.py workloads list     # List available workloads
-python tools/apxm_cli.py workloads check    # Verify all workloads compile
-python tools/apxm_cli.py workloads run 10_multi_agent  # Run specific workload
-
-# Run benchmarks with proper environment and iteration control
-python tools/apxm_cli.py workloads benchmark 2_chain_fusion
-python tools/apxm_cli.py workloads benchmark --all --json -o results.json
-python tools/apxm_cli.py workloads benchmark --all -n 10 -w 3
-
-# Or manually
-cd papers/cf26/benchmarks
-python workloads/10_multi_agent/run.py      # Run a specific workload
-python run_all.py --workloads --quick       # Run all workloads (quick mode)
-python run_all.py --paper                   # Run paper benchmarks
+apxm workloads list              # List workloads
+apxm workloads check             # Verify all compile
+apxm workloads run 10_multi_agent
+apxm workloads run 1 --json      # Run with JSON output
 ```
 
-**Prerequisites for benchmarks:**
-
-- Ollama running with `phi3:mini`: `ollama serve && ollama pull phi3:mini`
-- Python deps: `pip install langgraph langchain-ollama typer rich`
+**Prerequisites:** Ollama with `gpt-oss:20b-cloud`: `ollama serve && ollama pull gpt-oss:20b-cloud`
 
 ---
 
 ## Testing
 
-### Core Tests (No MLIR Required)
-
 ```bash
-cargo test -p apxm-core
-cargo test -p apxm-artifact
-cargo test -p apxm-ais
-cargo test -p apxm-runtime
-```
-
-### Compiler Tests (Requires MLIR)
-
-```bash
-conda activate apxm
-eval "$(cargo run -p apxm-cli -- activate)"
-cargo test -p apxm-compiler
-```
-
-### Driver Tests
-
-```bash
-cargo test -p apxm-driver
-```
-
-### Full Workspace
-
-```bash
+# Full workspace tests
 cargo test --workspace
-```
 
-### Feature-gated Tests
-
-```bash
-cargo test -p apxm-runtime --features metrics
-cargo test -p apxm-driver --features metrics
+# Individual crate tests
+cargo test -p apxm-core
+cargo test -p apxm-runtime
+cargo test -p apxm-compiler
+cargo test -p apxm-driver
 ```
 
 ---
@@ -283,7 +268,7 @@ planning_model = "ollama"
 [[llm_backends]]
 name = "ollama"
 provider = "ollama"
-model = "phi3:mini"
+model = "gpt-oss:20b-cloud"
 endpoint = "http://localhost:11434"
 ```
 
@@ -291,7 +276,7 @@ endpoint = "http://localhost:11434"
 
 ```bash
 ollama serve
-ollama pull phi3:mini
+ollama pull gpt-oss:20b-cloud
 ```
 
 ### Alternative: Cloud APIs
@@ -331,7 +316,7 @@ api_key = "env:GEMINI_API_KEY"
 ```ais
 agent HelloWorld {
     @entry flow main() -> str {
-        rsn "Generate a greeting" -> greeting
+        rsn("Generate a greeting") -> greeting
         return greeting
     }
 }
@@ -342,7 +327,7 @@ agent HelloWorld {
 ```ais
 agent Researcher {
     flow research(topic: str) -> str {
-        rsn "Research: " + topic -> findings
+        rsn("Research: " + topic) -> findings
         return findings
     }
 }
@@ -359,19 +344,64 @@ agent Coordinator {
 
 | Operation | Syntax | Description |
 |-----------|--------|-------------|
-| Reasoning | `rsn "prompt" -> var` | LLM reasoning |
-| Planning | `plan "goal" -> var` | Generate execution plan |
-| Reflection | `reflect "context" -> var` | Self-reflection |
+| Reasoning | `rsn("prompt") -> var` | LLM reasoning |
+| Planning | `plan("goal") -> var` | Generate execution plan |
+| Reflection | `reflect("trace_id") -> var` | Self-reflection |
 | Verification | `verify expr -> var` | Verify condition |
 | Memory Query | `qmem(store, query) -> var` | Query memory tier |
 | Memory Update | `umem(store, key, value)` | Update memory |
 | Flow Call | `Agent.flow(args) -> var` | Cross-agent call |
+
+### Reasoning Syntax (Explicit)
+
+`rsn` now requires parentheses, even for single-argument prompts.
+
+```ais
+// Single prompt expression (token concatenation).
+rsn("Explain the domain background of " + topic) -> background
+
+// Template + context operands (comma separates context).
+rsn("Execute step 1: ", steps) -> step1_result
+```
+
+The comma does not concatenate. It passes context operands, which are appended at runtime as:
+
+```
+<template>
+
+Context 1: <value>
+Context 2: <value>
+```
+
+`+` merges tokens and cannot be used with goals/handles; use the comma form for those.
 
 ### Memory Tiers
 
 - `STM` - Short-term memory (session-scoped)
 - `Episodic` - Episode memory (interaction history)
 - `LTM` - Long-term memory (persistent)
+
+### Dataflow Execution Semantics
+
+APXM uses **dataflow execution**: operations run when their inputs are ready, not in textual order.
+
+```ais
+rsn("analyze", data) -> result
+print(result)           // Runs AFTER rsn (depends on result)
+print("Done!")          // Runs IMMEDIATELY (no data dependency!)
+```
+
+The `print("Done!")` has no inputs, so it can run at any time—even before `rsn` completes.
+
+**To enforce ordering**, pass data to create a dependency:
+
+```ais
+rsn("analyze", data) -> result
+print(result)                    // Depends on result
+print("Done: ", result)          // Also depends on result - runs after rsn
+```
+
+This dataflow model enables automatic parallelism: independent operations run concurrently without explicit threading.
 
 ---
 
@@ -436,6 +466,16 @@ RUST_LOG=debug ./target/release/apxm compile file.ais -o /dev/null
 ```
 
 **Note:** For debugging, you need to have the environment activated first (see "Manual Environment Setup" above).
+
+### Dump IR after each pass
+
+```bash
+# Write per-pass MLIR snapshots to the given directory.
+APXM_PRINT_IR_DIR=/tmp/apxm-ir apxm compiler compile file.ais -o output.apxmobj
+
+# Optional: print a one-line trace of IR printing config.
+APXM_PRINT_IR_TRACE=1 APXM_PRINT_IR_DIR=/tmp/apxm-ir apxm compiler compile file.ais -o output.apxmobj
+```
 
 ### Inspect artifact contents
 

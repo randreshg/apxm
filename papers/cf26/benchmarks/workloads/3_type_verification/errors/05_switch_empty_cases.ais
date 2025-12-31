@@ -6,7 +6,7 @@
 
 agent EmptySwitchTest {
     flow main {
-        rsn "Classify this input" -> category
+        ask("Classify this input") -> category
 
         // ERROR: No cases defined
         switch category {

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use apxm_core::types::{ExecutionDag, ExecutionStats, Value};
+use apxm_core::{apxm_dag, apxm_sched};
 use tokio::task::JoinHandle;
 
 use crate::executor::ExecutionContext;
@@ -36,23 +37,40 @@ impl DataflowScheduler {
         }
     }
 
-    /// Execute a DAG to completion.
+    /// Execute a DAG to completion, optionally with input values.
     ///
+    /// When `inputs` is non-empty, values are injected into flow parameter tokens.
     /// Returns the exit values, execution statistics, and scheduler metrics.
     pub async fn execute(
         &self,
         dag: ExecutionDag,
         executor: Arc<ExecutorEngine>,
         mut ctx: ExecutionContext,
+        inputs: Vec<Value>,
     ) -> RuntimeResult<(std::collections::HashMap<u64, Value>, ExecutionStats, SchedulerMetrics)> {
         let start = Instant::now();
+
+        apxm_sched!(info,
+            execution_id = %ctx.execution_id,
+            nodes = dag.nodes.len(),
+            inputs = inputs.len(),
+            max_concurrency = self.config.max_concurrency,
+            max_inflight = self.config.max_inflight,
+            "Starting DAG execution"
+        );
+
+        apxm_dag!(debug,
+            entry_nodes = ?dag.entry_nodes,
+            exit_nodes = ?dag.exit_nodes,
+            "DAG structure loaded"
+        );
 
         // Validate DAG cost budget early
         self.enforce_cost_budget(&dag)?;
 
         // Build shared scheduler state
         let (state, workers) =
-            SchedulerState::new(dag, self.config.clone(), self.metrics.clone(), start)?;
+            SchedulerState::new(dag, self.config.clone(), self.metrics.clone(), start, inputs)?;
         let state = Arc::new(state);
 
         ctx.dag_splicer = Arc::new(super::splicing::SchedulerDagSplicer::new(Arc::clone(
@@ -65,6 +83,11 @@ impl DataflowScheduler {
         // Spawn worker threads
         let worker_handles = spawn_workers(state.clone(), workers, executor, ctx);
 
+        apxm_sched!(debug,
+            workers_spawned = worker_handles.len(),
+            "All workers spawned, waiting for completion"
+        );
+
         // Wait for completion or failure
         state.notify_done.notified().await;
 
@@ -73,9 +96,12 @@ impl DataflowScheduler {
             let _ = handle.await;
         }
 
+        apxm_sched!(debug, "All workers terminated");
+
         // Check for errors
         let mut first_error = state.first_error.lock();
         if let Some(error) = first_error.take() {
+            apxm_sched!(error, error = %error, "DAG execution failed");
             return Err(error);
         }
 
@@ -87,6 +113,13 @@ impl DataflowScheduler {
 
         // Capture scheduler metrics snapshot
         let scheduler_metrics = SchedulerMetrics::from_collector(&state.metrics);
+
+        apxm_sched!(info,
+            duration_ms = start.elapsed().as_millis(),
+            executed = stats.executed_nodes,
+            failed = stats.failed_nodes,
+            "DAG execution completed"
+        );
 
         Ok((results, stats, scheduler_metrics))
     }
@@ -178,8 +211,12 @@ fn spawn_workers(
             let executor = Arc::clone(&executor);
             let base_ctx = base_ctx.clone();
 
+            apxm_sched!(debug, worker = worker_id, "Spawning worker");
+
             tokio::spawn(async move {
+                apxm_sched!(debug, worker = worker_id, "Worker started");
                 worker::worker_loop(worker_id, local_worker, state, executor, base_ctx).await;
+                apxm_sched!(debug, worker = worker_id, "Worker stopped");
             })
         })
         .collect()

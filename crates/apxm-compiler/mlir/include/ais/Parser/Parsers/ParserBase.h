@@ -53,6 +53,7 @@ namespace apxm::parser {
   case TokenKind::kw_mem: return "mem";
   case TokenKind::kw_think: return "think";
   case TokenKind::kw_plan: return "plan";
+  case TokenKind::kw_print: return "print";
   case TokenKind::kw_reflect: return "reflect";
   case TokenKind::kw_verify: return "verify";
   case TokenKind::kw_exec: return "exec";
@@ -160,6 +161,29 @@ protected:
       return true;
 
     emitError(getCurrentLocation(), "Expected " + std::string(tokenKindToString(kind)));
+    return false;
+  }
+
+  /// Check if a token kind is a keyword
+  [[nodiscard]] static bool isKeyword(TokenKind kind) noexcept {
+    // Keywords are all the kw_* token kinds (before punctuation starts at 'at_sign')
+    return kind >= TokenKind::kw_agent && kind <= TokenKind::kw_entry;
+  }
+
+  /// Expect and consume an identifier, with helpful error for keywords
+  [[nodiscard]] bool expectIdentifier() {
+    if (consume(TokenKind::identifier))
+      return true;
+
+    // Check if the current token is a keyword - provide helpful error
+    TokenKind currentKind = peek().kind;
+    if (isKeyword(currentKind)) {
+      std::string keyword(peek().spelling);
+      emitError(getCurrentLocation(),
+                "'" + keyword + "' is a reserved keyword and cannot be used as an identifier");
+    } else {
+      emitError(getCurrentLocation(), "Expected identifier");
+    }
     return false;
   }
 

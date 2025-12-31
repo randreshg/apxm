@@ -5,14 +5,16 @@
 agent ParallelResearch {
     @entry flow main() -> str {
         // Parallel research (no dependencies)
-        rsn "Research topic A: Machine learning fundamentals" -> topicA
-        rsn "Research topic B: Neural network architectures" -> topicB
-        rsn "Research topic C: Training optimization techniques" -> topicC
-        rsn "Research topic D: Model evaluation methods" -> topicD
-        rsn "Research topic E: Deployment strategies" -> topicE
+        ask("Research topic A: Machine learning fundamentals") -> topicA
+        ask("Research topic B: Neural network architectures") -> topicB
+        ask("Research topic C: Training optimization techniques") -> topicC
+        ask("Research topic D: Model evaluation methods") -> topicD
+        ask("Research topic E: Deployment strategies") -> topicE
 
         // Merge to consume all outputs (barrier + aggregation)
-        merge [topicA, topicB, topicC, topicD, topicE] -> results
+        merge(topicA, topicB, topicC, topicD, topicE) -> results
+        print("=== Research Results ===")
+        print(results)
         return results
     }
 }

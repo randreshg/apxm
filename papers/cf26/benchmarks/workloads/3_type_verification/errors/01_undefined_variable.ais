@@ -7,6 +7,6 @@
 agent UndefinedVarTest {
     flow main {
         // ERROR: 'undefined_input' is not defined anywhere
-        rsn "Process this: " + undefined_input -> result
+        ask("Process this: " + undefined_input) -> result
     }
 }

@@ -402,6 +402,13 @@ mlir::LogicalResult MLIRGen::generateFlowDecl(mlir::ModuleOp module, FlowDecl *f
     funcOp->setAttr("ais.entry", builder.getUnitAttr());
   }
 
+  // Store parameter names and types as attributes for artifact emission
+  for (size_t i = 0; i < flow->getParams().size(); ++i) {
+    const auto &[paramName, paramType] = flow->getParams()[i];
+    funcOp.setArgAttr(i, "ais.param_name", builder.getStringAttr(paramName));
+    funcOp.setArgAttr(i, "ais.param_type", builder.getStringAttr(paramType));
+  }
+
   // Create entry block
   auto &entryBlock = *funcOp.addEntryBlock();
   builder.setInsertionPointToStart(&entryBlock);

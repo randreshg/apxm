@@ -2,6 +2,7 @@
 
 use super::{Result, context::ExecutionContext, handlers::*};
 use apxm_core::types::{execution::Node, operations::AISOperationType, values::Value};
+use apxm_core::apxm_op;
 
 /// Operation dispatcher routes operations to their handlers
 pub struct OperationDispatcher;
@@ -21,10 +22,11 @@ impl OperationDispatcher {
         node: &Node,
         inputs: Vec<Value>,
     ) -> Result<Value> {
-        tracing::debug!(
+        apxm_op!(trace,
             op_type = ?node.op_type,
             node_id = node.id,
-            "Dispatching operation"
+            inputs = inputs.len(),
+            "Handler dispatch"
         );
 
         let result = match node.op_type {
@@ -32,8 +34,12 @@ impl OperationDispatcher {
             AISOperationType::QMem => qmem::execute(ctx, node, inputs).await,
             AISOperationType::UMem => umem::execute(ctx, node, inputs).await,
 
-            // Reasoning operations
-            AISOperationType::Rsn => rsn::execute(ctx, node, inputs).await,
+            // LLM operations (Ask/Think/Reason → unified llm handler)
+            AISOperationType::Ask => llm::execute(ctx, node, inputs).await,
+            AISOperationType::Think => llm::execute(ctx, node, inputs).await,
+            AISOperationType::Reason => llm::execute(ctx, node, inputs).await,
+
+            // Planning & analysis operations
             AISOperationType::Plan => plan::execute(ctx, node, inputs).await,
             AISOperationType::Reflect => reflect::execute(ctx, node, inputs).await,
             AISOperationType::Verify => verify::execute(ctx, node, inputs).await,
@@ -60,6 +66,9 @@ impl OperationDispatcher {
             AISOperationType::Err => err::execute(ctx, node, inputs).await,
             AISOperationType::Exc => exc::execute(ctx, node, inputs).await,
 
+            // Output operations
+            AISOperationType::Print => print::execute(ctx, node, inputs).await,
+
             // Communication operations
             AISOperationType::Communicate => communicate::execute(ctx, node, inputs).await,
 
@@ -68,31 +77,34 @@ impl OperationDispatcher {
 
             // Metadata operations (Agent is metadata, not executed)
             AISOperationType::Agent => Ok(Value::Null),
+
+            // Region terminators (handled within sub-DAG execution, no-op in main dispatcher)
+            AISOperationType::Yield => Ok(Value::Null),
         };
 
         match &result {
-            Ok(value) => {
-                tracing::debug!(
+            Ok(_value) => {
+                apxm_op!(trace,
                     op_type = ?node.op_type,
                     node_id = node.id,
-                    "Operation completed successfully"
+                    "Handler completed"
                 );
                 // Record in episodic memory
                 ctx.memory
                     .record_episode(
                         format!("operation_completed:{:?}", node.op_type),
-                        value.clone(),
+                        _value.clone(),
                         ctx.execution_id.clone(),
                     )
                     .await
                     .ok(); // Ignore episodic recording errors
             }
             Err(e) => {
-                tracing::error!(
+                apxm_op!(error,
                     op_type = ?node.op_type,
                     node_id = node.id,
                     error = %e,
-                    "Operation failed"
+                    "Handler failed"
                 );
                 // Record error in episodic memory
                 ctx.memory

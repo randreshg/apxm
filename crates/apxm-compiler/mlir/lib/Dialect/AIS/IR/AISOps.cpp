@@ -2,13 +2,19 @@
  * @file  AISOps.cpp
  * @brief Verifiers, folders and canonicalisers for every AIS operation.
  *
- * The file is organised by operation groups (memory, reasoning, sync, etc.).
+ * The file is organised by operation groups (memory, LLM ops, sync, etc.).
  * Each verifier enforces the invariants that TableGen cannot express (valid
  * memory-space names, non-empty strings, compatible types, etc.).
  *
+ * LLM Operations (ask/think/reason):
+ *   Three distinct ops for critical path analysis. Each has different latency:
+ *   - ask:    LOW latency  - simple Q&A
+ *   - think:  HIGH latency - extended thinking
+ *   - reason: MEDIUM latency - structured reasoning (has canonicalizer)
+ *
  * Canonicalisation patterns are local and SSA-preserving:
  *   - wait_all / merge: identity, flatten, dedup
- *   - rsn: deduplicate context operands
+ *   - reason: deduplicate context operands
  *
  * All patterns are guarded by the standard `hasVerifier` / `hasCanonicalizer`
  * flags declared in AISOps.td, so they run only when requested.
@@ -120,17 +126,17 @@ LogicalResult InvOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// RsnOp - Reasoning with LLM
+// AskOp - Simple Q&A LLM Call (LOW Latency)
 //===----------------------------------------------------------------------===//
 
-LogicalResult RsnOp::verify() {
+LogicalResult AskOp::verify() {
   // Check result is TokenType
   if (failed(verifyType<TokenType>(*this, getResult(), "result must be !ais.token type")))
     return failure();
 
-  // Must have either context or template (or both)
-  if (getContext().empty() && getTemplateStr().empty())
-    return emitOpError("reasoning operation must have at least context or template");
+  // Must have template (ask always needs a prompt)
+  if (getTemplateStr().empty())
+    return emitOpError("ask operation requires a template");
 
   // Check all context operands are tokens, handles, or goals
   if (failed(verifyTypes<TokenType, HandleType, GoalType>(
@@ -138,18 +144,50 @@ LogicalResult RsnOp::verify() {
           "context operands must be !ais.token, !ais.handle, or !ais.goal types")))
     return failure();
 
-  // Check inner_plan region if non-empty
-  if (!getInnerPlan().empty()) {
-    // Verify region has at least one block
-    if (getInnerPlan().getBlocks().empty())
-      return emitOpError("inner_plan region cannot be empty if specified");
+  return success();
+}
 
-    // Check each block has terminator
-    if (!llvm::all_of(getInnerPlan(), [](Block &block) {
-          return !block.empty() && block.back().hasTrait<OpTrait::IsTerminator>();
-        }))
-      return emitOpError("inner_plan blocks must have terminators");
-  }
+//===----------------------------------------------------------------------===//
+// ThinkOp - Extended Thinking LLM Call (HIGH Latency)
+//===----------------------------------------------------------------------===//
+
+LogicalResult ThinkOp::verify() {
+  // Check result is TokenType
+  if (failed(verifyType<TokenType>(*this, getResult(), "result must be !ais.token type")))
+    return failure();
+
+  // Must have template (think always needs a prompt)
+  if (getTemplateStr().empty())
+    return emitOpError("think operation requires a template");
+
+  // Check all context operands are tokens, handles, or goals
+  if (failed(verifyTypes<TokenType, HandleType, GoalType>(
+          *this, getContext(),
+          "context operands must be !ais.token, !ais.handle, or !ais.goal types")))
+    return failure();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ReasonOp - Structured Reasoning LLM Call (MEDIUM Latency)
+//===----------------------------------------------------------------------===//
+
+LogicalResult ReasonOp::verify() {
+  // Check result is TokenType
+  if (failed(verifyType<TokenType>(*this, getResult(), "result must be !ais.token type")))
+    return failure();
+
+  // Must have either context or template (or both)
+  if (getContext().empty() && getTemplateStr().empty())
+    return emitOpError("reason operation must have at least context or template");
+
+  // Check all context operands are tokens, handles, or goals
+  if (failed(verifyTypes<TokenType, HandleType, GoalType>(
+          *this, getContext(),
+          "context operands must be !ais.token, !ais.handle, or !ais.goal types")))
+    return failure();
+
   return success();
 }
 
@@ -415,11 +453,11 @@ struct MergeDedup : public OpRewritePattern<MergeOp> {
   }
 };
 
-/// Deduplicate context operands in RsnOp: rsn(%a, %b, %a) -> rsn(%a, %b)
-struct RsnDedupContext : public OpRewritePattern<RsnOp> {
+/// Deduplicate context operands in ReasonOp: reason(%a, %b, %a) -> reason(%a, %b)
+struct ReasonDedupContext : public OpRewritePattern<ReasonOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(RsnOp op, PatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(ReasonOp op, PatternRewriter &rewriter) const override {
     // Define attributes that should never be copied to the new operation
     const auto shouldSkipAttr = [](StringRef attrName) {
         return attrName == "template_str" || attrName == "operandSegmentSizes";
@@ -436,18 +474,12 @@ struct RsnDedupContext : public OpRewritePattern<RsnOp> {
     if (uniqueContext.size() == op.getContext().size())
       return failure();
 
-    // Create new RsnOp with deduplicated context
-    auto newOp = rewriter.create<RsnOp>(op.getLoc(), op.getResult().getType(),
-                                        op.getTemplateStrAttr(), uniqueContext);
-
-    // Copy inner_plan region if present
-    if (!op.getInnerPlan().empty()) {
-      IRMapping mapper;
-      op.getInnerPlan().cloneInto(&newOp.getInnerPlan(), mapper);
-    }
+    // Create new ReasonOp with deduplicated context
+    auto newOp = rewriter.create<ReasonOp>(op.getLoc(), op.getResult().getType(),
+                                           op.getTemplateStrAttr(), uniqueContext);
 
     // Copy other attributes (excluding template_str which is already set)
-    for (const NamedAttribute &attr : op -> getAttrs()) {
+    for (const NamedAttribute &attr : op->getAttrs()) {
         if (!shouldSkipAttr(attr.getName())) {
             newOp->setAttr(attr.getName(), attr.getValue());
         }
@@ -455,20 +487,6 @@ struct RsnDedupContext : public OpRewritePattern<RsnOp> {
 
     rewriter.replaceOp(op, newOp.getResult());
     return success();
-  }
-};
-
-/// Remove empty context if template is self-contained
-struct RsnFoldEmptyContext : public OpRewritePattern<RsnOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RsnOp op, PatternRewriter &rewriter) const override {
-    // Only apply if context is empty but we have a template
-    if (!op.getContext().empty() || op.getTemplateStrAttr().getValue().empty())
-      return failure();
-
-    // Already optimal - no change needed (this is just a verification pattern)
-    return failure();
   }
 };
 
@@ -598,7 +616,7 @@ LogicalResult CommunicateOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// SwitchOp - Multi-way Branch
+// SwitchOp - Multi-way Branch with Case Regions
 //===----------------------------------------------------------------------===//
 
 LogicalResult SwitchOp::verify() {
@@ -607,29 +625,131 @@ LogicalResult SwitchOp::verify() {
                                    "discriminant operand must be !ais.token type")))
     return failure();
 
-  // Check result is TokenType
-  if (failed(verifyType<TokenType>(*this, getResult(), "result must be !ais.token type")))
-    return failure();
+  // Check result is TokenType if present (optional)
+  if (getResult()) {
+    if (failed(verifyType<TokenType>(*this, getResult(), "result must be !ais.token type")))
+      return failure();
+  }
 
-  // Check case_labels and case_destinations have matching sizes
-  auto labels = getCaseLabels();
-  auto destinations = getCaseDestinations();
-  if (labels.size() != destinations.size())
-    return emitOpError("case_labels and case_destinations must have matching sizes");
+  // Regions: N case regions + 1 default region (last)
+  // case_labels has N entries corresponding to first N regions
+  size_t numLabels = getCaseLabels().size();
+  size_t totalRegions = getRegions().size();
+  if (totalRegions == 0)
+    return emitOpError("switch must have at least a default region");
+  size_t numCaseRegions = totalRegions - 1;  // Last region is default
+  if (numLabels != numCaseRegions)
+    return emitOpError() << "expected " << numLabels << " case regions but got " << numCaseRegions;
 
   // Check that case_labels contains only string attributes
-  for (auto label : labels) {
+  for (auto label : getCaseLabels()) {
     if (!llvm::isa<StringAttr>(label))
       return emitOpError("case_labels must contain only string attributes");
   }
 
-  // Check that case_destinations contains only string attributes
-  for (auto dest : destinations) {
-    if (!llvm::isa<StringAttr>(dest))
-      return emitOpError("case_destinations must contain only string attributes");
+  // Check each case region terminates with yield
+  bool hasResult = getResult() != nullptr;
+  for (auto &region : getCaseRegions()) {
+    if (region.empty())
+      return emitOpError("case region cannot be empty");
+    Block &block = region.front();
+    if (block.empty() || !llvm::isa<YieldOp>(block.getTerminator()))
+      return emitOpError("case region must terminate with ais.yield");
+
+    // Check yield consistency with switch result
+    auto yieldOp = llvm::cast<YieldOp>(block.getTerminator());
+    bool yieldHasValue = yieldOp.getValue() != nullptr;
+    if (hasResult && !yieldHasValue)
+      return emitOpError("switch has result but case yield has no value");
+    if (!hasResult && yieldHasValue)
+      return emitOpError("switch has no result but case yield has value");
   }
 
+  // Check default region (last region) terminates with yield
+  if (getDefaultRegion().empty())
+    return emitOpError("default region cannot be empty");
+  Block &defaultBlock = getDefaultRegion().front();
+  if (defaultBlock.empty() || !llvm::isa<YieldOp>(defaultBlock.getTerminator()))
+    return emitOpError("default region must terminate with ais.yield");
+
+  // Check default yield consistency
+  auto defaultYield = llvm::cast<YieldOp>(defaultBlock.getTerminator());
+  bool defaultHasValue = defaultYield.getValue() != nullptr;
+  if (hasResult && !defaultHasValue)
+    return emitOpError("switch has result but default yield has no value");
+  if (!hasResult && defaultHasValue)
+    return emitOpError("switch has no result but default yield has value");
+
   return success();
+}
+
+void SwitchOp::print(OpAsmPrinter &p) {
+  p << " " << getDiscriminant() << " : " << getDiscriminant().getType();
+
+  // Print case regions with labels
+  auto labels = getCaseLabels();
+  size_t idx = 0;
+  for (auto &region : getCaseRegions()) {
+    p.printNewline();
+    p << "    case " << labels[idx] << " ";
+    p.printRegion(region, /*printEntryBlockArgs=*/false);
+    ++idx;
+  }
+
+  // Print default region (last region)
+  p.printNewline();
+  p << "    default ";
+  p.printRegion(getDefaultRegion(), /*printEntryBlockArgs=*/false);
+
+  // Only print result type if switch has a result
+  if (getResult()) {
+    p << " -> " << getResult().getType();
+  }
+  p.printOptionalAttrDict((*this)->getAttrs(), {"case_labels"});
+}
+
+ParseResult SwitchOp::parse(OpAsmParser &parser, OperationState &result) {
+  // Parse discriminant
+  OpAsmParser::UnresolvedOperand discriminant;
+  Type discriminantType;
+  if (parser.parseOperand(discriminant) ||
+      parser.parseColonType(discriminantType) ||
+      parser.resolveOperand(discriminant, discriminantType, result.operands))
+    return failure();
+
+  // Parse cases
+  SmallVector<Attribute> caseLabels;
+
+  while (succeeded(parser.parseOptionalKeyword("case"))) {
+    StringAttr label;
+    if (parser.parseAttribute(label))
+      return failure();
+    caseLabels.push_back(label);
+
+    auto *region = result.addRegion();
+    if (parser.parseRegion(*region, /*arguments=*/{}, /*argTypes=*/{}))
+      return failure();
+  }
+
+  // Parse default
+  if (parser.parseKeyword("default"))
+    return failure();
+  auto *defaultRegion = result.addRegion();
+  if (parser.parseRegion(*defaultRegion, /*arguments=*/{}, /*argTypes=*/{}))
+    return failure();
+
+  // Add case_labels attribute
+  result.addAttribute("case_labels", parser.getBuilder().getArrayAttr(caseLabels));
+
+  // Parse optional result type (-> type)
+  if (succeeded(parser.parseOptionalArrow())) {
+    Type resultType;
+    if (parser.parseType(resultType))
+      return failure();
+    result.addTypes(resultType);
+  }
+
+  return parser.parseOptionalAttrDict(result.attributes);
 }
 
 //===----------------------------------------------------------------------===//
@@ -690,8 +810,8 @@ void MergeOp::getCanonicalizationPatterns(RewritePatternSet &patterns, MLIRConte
   patterns.add<MergeSingleInput, MergeFlatten, MergeDedup>(context);
 }
 
-void RsnOp::getCanonicalizationPatterns(RewritePatternSet &patterns, MLIRContext *context) {
-  patterns.add<RsnDedupContext, RsnFoldEmptyContext>(context);
+void ReasonOp::getCanonicalizationPatterns(RewritePatternSet &patterns, MLIRContext *context) {
+  patterns.add<ReasonDedupContext>(context);
 }
 
 }  // namespace ais

@@ -7,6 +7,6 @@
 agent EmptyReasoningTest {
     flow main {
         // ERROR: No template and no context
-        rsn "" -> result
+        ask("") -> result
     }
 }

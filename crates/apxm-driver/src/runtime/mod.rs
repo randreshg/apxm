@@ -52,6 +52,20 @@ impl RuntimeExecutor {
             .map_err(DriverError::Runtime)
     }
 
+    /// Execute an artifact with provided arguments for entry flow parameters.
+    ///
+    /// Validates that the number of arguments matches the entry flow's parameter count.
+    pub async fn execute_artifact_with_args(
+        &self,
+        artifact: Artifact,
+        args: Vec<String>,
+    ) -> Result<RuntimeExecutionResult, DriverError> {
+        self.runtime
+            .execute_artifact_with_args(artifact, args)
+            .await
+            .map_err(DriverError::Runtime)
+    }
+
     /// Get the LLM registry from the runtime
     pub fn llm_registry(&self) -> Arc<apxm_backends::LLMRegistry> {
         self.runtime.llm_registry_arc()

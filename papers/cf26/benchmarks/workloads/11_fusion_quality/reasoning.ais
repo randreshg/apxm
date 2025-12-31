@@ -1,0 +1,14 @@
+// Sequential reasoning chain with EXPLICIT dependencies
+// Each step consumes the previous step's output via {{token}} interpolation
+// This creates a true sequential DAG (step2 waits for step1, step3 waits for step2)
+
+agent ReasoningTest {
+    @entry flow main() -> str {
+        ask("What is 5 + 3? Answer with just the number.") -> step1
+        ask("Take this number: {{step1}}. Multiply it by 2. Answer with just the result.") -> step2
+        ask("Take this number: {{step2}}. Subtract 6. Answer with just the result.") -> step3
+        print("=== Reasoning Result ===")
+        print(step3)
+        return step3
+    }
+}

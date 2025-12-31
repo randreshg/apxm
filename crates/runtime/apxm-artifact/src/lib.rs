@@ -240,6 +240,7 @@ mod tests {
             metadata: DagMetadata {
                 name: Some("test".into()),
                 is_entry: false,
+                parameters: vec![],
             },
         }
     }

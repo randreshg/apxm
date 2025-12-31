@@ -5,20 +5,22 @@
 agent MemoryAgent {
     @entry flow main(query: str) -> str {
         // 1. Query long-term memory for cached knowledge
-        qmem ltm "domain_knowledge" -> cached
+        qmem("domain_knowledge", "ltm") -> cached
 
         // 2. Update short-term memory with working state
-        umem stm "current_query" <- query
+        umem(query, "stm")
 
         // 3. Reason with context from memory
-        rsn "Given knowledge: " + cached + ", answer: " + query -> answer
+        ask("Use the retrieved memory to answer the query.", cached, query) -> answer
 
         // 4. Update episodic memory for audit trail
-        umem episodic "query_answered" <- answer
+        umem(answer, "episodic")
 
         // 5. Persist new knowledge to long-term memory
-        umem ltm "last_answer" <- answer
+        umem(answer, "ltm")
 
+        print("Memory-Augmented Answer")
+        print(answer)
         return answer
     }
 }

@@ -238,6 +238,19 @@ pub static EXC: OperationMetadata = OperationMetadata {
     needs_submission: true,
 };
 
+/// Print Output operation metadata.
+pub static PRINT: OperationMetadata = OperationMetadata {
+    name: "print",
+    fields: &[
+        OperationField {
+            name: "message",
+            required: true,
+            description: "Message to print",
+        },
+    ],
+    needs_submission: true,
+};
+
 /// Fence operation metadata.
 pub static FENCE: OperationMetadata = OperationMetadata {
     name: "fence",
@@ -308,6 +321,17 @@ pub static CONST_STR: OperationMetadata = OperationMetadata {
         name: "value",
         required: true,
         description: "The string constant value",
+    }],
+    needs_submission: false,
+};
+
+/// Yield operation metadata (internal - terminates switch case regions).
+pub static YIELD: OperationMetadata = OperationMetadata {
+    name: "yield",
+    fields: &[OperationField {
+        name: "value",
+        required: true,
+        description: "The value to yield from the region",
     }],
     needs_submission: false,
 };
@@ -473,6 +497,7 @@ pub fn get_operation_metadata(op_type: AISOperationType) -> &'static OperationMe
         AISOperationType::Verify => &VERIFY,
         AISOperationType::Inv => &INV,
         AISOperationType::Exc => &EXC,
+        AISOperationType::Print => &PRINT,
         AISOperationType::Jump => &JUMP,
         AISOperationType::BranchOnValue => &BRANCH_ON_VALUE,
         AISOperationType::LoopStart => &LOOP_START,
@@ -487,6 +512,7 @@ pub fn get_operation_metadata(op_type: AISOperationType) -> &'static OperationMe
         AISOperationType::Err => &ERR,
         AISOperationType::Communicate => &COMMUNICATE,
         AISOperationType::ConstStr => &CONST_STR,
+        AISOperationType::Yield => &YIELD,
     }
 }
 

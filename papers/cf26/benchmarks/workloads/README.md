@@ -49,22 +49,20 @@ workloads/
 ├── 4_scalability/           # N-way parallelism efficiency
 ├── 5_memory_augmented/      # 3-tier memory (STM/LTM/Episodic)
 ├── 6_tool_invocation/       # Native INV operations
-├── 7_reflection/            # Built-in reflect operation
-├── 8_planning/              # Native plan operation
-├── 9_conditional_routing/   # Dataflow-based routing
+├── 7_reflection/            # Built-in reflect(operation)├── 8_planning/              # Native plan(operation)├── 9_conditional_routing/   # Dataflow-based routing
 ├── 10_multi_agent/          # Multi-agent collaboration
 ├── 11_compilation_scaling/  # Compilation phase timing at different scales
 ├── 12_real_llm_probe/       # Real LLM latency and token measurements
 ├── 13_fusion_quality/       # FuseReasoning O0 vs O1 comparison
 ├── 14_token_estimation/     # Token cost estimation for fusion
-├── runner.py                # Master benchmark runner
+├── apxm_runner.py           # Consolidated benchmark runner (WorkloadConfig registry)
+├── runner.py                # Master benchmark runner (thin wrapper)
 └── README.md                # This file
 ```
 
 Each workload folder contains:
 - `workflow.ais` - A-PXM implementation
-- `workflow.py` - LangGraph implementation
-- `run.py` - Individual benchmark runner
+- `workflow.py` - LangGraph implementation (where applicable)
 - `README.md` - Workload-specific documentation
 
 ## Prerequisites
@@ -78,8 +76,8 @@ brew install ollama
 # Start Ollama service
 ollama serve
 
-# Pull the phi3:mini model (used by all benchmarks)
-ollama pull phi3:mini
+# Pull the gpt-oss:20b-cloud model (used by all benchmarks)
+ollama pull gpt-oss:20b-cloud
 ```
 
 ### 2. Install Python Dependencies
@@ -95,7 +93,7 @@ pip install langgraph langchain-ollama
 cd /path/to/apxm
 
 # Using Python CLI (recommended - handles environment automatically)
-python tools/apxm_cli.py compiler build
+apxm compiler build
 
 # Or manually (requires activated conda environment)
 conda activate apxm
@@ -113,19 +111,19 @@ The Python CLI provides convenient commands for managing workloads:
 cd /path/to/apxm
 
 # List available workloads
-python tools/apxm_cli.py workloads list
+apxm workloads list
 
 # Check all workloads compile correctly
-python tools/apxm_cli.py workloads check
+apxm workloads check
 
 # Run a specific workload benchmark
-python tools/apxm_cli.py workloads run 10_multi_agent
-python tools/apxm_cli.py workloads run 1_parallel_research
+apxm workloads run 10_multi_agent
+apxm workloads run 1_parallel_research
 
 # Run benchmarks with iterations/warmup control
-python tools/apxm_cli.py workloads benchmark 2_chain_fusion
-python tools/apxm_cli.py workloads benchmark --all --json -o results.json
-python tools/apxm_cli.py workloads benchmark --all -n 10 -w 3
+apxm workloads benchmark 2_chain_fusion
+apxm workloads benchmark --all --json -o results.json
+apxm workloads benchmark --all -n 10 -w 3
 ```
 
 ### Manual: Run All Workloads
@@ -143,11 +141,17 @@ python runner.py
 python runner.py --iterations 20
 ```
 
-### Manual: Run Individual Workload
+### Run Individual Workload
 
 ```bash
-cd 1_parallel_research
-python run.py --json
+# By name
+apxm workloads run 1_parallel_research
+
+# By number
+apxm workloads run 1
+
+# With JSON output
+apxm workloads run 1 --json
 ```
 
 ## Workload Details
@@ -206,16 +210,14 @@ python run.py --json
 
 | Aspect | A-PXM | LangGraph |
 |--------|-------|-----------|
-| Reflection | Native reflect op | Custom prompting |
-| Output format | Structured | Unstructured |
+| Reflection | Native reflect(op | Custom prompting |)| Output format | Structured | Unstructured |
 
 ### 8. Planning
 **Measures**: Task decomposition
 
 | Aspect | A-PXM | LangGraph |
 |--------|-------|-----------|
-| Planning | Native plan op | Custom prompting |
-| Execution | Auto-parallelism | Manual |
+| Planning | Native plan(op | Custom prompting |)| Execution | Auto-parallelism | Manual |
 
 ### 9. Conditional Routing
 **Measures**: Dynamic control flow efficiency
@@ -291,7 +293,7 @@ All runners output JSON with this structure:
 
 ```bash
 ollama list
-# Should show: phi3:mini
+# Should show: gpt-oss:20b-cloud
 ```
 
 ### Step 2: Test Single Workload
@@ -305,7 +307,7 @@ python workflow.py
 ### Step 3: Run Individual Benchmark
 
 ```bash
-python run.py
+apxm workloads run 1_parallel_research
 # Shows timing results
 ```
 
@@ -350,7 +352,7 @@ cat results.json | jq '.results[].langgraph.mean_ms'
 
 ### Ollama Not Available
 
-If `HAS_OLLAMA = False`, benchmarks use mock responses. Install Ollama for real LLM measurements.
+Benchmarks require real LLM calls. Install Ollama and `langchain-ollama` before running.
 
 ### Import Errors
 
@@ -362,7 +364,7 @@ pip install langgraph langchain-ollama
 
 Reduce benchmark load if LLM responses are slow:
 
-- Per-workload: `python N_workload/run.py --iterations 3 --warmup 1`
+- Per-workload: `apxm workloads run 1 -n 3 -w 1`
 - Whole suite: `python runner.py --iterations 3 --warmup 1`
 - Or via env: `APXM_BENCH_ITERATIONS=3 APXM_BENCH_WARMUP=1 python runner.py`
 
@@ -401,5 +403,5 @@ To add a new workload:
 1. Create `N_workload_name/` directory
 2. Add `workflow.ais` with valid AIS operations
 3. Add `workflow.py` with LangGraph equivalent
-4. Add `run.py` benchmark runner
-5. Update `runner.py` to include new workload
+4. Add `README.md` with Purpose, What We're Demonstrating, How to Run, Results, Analysis sections
+5. Add `WorkloadConfig` entry to `apxm_runner.py` WORKLOADS registry

@@ -401,6 +401,7 @@ fn to_tablegen_name(op_type: AISOperationType) -> String {
         AISOperationType::Verify => "Verify",
         AISOperationType::Inv => "Inv",
         AISOperationType::Exc => "Exc",
+        AISOperationType::Print => "Print",
         AISOperationType::Jump => "Jump",
         AISOperationType::BranchOnValue => "BranchOnValue",
         AISOperationType::LoopStart => "LoopStart",
@@ -415,6 +416,7 @@ fn to_tablegen_name(op_type: AISOperationType) -> String {
         AISOperationType::Err => "Err",
         AISOperationType::Communicate => "Communicate",
         AISOperationType::ConstStr => "ConstStr",
+        AISOperationType::Yield => "Yield",
     };
     format!("AIS_{}Op", name)
 }

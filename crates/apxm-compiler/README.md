@@ -70,7 +70,7 @@ let context = Context::new()?;
 let source = r#"
     agent TestAgent {
         flow main {
-            rsn "Analyze the input" -> result
+            rsn("Analyze the input") -> result
         }
     }
 "#;

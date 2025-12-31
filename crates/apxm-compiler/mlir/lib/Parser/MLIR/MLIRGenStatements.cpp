@@ -229,66 +229,112 @@ mlir::LogicalResult MLIRGenStatements::generateSwitchStmt(MLIRGen &gen, SwitchSt
   auto i64Type = gen.builder.getI64Type();
   auto tokenType = mlir::ais::TokenType::get(&gen.context, i64Type);
 
-  // Collect case labels and destinations
+  // Determine if switch should produce a result based on result binding
+  bool hasResultBinding = stmt->hasResultBinding();
+
+  // Collect case labels
   llvm::SmallVector<mlir::Attribute, 4> caseLabels;
-  llvm::SmallVector<mlir::Attribute, 4> caseDestinations;
-
-  // Generate a unique base label for this switch
-  llvm::SmallString<64> switchId;
-  switchId.append("switch_");
-  switchId.append(std::to_string(reinterpret_cast<uintptr_t>(stmt)));
-
-  for (size_t i = 0; i < stmt->getCases().size(); ++i) {
-    const auto &caseItem = stmt->getCases()[i];
+  for (const auto &caseItem : stmt->getCases()) {
     caseLabels.push_back(gen.builder.getStringAttr(caseItem.label));
-
-    llvm::SmallString<64> caseLabel;
-    caseLabel.append(switchId);
-    caseLabel.append("_case_");
-    caseLabel.append(std::to_string(i));
-    caseDestinations.push_back(gen.builder.getStringAttr(caseLabel));
   }
 
-  // Default destination
-  llvm::SmallString<64> defaultLabel;
-  defaultLabel.append(switchId);
-  defaultLabel.append("_default");
+  size_t numCases = stmt->getCases().size();
+  unsigned numRegions = numCases + 1;  // N case regions + 1 default region
 
-  // Create the switch operation
-  auto switchOp = gen.builder.create<mlir::ais::SwitchOp>(
-      loc, tokenType, discriminant,
-      gen.builder.getArrayAttr(caseLabels),
-      gen.builder.getArrayAttr(caseDestinations),
-      stmt->getDefaultBody().empty() ? mlir::StringAttr() : gen.builder.getStringAttr(defaultLabel));
+  // Build the switch op - with or without result type
+  mlir::ais::SwitchOp switchOp;
+  if (hasResultBinding) {
+    switchOp = gen.builder.create<mlir::ais::SwitchOp>(
+        loc, tokenType, discriminant,
+        gen.builder.getArrayAttr(caseLabels), numRegions);
+  } else {
+    // Create switch without result type (void switch)
+    switchOp = gen.builder.create<mlir::ais::SwitchOp>(
+        loc, mlir::TypeRange{}, discriminant,
+        gen.builder.getArrayAttr(caseLabels), numRegions);
+  }
 
-  // Store the result for use in case bodies
-  mlir::Value switchResult = switchOp.getResult();
+  // Save the current insertion point
+  auto savedInsertPoint = gen.builder.saveInsertionPoint();
 
-  // Generate case bodies (each case gets its own scoped block)
-  for (size_t i = 0; i < stmt->getCases().size(); ++i) {
+  // Helper lambda to generate yield for a region
+  auto generateYield = [&](mlir::Block *block, bool needsValue) {
+    if (needsValue) {
+      // Find the last operation's result to yield
+      mlir::Value lastValue;
+      if (!block->empty()) {
+        auto &lastOp = block->back();
+        if (lastOp.getNumResults() > 0) {
+          lastValue = lastOp.getResult(0);
+        }
+      }
+
+      if (lastValue && llvm::isa<TokenType>(lastValue.getType())) {
+        gen.builder.create<mlir::ais::YieldOp>(loc, lastValue);
+      } else {
+        // Create a placeholder constant token if no suitable value found
+        auto constOp = gen.builder.create<mlir::ais::ConstStrOp>(
+            loc, tokenType, gen.builder.getStringAttr(""));
+        gen.builder.create<mlir::ais::YieldOp>(loc, constOp.getResult());
+      }
+    } else {
+      // Void yield - no value
+      gen.builder.create<mlir::ais::YieldOp>(loc, mlir::Value{});
+    }
+  };
+
+  // Get all regions: N case regions + 1 default region (last)
+  auto allRegions = switchOp.getRegions();
+
+  // Populate case regions (first N regions)
+  for (size_t i = 0; i < numCases; ++i) {
     const auto &caseItem = stmt->getCases()[i];
-    llvm::ScopedHashTableScope<llvm::StringRef, mlir::Value> scope(gen.symbolTable);
 
-    // Store discriminant value for case body to access
-    gen.symbolTable.insert("__switch_value__", switchResult);
+    // Get the case region and create a block in it
+    mlir::Region &caseRegion = allRegions[i];
+    mlir::Block *caseBlock = gen.builder.createBlock(&caseRegion);
+    gen.builder.setInsertionPointToStart(caseBlock);
 
-    for (const auto &caseStmt : caseItem.body) {
-      if (failed(generateStatement(gen, caseStmt.get()))) {
-        return mlir::failure();
+    // Generate case body with scoped symbol table
+    {
+      llvm::ScopedHashTableScope<llvm::StringRef, mlir::Value> scope(gen.symbolTable);
+
+      for (const auto &caseStmt : caseItem.body) {
+        if (failed(generateStatement(gen, caseStmt.get()))) {
+          return mlir::failure();
+        }
       }
     }
+
+    generateYield(caseBlock, hasResultBinding);
   }
 
-  // Generate default body if present
-  if (!stmt->getDefaultBody().empty()) {
-    llvm::ScopedHashTableScope<llvm::StringRef, mlir::Value> scope(gen.symbolTable);
-    gen.symbolTable.insert("__switch_value__", switchResult);
+  // Populate default region (last region)
+  {
+    mlir::Region &defaultRegion = allRegions.back();
+    mlir::Block *defaultBlock = gen.builder.createBlock(&defaultRegion);
+    gen.builder.setInsertionPointToStart(defaultBlock);
 
-    for (const auto &defaultStmt : stmt->getDefaultBody()) {
-      if (failed(generateStatement(gen, defaultStmt.get()))) {
-        return mlir::failure();
+    {
+      llvm::ScopedHashTableScope<llvm::StringRef, mlir::Value> scope(gen.symbolTable);
+
+      for (const auto &defaultStmt : stmt->getDefaultBody()) {
+        if (failed(generateStatement(gen, defaultStmt.get()))) {
+          return mlir::failure();
+        }
       }
     }
+
+    generateYield(defaultBlock, hasResultBinding);
+  }
+
+  // Restore insertion point to after the switch op
+  gen.builder.restoreInsertionPoint(savedInsertPoint);
+  gen.builder.setInsertionPointAfter(switchOp);
+
+  // Bind result to symbol table if has result binding
+  if (hasResultBinding) {
+    gen.symbolTable.insert(stmt->getResultBinding(), switchOp.getResult());
   }
 
   return mlir::success();

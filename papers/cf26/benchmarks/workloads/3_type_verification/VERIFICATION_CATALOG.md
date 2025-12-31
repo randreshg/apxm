@@ -36,7 +36,7 @@ This document catalogs all compile-time checks performed by the A-PXM compiler, 
 **Example error:**
 ```ais
 // ERROR: Invalid memory space
-umem invalid_space "key" <- "value"
+umem("value", "invalid_space")
 
 // Compiler output:
 // error: space must be 'stm', 'ltm', or 'episodic'
@@ -57,7 +57,7 @@ umem invalid_space "key" <- "value"
 **Example error:**
 ```ais
 // ERROR: Empty capability name
-inv "" ({}) -> result
+inv("", "{}") -> result
 
 // Compiler output:
 // error: capability name cannot be empty
@@ -86,7 +86,7 @@ inv "" ({}) -> result
 **Example error:**
 ```ais
 // ERROR: Empty reasoning template with no context
-rsn "" -> result
+rsn("") -> result
 
 // Compiler output:
 // error: reasoning operation must have at least context or template
@@ -164,7 +164,7 @@ rsn "" -> result
 ```ais
 agent Demo {
     flow main {
-        rsn "Use this: " + undefined_var -> result
+        rsn("Use this: " + undefined_var) -> result
     }
 }
 
@@ -172,7 +172,7 @@ agent Demo {
 // error: Undefined variable: undefined_var
 //  --> workflow.ais:3:24
 //   |
-// 3 |         rsn "Use this: " + undefined_var -> result
+// 3 |         rsn("Use this: " + undefined_var) -> result
 //   |                            ^^^^^^^^^^^^^
 //   |                            not defined in scope
 ```

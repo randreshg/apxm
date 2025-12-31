@@ -3,16 +3,20 @@
 
 agent ParallelResearch {
     @entry flow main(topic: str) -> str {
-        // These 3 RSN ops have no dependencies -> run in PARALLEL automatically
-        rsn "Explain the domain background of " + topic -> background
-        rsn "What are the recent advances in " + topic -> advances
-        rsn "What is the societal impact of " + topic -> impact
+        // These 3 ask ops have no dependencies -> run in PARALLEL automatically
+        ask("Explain in 2 sentences the domain background of " + topic) -> background
+        print("**- Background:** " + background)
+        ask("Give me 2 recent advances in " + topic) -> advances
+        print("**- Advances:** " + advances)
+        ask("Explain in 1 sentence what is the societal impact of " + topic) -> impact
+        print("**- Impact:** " + impact)
 
         // MERGE waits for all 3, then synthesize
-        merge [background, advances, impact] -> combined
+        merge(background, advances, impact) -> combined
 
         // Final synthesis is sequential (depends on merge)
-        rsn "Synthesize into a coherent report: " + combined -> report
+        ask("Synthesize into a 3 sentences report: " + combined) -> report
+        print("Research Report: ", report)
         return report
     }
 }

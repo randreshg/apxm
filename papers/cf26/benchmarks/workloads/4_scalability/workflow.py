@@ -5,17 +5,12 @@ Tests parallelism efficiency at different levels (N = 2, 4, 8).
 Requires explicit Send API for parallel execution.
 """
 
+import operator
 import os
-from typing import TypedDict, List
+from typing import Annotated, TypedDict, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.constants import Send
-
-# Try to import Ollama for real LLM calls
-try:
-    from langchain_ollama import ChatOllama
-    HAS_OLLAMA = True
-except ImportError:
-    HAS_OLLAMA = False
+from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
 
 # Ollama model configuration
 OLLAMA_MODEL = (
@@ -27,15 +22,13 @@ OLLAMA_MODEL = (
 
 class ScalabilityState(TypedDict):
     """State for scalability tests."""
-    results: List[str]
+    results: Annotated[List[str], operator.add]  # Aggregates concurrent updates
     final: str
 
 
 def get_llm():
-    """Get the LLM instance (Ollama or mock)."""
-    if HAS_OLLAMA:
-        return ChatOllama(model=OLLAMA_MODEL, temperature=0)
-    return None
+    """Get the LLM instance (Ollama only)."""
+    return get_ollama_llm(OLLAMA_MODEL)
 
 
 def create_task_node(task_id: str):
@@ -43,11 +36,9 @@ def create_task_node(task_id: str):
     def task_fn(state: ScalabilityState) -> dict:
         llm = get_llm()
 
-        if llm:
-            prompt = f"Task {task_id}: Provide a brief fact about any topic in 1 sentence."
-            response = llm.invoke(prompt)
-            return {"results": [response.content]}
-        return {"results": [f"Result from {task_id}"]}
+        prompt = f"Task {task_id}: Provide a brief fact about any topic in 1 sentence."
+        response = llm.invoke(prompt)
+        return {"results": [response.content]}
 
     return task_fn
 

@@ -49,15 +49,17 @@ enum class TokenKind {
   kw_try,
 
   // Short operations (alphabetical)
+  kw_ask,      // Simple Q&A (no extended thinking) - LOW latency
   kw_exec,     // Execute code
   kw_llm,      // LLM call
   kw_merge,    // Merge results
   kw_mem,      // Memory access
   kw_plan,     // Planning
+  kw_print,    // Print output
+  kw_reason,   // Structured reasoning with beliefs/goals - MEDIUM latency
   kw_reflect,  // Reflection
-  kw_rsn,      // Reasoning (short form)
   kw_talk,     // Communicate
-  kw_think,    // Reasoning
+  kw_think,    // Extended thinking with budget - HIGH latency
   kw_tool,     // Tool invocation
   kw_verify,   // Verification
   kw_wait,     // Wait for completion

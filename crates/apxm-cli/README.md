@@ -24,14 +24,19 @@ uses `apxm-core` diagnostics for environment checks.
 
 ## Usage
 
-### Python CLI (Recommended)
+### CLI (Recommended)
 
-The Python CLI (`tools/apxm_cli.py`) handles environment setup automatically:
+Add `apxm` to your PATH and use the CLI wrapper:
 
 ```bash
-python tools/apxm_cli.py doctor
-python tools/apxm_cli.py compiler build
-python tools/apxm_cli.py compiler run examples/hello_world.ais
+# Add to PATH (add to ~/.zshrc or ~/.bashrc for persistence)
+export PATH="$PATH:$(pwd)/bin"
+pip install typer rich
+
+# Use the CLI
+apxm doctor
+apxm compiler build
+apxm compiler run examples/hello_world.ais
 ```
 
 See `docs/AGENTS.md` for the complete CLI reference.

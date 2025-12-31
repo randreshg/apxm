@@ -248,12 +248,15 @@ class SwitchStmt final : public Stmt {
   std::unique_ptr<Expr> discriminant;
   llvm::SmallVector<SwitchCase, 4> cases;
   llvm::SmallVector<std::unique_ptr<Stmt>, 4> defaultBody;
+  std::string resultBinding;  // Optional "-> varname" binding
 
 public:
   SwitchStmt(Location loc, std::unique_ptr<Expr> discriminant,
              llvm::MutableArrayRef<SwitchCase> cases,
-             llvm::MutableArrayRef<std::unique_ptr<Stmt>> defaultBody)
-      : Stmt(Kind::SwitchStmt, loc), discriminant(std::move(discriminant)) {
+             llvm::MutableArrayRef<std::unique_ptr<Stmt>> defaultBody,
+             llvm::StringRef resultBinding = "")
+      : Stmt(Kind::SwitchStmt, loc), discriminant(std::move(discriminant)),
+        resultBinding(resultBinding.str()) {
     assert(this->discriminant && "Discriminant cannot be null");
 
     this->cases.reserve(cases.size());
@@ -277,6 +280,9 @@ public:
   llvm::ArrayRef<std::unique_ptr<Stmt>> getDefaultBody() const noexcept {
     return {defaultBody.data(), defaultBody.size()};
   }
+
+  llvm::StringRef getResultBinding() const noexcept { return resultBinding; }
+  bool hasResultBinding() const noexcept { return !resultBinding.empty(); }
 
   static bool classof(const ASTNode *node) {
     return node->getKind() == Kind::SwitchStmt;

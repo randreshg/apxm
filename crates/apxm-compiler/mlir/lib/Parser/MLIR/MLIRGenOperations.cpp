@@ -23,28 +23,22 @@ mlir::Value MLIRGenOperations::generateCallExpr(MLIRGen &gen, CallExpr *expr) {
   mlir::Location loc = gen.getLocation(expr->getLocation());
   llvm::StringRef callee = expr->getCallee();
 
-  // Generate non-string arguments
-  llvm::SmallVector<mlir::Value, 4> args;
-  for (const auto &argExpr : expr->getArgs()) {
-    if (!llvm::isa<StringLiteralExpr>(argExpr.get())) {
-      auto arg = gen.generateExpression(argExpr.get());
-      if (!arg) return nullptr;
-      args.push_back(arg);
-    }
-  }
-
   // Map callee to operation kind
+  // LLM operations: ask/think/reason - three distinct ops for critical path analysis
   enum class CallKind {
-    QMem, UMem, Invoke, Reason, Reflect, Plan, Verify, Execute, Communicate, WaitAll, Merge, Unknown
+    QMem, UMem, Invoke, Ask, Think, Reason, Reflect, Plan, Verify, Execute, Communicate, WaitAll, Merge, Print, Unknown
   };
 
   CallKind kind = llvm::StringSwitch<CallKind>(callee)
       .Cases("query_memory", "qmem", "mem", CallKind::QMem)
       .Cases("update_memory", "umem", CallKind::UMem)
       .Cases("invoke", "inv", "tool", CallKind::Invoke)
-      .Cases("reason", "rsn", "think", "llm", CallKind::Reason)
+      .Case("ask", CallKind::Ask)       // LOW latency - simple Q&A
+      .Case("think", CallKind::Think)   // HIGH latency - extended thinking
+      .Case("reason", CallKind::Reason) // MEDIUM latency - structured reasoning
       .Case("reflect", CallKind::Reflect)
       .Case("plan", CallKind::Plan)
+      .Case("print", CallKind::Print)
       .Case("verify", CallKind::Verify)
       .Cases("execute", "exc", "exec", CallKind::Execute)
       .Cases("communicate", "talk", CallKind::Communicate)
@@ -52,19 +46,54 @@ mlir::Value MLIRGenOperations::generateCallExpr(MLIRGen &gen, CallExpr *expr) {
       .Case("merge", CallKind::Merge)
       .Default(CallKind::Unknown);
 
+  auto collectNonStringArgs = [&](llvm::ArrayRef<std::unique_ptr<Expr>> exprArgs,
+                                  llvm::SmallVectorImpl<mlir::Value> &out) {
+    for (const auto &argExpr : exprArgs) {
+      if (!llvm::isa<StringLiteralExpr>(argExpr.get())) {
+        auto arg = gen.generateExpression(argExpr.get());
+        if (!arg) return false;
+        out.push_back(arg);
+      }
+    }
+    return true;
+  };
+
   // Dispatch to appropriate operation generator
   switch (kind) {
   case CallKind::QMem: return generateQMemOp(gen, expr->getArgs(), loc);
   case CallKind::UMem: return generateUMemOp(gen, expr->getArgs(), loc);
   case CallKind::Invoke: return generateInvOp(gen, callee, expr->getArgs(), loc);
-  case CallKind::Reason: return generateRsnOp(gen, expr->getArgs(), loc);
-  case CallKind::Reflect: return generateReflectOp(gen, expr->getArgs(), loc, args);
-  case CallKind::Plan: return generatePlanOp(gen, expr->getArgs(), loc, args);
+  case CallKind::Ask: return generateAskOp(gen, expr->getArgs(), loc);
+  case CallKind::Think: return generateThinkOp(gen, expr->getArgs(), loc);
+  case CallKind::Reason: return generateReasonOp(gen, expr->getArgs(), loc);
+  case CallKind::Reflect: {
+    llvm::SmallVector<mlir::Value, 4> args;
+    if (!collectNonStringArgs(expr->getArgs(), args)) return nullptr;
+    return generateReflectOp(gen, expr->getArgs(), loc, args);
+  }
+  case CallKind::Plan: {
+    llvm::SmallVector<mlir::Value, 4> args;
+    if (!collectNonStringArgs(expr->getArgs(), args)) return nullptr;
+    return generatePlanOp(gen, expr->getArgs(), loc, args);
+  }
   case CallKind::Verify: return generateVerifyOp(gen, expr->getArgs(), loc);
-  case CallKind::Execute: return generateExcOp(gen, expr->getArgs(), loc, args);
-  case CallKind::Communicate: return generateCommunicateOp(gen, expr->getArgs(), loc, args);
+  case CallKind::Execute: {
+    llvm::SmallVector<mlir::Value, 4> args;
+    if (!collectNonStringArgs(expr->getArgs(), args)) return nullptr;
+    return generateExcOp(gen, expr->getArgs(), loc, args);
+  }
+  case CallKind::Communicate: {
+    llvm::SmallVector<mlir::Value, 4> args;
+    if (!collectNonStringArgs(expr->getArgs(), args)) return nullptr;
+    return generateCommunicateOp(gen, expr->getArgs(), loc, args);
+  }
   case CallKind::WaitAll: return generateWaitAllOp(gen, expr->getArgs(), loc);
   case CallKind::Merge: return generateMergeOp(gen, expr->getArgs(), loc);
+  case CallKind::Print: {
+    llvm::SmallVector<mlir::Value, 4> args;
+    if (!collectNonStringArgs(expr->getArgs(), args)) return nullptr;
+    return generatePrintOp(gen, expr->getArgs(), loc, args);
+  }
   case CallKind::Unknown: break;
   }
 
@@ -142,8 +171,18 @@ mlir::Value MLIRGenOperations::generateInvOp(MLIRGen &gen, llvm::StringRef calle
                                             gen.builder.getStringAttr(params));
 }
 
-mlir::Value MLIRGenOperations::generateRsnOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,
-                                           mlir::Location loc) {
+//===----------------------------------------------------------------------===//
+// LLM Operations: ask/think/reason - Three distinct ops for critical path analysis
+//
+// These generate separate MLIR ops to enable:
+// - Critical path detection (think = HIGH latency)
+// - Cost estimation (each op has distinct latency profile)
+// - Optimization passes (fuse adjacent ask ops, batch think ops)
+//===----------------------------------------------------------------------===//
+
+/// Helper to collect context arguments and extract template from args
+static std::pair<llvm::StringRef, llvm::SmallVector<mlir::Value, 4>>
+extractTemplateAndContext(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args) {
   llvm::SmallVector<mlir::Value, 4> contextArgs;
   llvm::StringRef templateStr;
 
@@ -155,7 +194,6 @@ mlir::Value MLIRGenOperations::generateRsnOp(MLIRGen &gen, llvm::ArrayRef<std::u
     } else {
       // Complex case: expression (e.g., "prefix" + var + "suffix")
       // Generate the expression and pass as context
-      // Use empty template - the context operand becomes the prompt
       templateStr = "";
       if (auto arg = gen.generateExpression(args[0].get())) {
         contextArgs.push_back(arg);
@@ -172,12 +210,46 @@ mlir::Value MLIRGenOperations::generateRsnOp(MLIRGen &gen, llvm::ArrayRef<std::u
     }
   }
 
+  return {templateStr, std::move(contextArgs)};
+}
+
+mlir::Value MLIRGenOperations::generateAskOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,
+                                             mlir::Location loc) {
+  auto [templateStr, contextArgs] = extractTemplateAndContext(gen, args);
+
   auto i64Type = gen.builder.getI64Type();
   auto tokenType = mlir::ais::TokenType::get(&gen.context, i64Type);
 
-  return gen.builder.create<mlir::ais::RsnOp>(loc, tokenType,
-                                            gen.builder.getStringAttr(templateStr),
-                                            contextArgs);
+  return gen.builder.create<mlir::ais::AskOp>(
+      loc, tokenType,
+      gen.builder.getStringAttr(templateStr),
+      contextArgs);
+}
+
+mlir::Value MLIRGenOperations::generateThinkOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,
+                                               mlir::Location loc) {
+  auto [templateStr, contextArgs] = extractTemplateAndContext(gen, args);
+
+  auto i64Type = gen.builder.getI64Type();
+  auto tokenType = mlir::ais::TokenType::get(&gen.context, i64Type);
+
+  return gen.builder.create<mlir::ais::ThinkOp>(
+      loc, tokenType,
+      gen.builder.getStringAttr(templateStr),
+      contextArgs);
+}
+
+mlir::Value MLIRGenOperations::generateReasonOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,
+                                                mlir::Location loc) {
+  auto [templateStr, contextArgs] = extractTemplateAndContext(gen, args);
+
+  auto i64Type = gen.builder.getI64Type();
+  auto tokenType = mlir::ais::TokenType::get(&gen.context, i64Type);
+
+  return gen.builder.create<mlir::ais::ReasonOp>(
+      loc, tokenType,
+      gen.builder.getStringAttr(templateStr),
+      contextArgs);
 }
 
 mlir::Value MLIRGenOperations::generateReflectOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,
@@ -235,6 +307,19 @@ mlir::Value MLIRGenOperations::generateExcOp(MLIRGen &gen, llvm::ArrayRef<std::u
   return gen.builder.create<mlir::ais::ExcOp>(loc, tokenType,
                                             gen.builder.getStringAttr(code),
                                             contextArgs);
+}
+
+mlir::Value MLIRGenOperations::generatePrintOp(MLIRGen &gen,
+                                              llvm::ArrayRef<std::unique_ptr<Expr>> args,
+                                              mlir::Location loc,
+                                              llvm::SmallVectorImpl<mlir::Value> &contextArgs) {
+  llvm::StringRef message = args.empty() ? "" : extractStringArg(args[0].get());
+
+  // PrintOp is a void operation (side-effect only, no result)
+  gen.builder.create<mlir::ais::PrintOp>(loc,
+                                         gen.builder.getStringAttr(message),
+                                         contextArgs);
+  return nullptr;
 }
 
 mlir::Value MLIRGenOperations::generateCommunicateOp(MLIRGen &gen,

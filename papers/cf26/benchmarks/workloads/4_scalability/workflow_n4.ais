@@ -1,0 +1,16 @@
+// Scalability Workflow - 4-way parallel
+// Tests parallelism efficiency with N=4 concurrent RSN operations.
+
+agent ScalabilityN4 {
+    @entry flow main() -> str {
+        // 4 parallel RSN ops (T_1=4, T_inf=1, theoretical speedup=4x)
+        ask("Provide a brief fact about science") -> a
+        ask("Provide a brief fact about history") -> b
+        ask("Provide a brief fact about geography") -> c
+        ask("Provide a brief fact about technology") -> d
+        merge(a, b, c, d) -> result
+        print("N=4 Parallel Result")
+        print(result)
+        return result
+    }
+}

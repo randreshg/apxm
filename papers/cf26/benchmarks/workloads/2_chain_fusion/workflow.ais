@@ -1,18 +1,23 @@
 // Chain Fusion Workflow
-// Demonstrates FuseReasoning optimization - compiler batches dependent RSN chains.
+// Demonstrates FuseReasoning optimization - compiler batches dependent ask chains.
 //
 // The compiler's FuseReasoning pass transforms this into a SINGLE LLM call
 // with a batched prompt, reducing 5 API calls to 1.
 
 agent ChainFusion {
     @entry flow main() -> str {
-        // These 5 RSN ops form a dependency chain
+        // These 5 ask ops form a dependency chain
         // FuseReasoning pass will batch them into a single prompt
-        rsn "Define quantum computing" -> step1
-        rsn "Using: " + step1 + ", explain qubits" -> step2
-        rsn "Using: " + step2 + ", explain superposition" -> step3
-        rsn "Using: " + step3 + ", explain entanglement" -> step4
-        rsn "Summarize all concepts above: " + step4 -> summary
+        ask("Define quantum computing") -> step1
+        print(step1)
+        ask("Using: " + step1 + ", explain qubits") -> step2
+        print(step2)
+        ask("Using: " + step2 + ", explain superposition") -> step3
+        print(step3)
+        ask("Using: " + step3 + ", explain entanglement") -> step4
+        ask("Summarize all concepts above: " + step4) -> summary
+        print("Define quantum computing:")
+        print(summary)
         return summary
     }
 }

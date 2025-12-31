@@ -12,7 +12,7 @@ assignees: ''
 
 ## Proposed Solution
 
-<!-- Describe how you plan to solve the problem. Include relevant technical details. -->
+<!-- Describe how you plan(to solve the problem. Include relevant technical details. -) ->
 
 ## Acceptance Criteria
 

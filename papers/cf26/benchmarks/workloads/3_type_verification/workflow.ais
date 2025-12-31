@@ -7,10 +7,10 @@
 agent BrokenAgent {
     flow main {
         // First operation succeeds
-        rsn "Do something useful" -> result
+        ask("Do something useful") -> result
 
         // ERROR: undefined_var is not defined anywhere
         // A-PXM compiler will catch this BEFORE execution
-        rsn "Use this: " + undefined_var -> output
+        ask("Use this: " + undefined_var) -> output
     }
 }
