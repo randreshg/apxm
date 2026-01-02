@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use apxm_core::types::{ExecutionDag, ExecutionStats, Node, NodeId, NodeStatus, TokenId, Value};
 use crossbeam_deque::Worker;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use parking_lot::Mutex;
 use tokio::sync::Notify;
 
@@ -58,6 +58,11 @@ pub struct SchedulerState {
     pub pending_promises: Arc<DashMap<TokenId, PromiseState>>,
     pub execution_stack: Arc<Mutex<Vec<ExecutionFrame>>>,
     pub next_promise_token_id: Arc<AtomicU64>,
+
+    /// Sparse set tracking delegated tokens for switch/case sub-DAG splicing.
+    /// Key: (delegator_node_id, token_id) - only the delegating node skips publish.
+    /// Zero overhead for DAGs without switch operations.
+    pub delegated_tokens: Arc<DashSet<(NodeId, TokenId)>>,
 }
 
 impl SchedulerState {
@@ -161,6 +166,7 @@ impl SchedulerState {
             pending_promises: Arc::new(DashMap::new()),
             execution_stack: Arc::new(Mutex::new(Vec::new())),
             next_promise_token_id: Arc::new(AtomicU64::new(1_000_000)),
+            delegated_tokens: Arc::new(DashSet::new()),
         };
 
         // Initialize readiness tracking and seed ready nodes

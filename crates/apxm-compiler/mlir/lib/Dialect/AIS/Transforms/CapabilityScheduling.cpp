@@ -93,11 +93,25 @@ struct CapabilitySchedulingPass : impl::CapabilitySchedulingBase<CapabilitySched
                                    inv.getCapabilityAttr().getValue())));
             return true;
           })
-          .Case<RsnOp>([&](auto rsn) {
-            annotateReasoning(rsn);
+          .Case<AskOp>([&](auto op) {
+            annotateAsk(op);
             stats.reasonings++;
-            APXM_AIS_DEBUG("  RSN: ctx_size=" << rsn.getContext().size()
-                            << " parallel_safe=" << (rsn.getContext().size() <= parallelThreshold));
+            APXM_AIS_DEBUG("  ASK: ctx_size=" << op.getContext().size()
+                            << " parallel_safe=" << (op.getContext().size() <= parallelThreshold));
+            return true;
+          })
+          .Case<ThinkOp>([&](auto op) {
+            annotateThink(op);
+            stats.reasonings++;
+            APXM_AIS_DEBUG("  THINK: ctx_size=" << op.getContext().size()
+                            << " (critical path - HIGH latency)");
+            return true;
+          })
+          .Case<ReasonOp>([&](auto op) {
+            annotateReason(op);
+            stats.reasonings++;
+            APXM_AIS_DEBUG("  REASON: ctx_size=" << op.getContext().size()
+                            << " (structured output - MEDIUM latency)");
             return true;
           })
           .Case<PlanOp>([&](auto plan) {
@@ -119,7 +133,7 @@ struct CapabilitySchedulingPass : impl::CapabilitySchedulingBase<CapabilitySched
 
     APXM_AIS_INFO("Annotated " << stats.annotated << " ops"
                   << " (inv=" << stats.invocations
-                  << ", rsn=" << stats.reasonings
+                  << ", llm=" << stats.reasonings
                   << ", plan=" << stats.plans << ")");
     APXM_AIS_DEBUG_FOOTER(CapabilityScheduling);
   }
@@ -135,17 +149,52 @@ private:
                 AISEstimatedCostAttr::get(op->getContext(), static_cast<int32_t>(cost)));
   }
 
-  void annotateReasoning(RsnOp op) const {
+  /// Annotate AskOp - LOW latency, good for parallelization
+  void annotateAsk(AskOp op) const {
     const size_t contextSize = op.getContext().size();
     const unsigned cost = baseCost + static_cast<unsigned>(contextSize) * contextWeight;
     const bool isParallelSafe = (contextSize <= parallelThreshold);
 
     op->setAttr("ais.tier", AISTierAttr::get(op->getContext(), AISTierKind::reasoning));
     op->setAttr("ais.intent", AISIntentAttr::get(op->getContext(), AISIntentKind::reasoning));
+    op->setAttr("ais.latency", StringAttr::get(op->getContext(), "low"));
     op->setAttr("ais.estimated_cost",
                 AISEstimatedCostAttr::get(op->getContext(), static_cast<int32_t>(cost)));
 
     if (isParallelSafe)
+      op->setAttr("ais.parallel_safe", AISParallelSafeAttr::get(op->getContext()));
+    else
+      op->removeAttr("ais.parallel_safe");
+  }
+
+  /// Annotate ThinkOp - HIGH latency, critical path bottleneck
+  void annotateThink(ThinkOp op) const {
+    const size_t contextSize = op.getContext().size();
+    // Think ops are expensive - multiply base cost
+    const unsigned cost = (baseCost * 10) + static_cast<unsigned>(contextSize) * contextWeight;
+
+    op->setAttr("ais.tier", AISTierAttr::get(op->getContext(), AISTierKind::reasoning));
+    op->setAttr("ais.intent", AISIntentAttr::get(op->getContext(), AISIntentKind::reasoning));
+    op->setAttr("ais.latency", StringAttr::get(op->getContext(), "high"));
+    op->setAttr("ais.estimated_cost",
+                AISEstimatedCostAttr::get(op->getContext(), static_cast<int32_t>(cost)));
+    // Think ops are never parallel-safe due to high latency
+    op->removeAttr("ais.parallel_safe");
+  }
+
+  /// Annotate ReasonOp - MEDIUM latency, structured output
+  void annotateReason(ReasonOp op) const {
+    const size_t contextSize = op.getContext().size();
+    // Reason ops are moderately expensive
+    const unsigned cost = (baseCost * 3) + static_cast<unsigned>(contextSize) * contextWeight;
+
+    op->setAttr("ais.tier", AISTierAttr::get(op->getContext(), AISTierKind::reasoning));
+    op->setAttr("ais.intent", AISIntentAttr::get(op->getContext(), AISIntentKind::reasoning));
+    op->setAttr("ais.latency", StringAttr::get(op->getContext(), "medium"));
+    op->setAttr("ais.estimated_cost",
+                AISEstimatedCostAttr::get(op->getContext(), static_cast<int32_t>(cost)));
+    // Reason ops might support parallel execution if context is small
+    if (contextSize <= parallelThreshold)
       op->setAttr("ais.parallel_safe", AISParallelSafeAttr::get(op->getContext()));
     else
       op->removeAttr("ais.parallel_safe");

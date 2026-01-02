@@ -231,7 +231,7 @@ pub enum ErrorCode {
     PassExecutionFailed = 301,
 
     /// E302: Optimization conflict
-    /// Example: `cannot apply 'fuse-reasoning' and 'scheduling' together`
+    /// Example: `cannot apply 'fuse-ask-ops' and 'scheduling' together`
     OptimizationConflict = 302,
 
     /// E303: Pass not found

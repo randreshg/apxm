@@ -44,7 +44,7 @@ Each workload is implemented in both DSLs to enable fair comparison.
 ```
 workloads/
 ├── 1_parallel_research/     # Automatic parallelism from dataflow
-├── 2_chain_fusion/          # FuseReasoning compiler optimization
+├── 2_chain_fusion/          # FuseAskOps compiler optimization
 ├── 3_type_verification/     # Compile-time vs runtime error detection
 ├── 4_scalability/           # N-way parallelism efficiency
 ├── 5_memory_augmented/      # 3-tier memory (STM/LTM/Episodic)
@@ -53,7 +53,7 @@ workloads/
 ├── 10_multi_agent/          # Multi-agent collaboration
 ├── 11_compilation_scaling/  # Compilation phase timing at different scales
 ├── 12_real_llm_probe/       # Real LLM latency and token measurements
-├── 13_fusion_quality/       # FuseReasoning O0 vs O1 comparison
+├── 13_fusion_quality/       # FuseAskOps O0 vs O1 comparison
 ├── 14_token_estimation/     # Token cost estimation for fusion
 ├── apxm_runner.py           # Consolidated benchmark runner (WorkloadConfig registry)
 ├── runner.py                # Master benchmark runner (thin wrapper)
@@ -165,7 +165,7 @@ apxm workloads run 1 --json
 | Lines of code | ~12 | ~45 |
 
 ### 2. Chain Fusion
-**Measures**: FuseReasoning compiler optimization
+**Measures**: FuseAskOps compiler optimization
 
 | Aspect | A-PXM | LangGraph |
 |--------|-------|-----------|
@@ -241,7 +241,9 @@ Valid operations in the AIS DSL:
 
 | Operation | Aliases | Purpose |
 |-----------|---------|---------|
-| `rsn` | reason, think, llm | LLM reasoning call |
+| `ask` | - | Simple Q&A with LLM |
+| `think` | - | Extended thinking with budget |
+| `reason` | - | Structured reasoning with belief updates |
 | `plan` | - | Task decomposition |
 | `reflect` | - | Self-analysis |
 | `inv` | invoke, tool | Tool invocation |
@@ -382,13 +384,13 @@ Measures actual LLM latency and token usage with Ollama.
 - **Output**: `tab/real-llm.tex`
 - **Metrics**: LLM latency, Input/Output tokens, Scheduler overhead ratio
 
-### FuseReasoning Quality (`fusion_quality/`)
-Compares O0 (unfused) vs O1 (with FuseReasoning) performance.
+### FuseAskOps Quality (`fusion_quality/`)
+Compares O0 (unfused) vs O1 (with FuseAskOps) performance.
 - **Output**: `tab/fusion-applicability.tex`
 - **Metrics**: Speedup by task type (classification, extraction, reasoning, creative)
 
 ### Token Estimation (`token_estimation/`)
-Estimates token cost savings from FuseReasoning optimization.
+Estimates token cost savings from FuseAskOps optimization.
 - **Metrics**: Token reduction percentage, API calls saved, System prompt amortization
 
 ### Rust Substrate Overhead (`../runtime/paper_benchmarks.rs`)

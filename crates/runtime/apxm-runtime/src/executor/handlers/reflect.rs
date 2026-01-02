@@ -53,8 +53,12 @@ pub struct ReflectionOutput {
 ///   "summary": "Overall execution analysis"
 /// }
 /// ```
-pub async fn execute(ctx: &ExecutionContext, node: &Node, _inputs: Vec<Value>) -> Result<Value> {
-    let prompt = get_string_attribute(node, "prompt")?;
+pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -> Result<Value> {
+    // Get prompt from attribute or use default
+    let prompt = get_optional_string_attribute(node, "prompt")?
+        .or_else(|| get_optional_string_attribute(node, "trace_id").ok().flatten())
+        .unwrap_or_default();
+
     let model = get_optional_string_attribute(node, "model")?;
     let limit = node
         .attributes
@@ -67,6 +71,17 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, _inputs: Vec<Value>) -
         .and_then(|v| v.as_u64())
         .unwrap_or(3) as u32;
 
+    // Build context from inputs (the content to reflect on)
+    let input_context = if !inputs.is_empty() {
+        inputs
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    } else {
+        String::new()
+    };
+
     // Get recent episodic history
     let episodes = ctx.memory.query_episodes(&ctx.execution_id).await?;
     let history_slice = episodes.iter().rev().take(limit).collect::<Vec<_>>();
@@ -78,20 +93,40 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, _inputs: Vec<Value>) -
         .collect::<Vec<_>>()
         .join("\n");
 
+    // Build reflection prompt - use input context as primary content
+    let effective_prompt = if !input_context.is_empty() {
+        format!(
+            "Analyze and reflect on the following content, identifying strengths, weaknesses, and areas for improvement:\n\n{}\n\n{}",
+            input_context,
+            if prompt.is_empty() { "" } else { &prompt }
+        )
+    } else if !prompt.is_empty() {
+        prompt.clone()
+    } else {
+        "Reflect on recent execution history and provide insights.".to_string()
+    };
+
     // Build reflection prompt using apxm-prompts
     let prompt_context = serde_json::json!({
-        "prompt": prompt,
+        "prompt": effective_prompt,
         "history": history_text,
         "episode_count": history_slice.len(),
     });
 
+    let history_section = if history_text.is_empty() {
+        String::new()
+    } else {
+        format!("Execution history:\n{}", history_text)
+    };
+
     let full_prompt = apxm_backends::render_prompt("reflect_system", &prompt_context)
         .unwrap_or_else(|_| {
             format!(
-                "Reflect on the following execution history and provide insights:\n\n{}\n\n{}\n\n\
+                "{}\n\n{}\n\n\
                  Respond in JSON format with: insights (array), patterns (array), \
                  recommendations (array), and summary (string).",
-                prompt, history_text
+                effective_prompt,
+                history_section
             )
         });
 

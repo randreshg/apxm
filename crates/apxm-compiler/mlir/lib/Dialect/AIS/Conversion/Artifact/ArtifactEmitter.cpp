@@ -557,13 +557,23 @@ LogicalResult emitNode(Operation *op, DagBuildState &state, ArtifactDag &dag) {
 
   for (NamedAttribute named : op->getAttrs()) {
     StringRef key = named.getName().getValue();
-    StringRef emitKey = key == "parameters" ? "params" : key;
+    // Translate attribute names to match runtime expectations
+    StringRef emitKey = key;
+    if (key == "parameters") emitKey = "params";
+    if (key == "space") emitKey = "memory_tier";  // MLIR uses space, runtime expects memory_tier
     node.attributes.emplace_back(emitKey.str(),
                                  convertAttribute(named.getValue()));
   }
 
+  // UMemOp needs a key attribute - auto-generate from node ID
+  if (isa<UMemOp>(op)) {
+    node.attributes.emplace_back("key",
+        ArtifactValue::string("mem_" + std::to_string(node.id)));
+  }
+
   // ReasonOp supports inner planning for structured reasoning
-  if (isa<ais::PlanOp, ais::ReasonOp>(op)) {
+  // Note: PlanOp has its own handler (plan.rs) that manages inner plans differently
+  if (isa<ais::ReasonOp>(op)) {
     node.attributes.emplace_back("inner_plan_supported",
                                  ArtifactValue::boolean(true));
   }

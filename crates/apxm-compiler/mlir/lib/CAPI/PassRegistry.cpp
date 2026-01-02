@@ -20,14 +20,9 @@ struct PassDescriptor {
   ApxmPassCategory category;
 };
 
+// Generated from Rust pass definitions - see apxm-ais/src/passes/mod.rs
 constexpr PassDescriptor kPassDescriptors[] = {
-  {"normalize", "Normalize agent structure", APXM_PASS_TRANSFORM},
-  {"fuse-reasoning", "Fuse reasoning chains", APXM_PASS_TRANSFORM},
-  {"scheduling", "Schedule operation execution", APXM_PASS_TRANSFORM},
-  {"canonicalizer", "MLIR canonicalizer (includes DCE)", APXM_PASS_OPTIMIZATION},
-  {"cse", "MLIR common subexpression elimination", APXM_PASS_OPTIMIZATION},
-  {"symbol-dce", "MLIR symbol dead code elimination", APXM_PASS_OPTIMIZATION},
-  {"lower-to-async", "Lower AIS to Async dialect", APXM_PASS_LOWERING},
+  #include "ais/CAPI/PassDescriptors.inc"
 };
 
 class PassRegistry {

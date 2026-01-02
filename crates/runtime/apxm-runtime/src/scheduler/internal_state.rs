@@ -60,6 +60,9 @@ impl Default for OpState {
 ///
 /// Tokens represent data dependencies in the dataflow graph. This type
 /// tracks whether a token is ready and what value it holds.
+///
+/// Note: Token delegation (for switch/case sub-DAG splicing) is tracked
+/// separately in `SchedulerState::delegated_tokens` to avoid per-token overhead.
 #[derive(Debug)]
 pub(crate) struct TokenState {
     /// Whether the token value is ready.

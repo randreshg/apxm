@@ -98,6 +98,18 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         "Switch: splicing sub-DAG"
     );
 
+    // Mark switch's output tokens as delegated BEFORE splicing
+    // This prevents the switch handler's Null return from being published to these tokens
+    // The sub-DAG will produce the actual values
+    if !node.output_tokens.is_empty() {
+        ctx.dag_splicer.mark_tokens_delegated(node.id, &node.output_tokens);
+        tracing::debug!(
+            output_tokens = ?node.output_tokens,
+            node_id = node.id,
+            "Switch: marked output tokens as delegated to sub-DAG"
+        );
+    }
+
     // Splice the sub-DAG into execution
     match ctx.dag_splicer.splice_dag(sub_dag, token_connections).await {
         Ok(_token_mapping) => {
@@ -285,10 +297,11 @@ fn parse_edge(value: &Value) -> Result<Option<Edge>> {
 }
 
 /// Map operation type number to AISOperationType
+/// Must match OP_KIND_MAP in artifact.rs
 fn map_op_type(num: u32) -> Option<AISOperationType> {
     match num {
         0 => Some(AISOperationType::Inv),
-        1 => Some(AISOperationType::Rsn),
+        1 => Some(AISOperationType::Ask),    // was Rsn
         2 => Some(AISOperationType::QMem),
         3 => Some(AISOperationType::UMem),
         4 => Some(AISOperationType::Plan),
@@ -309,6 +322,9 @@ fn map_op_type(num: u32) -> Option<AISOperationType> {
         19 => Some(AISOperationType::ConstStr),
         20 => Some(AISOperationType::Switch),
         21 => Some(AISOperationType::FlowCall),
+        22 => Some(AISOperationType::Print),
+        23 => Some(AISOperationType::Think),
+        24 => Some(AISOperationType::Reason),
         _ => None,
     }
 }

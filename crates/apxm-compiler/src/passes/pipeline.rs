@@ -7,7 +7,7 @@ use apxm_core::types::OptimizationLevel;
 pub fn build_pipeline(pm: &mut PassManager, level: OptimizationLevel) -> Result<()> {
     match level {
         OptimizationLevel::O0 => {
-            pm.lower_to_async()?;
+            // No optimization passes at O0
         }
         OptimizationLevel::O1 | OptimizationLevel::O2 | OptimizationLevel::O3 => {
             // Normalize first to deduplicate context operands and properly link IR
@@ -15,11 +15,10 @@ pub fn build_pipeline(pm: &mut PassManager, level: OptimizationLevel) -> Result<
             pm.normalize()?
                 .unconsumed_value_warning()?
                 .scheduling()?
-                .fuse_reasoning()?
+                .fuse_ask_ops()?
                 .canonicalizer()?
                 .cse()?
-                .symbol_dce()?
-                .lower_to_async()?;
+                .symbol_dce()?;
         }
     }
     Ok(())

@@ -283,6 +283,19 @@ impl DagSplicer for SchedulerDagSplicer {
 
         self.state.splice_dag(config)
     }
+
+    fn mark_tokens_delegated(&self, delegator_node_id: u64, token_ids: &[TokenId]) {
+        for &token_id in token_ids {
+            // Insert into sparse delegation set - O(1) and zero overhead for non-switch DAGs
+            self.state.delegated_tokens.insert((delegator_node_id, token_id));
+            log_debug!(
+                "scheduler::splice",
+                token_id = token_id,
+                delegator = delegator_node_id,
+                "Marked token as delegated"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -341,7 +354,7 @@ mod tests {
         let state = Arc::new(state);
 
         let mut inner_dag = ExecutionDag::new();
-        let mut inner = Node::new(5, AISOperationType::Rsn);
+        let mut inner = Node::new(5, AISOperationType::Ask);
         inner.input_tokens = vec![10];
         inner.output_tokens = vec![11];
         inner_dag.nodes.push(inner);
@@ -364,7 +377,7 @@ mod tests {
             .filter_map(|entry| {
                 let id = *entry.key();
                 let node = entry.value();
-                (id > 2 && matches!(node.op_type, AISOperationType::Rsn)).then_some(id)
+                (id > 2 && matches!(node.op_type, AISOperationType::Ask)).then_some(id)
             })
             .next()
             .expect("inserted node present");

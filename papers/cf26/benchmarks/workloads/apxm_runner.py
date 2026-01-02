@@ -11,7 +11,7 @@ Usage:
     from apxm_runner import run_ais_workflow, APXMConfig, run_workload_benchmark
 
     # Run single workflow
-    config = APXMConfig(opt_level=1)  # O1 for FuseReasoning, O0 without
+    config = APXMConfig(opt_level=1)  # O1 for FuseAskOps, O0 without
     result = run_ais_workflow("workflow.ais", config)
 
     # Run full workload benchmark (consolidated entry point)
@@ -121,7 +121,7 @@ def _run_compile_diagnostics(workflow_path: Path, opt_level: int) -> Dict[str, A
 @dataclass
 class APXMConfig:
     """Configuration for A-PXM execution."""
-    opt_level: int = 1  # 0 = no FuseReasoning, 1+ = with FuseReasoning
+    opt_level: int = 1  # 0 = no FuseAskOps, 1+ = with FuseAskOps
     timeout_seconds: float = 120.0
     conda_prefix: Optional[str] = None
 
@@ -237,7 +237,7 @@ def run_ais_workflow(
     This is the CORRECT way to benchmark A-PXM - it goes through:
     1. DSL parsing
     2. MLIR generation
-    3. Optimization passes (including FuseReasoning if opt_level > 0)
+    3. Optimization passes (including FuseAskOps if opt_level > 0)
     4. Artifact generation
     5. Runtime execution with real LLM calls
 
@@ -557,9 +557,9 @@ def compare_optimization_levels(
     iterations: int = 10,
 ) -> Dict[str, Any]:
     """
-    Compare O0 (no FuseReasoning) vs O1 (with FuseReasoning).
+    Compare O0 (no FuseAskOps) vs O1 (with FuseAskOps).
 
-    This is the key benchmark for FuseReasoning evaluation.
+    This is the key benchmark for FuseAskOps evaluation.
     """
     workflow_path = Path(workflow_path)
 
@@ -568,12 +568,12 @@ def compare_optimization_levels(
     print()
 
     # Run with O0 (no optimization)
-    print("Running with O0 (no FuseReasoning)...")
+    print("Running with O0 (no FuseAskOps)...")
     o0_config = APXMConfig(opt_level=0)
     o0_results = run_benchmark(workflow_path, o0_config, iterations)
 
-    # Run with O1 (with FuseReasoning)
-    print("Running with O1 (FuseReasoning enabled)...")
+    # Run with O1 (with FuseAskOps)
+    print("Running with O1 (FuseAskOps enabled)...")
     o1_config = APXMConfig(opt_level=1)
     o1_results = run_benchmark(workflow_path, o1_config, iterations)
 
@@ -640,7 +640,7 @@ WORKLOADS: Dict[int, WorkloadConfig] = {
     2: WorkloadConfig(
         name="chain_fusion",
         directory="2_chain_fusion",
-        description="FuseReasoning compiler optimization (5 calls -> 1)",
+        description="FuseAskOps compiler optimization (5 calls -> 1)",
         workload_type=WorkloadType.FUSION_COMPARISON,
         initial_state={"step1": "", "step2": "", "step3": "", "step4": "", "summary": ""},
     ),
@@ -711,7 +711,7 @@ WORKLOADS: Dict[int, WorkloadConfig] = {
     13: WorkloadConfig(
         name="fusion_quality",
         directory="13_fusion_quality",
-        description="FuseReasoning optimization effectiveness by task type",
+        description="FuseAskOps optimization effectiveness by task type",
         workload_type=WorkloadType.FUSION_COMPARISON,
         extra_workflows={
             "classification": "classification.ais",

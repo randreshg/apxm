@@ -131,19 +131,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_validate_rsn_success() {
+    fn test_validate_ask_success() {
         let mut attrs = HashMap::new();
-        attrs.insert("prompt".to_string(), Value::String("test".to_string()));
+        attrs.insert("template_str".to_string(), Value::String("test".to_string()));
 
-        let result = validate_operation(AISOperationType::Rsn, &attrs);
+        let result = validate_operation(AISOperationType::Ask, &attrs);
         assert!(result.is_ok());
     }
 
     #[test]
-    fn test_validate_rsn_missing_prompt() {
+    fn test_validate_ask_missing_template() {
         let attrs = HashMap::new();
 
-        let result = validate_operation(AISOperationType::Rsn, &attrs);
+        let result = validate_operation(AISOperationType::Ask, &attrs);
         assert!(matches!(result, Err(ValidationError::MissingField { .. })));
     }
 
@@ -193,9 +193,9 @@ mod tests {
     #[test]
     fn test_has_required_fields() {
         let mut attrs = HashMap::new();
-        attrs.insert("prompt".to_string(), Value::String("test".to_string()));
+        attrs.insert("template_str".to_string(), Value::String("test".to_string()));
 
-        assert!(has_required_fields(AISOperationType::Rsn, &attrs));
+        assert!(has_required_fields(AISOperationType::Ask, &attrs));
         assert!(!has_required_fields(AISOperationType::UMem, &attrs));
     }
 
@@ -210,17 +210,17 @@ mod tests {
     #[test]
     fn test_strict_validation_unknown_field() {
         let mut attrs = HashMap::new();
-        attrs.insert("prompt".to_string(), Value::String("test".to_string()));
+        attrs.insert("template_str".to_string(), Value::String("test".to_string()));
         attrs.insert(
             "unknown_field".to_string(),
             Value::String("value".to_string()),
         );
 
         // Normal validation should pass
-        assert!(validate_operation(AISOperationType::Rsn, &attrs).is_ok());
+        assert!(validate_operation(AISOperationType::Ask, &attrs).is_ok());
 
         // Strict validation should fail
-        let result = validate_operation_strict(AISOperationType::Rsn, &attrs);
+        let result = validate_operation_strict(AISOperationType::Ask, &attrs);
         assert!(matches!(result, Err(ValidationError::UnknownField { .. })));
     }
 }

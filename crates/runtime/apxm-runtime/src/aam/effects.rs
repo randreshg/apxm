@@ -54,7 +54,12 @@ pub fn operation_effects(op: &AISOperationType) -> OperationEffects {
         AISOperationType::UMem => OperationEffects::new()
             .write(Beliefs)
             .write(ShortTermMemory),
-        AISOperationType::Rsn => OperationEffects::new()
+        // Ask: reads beliefs only (simple Q&A)
+        AISOperationType::Ask => OperationEffects::new().read(Beliefs),
+        // Think: reads beliefs only (extended thinking, no side effects)
+        AISOperationType::Think => OperationEffects::new().read(Beliefs),
+        // Reason: reads AND writes beliefs + goals (structured reasoning)
+        AISOperationType::Reason => OperationEffects::new()
             .read(Beliefs)
             .write(Beliefs)
             .write(Goals),
@@ -77,8 +82,9 @@ mod tests {
 
     #[test]
     fn reorder_conflicts() {
-        let rsn = operation_effects(&AISOperationType::Rsn);
+        // Reason writes to Beliefs, QMem reads Beliefs -> cannot reorder
+        let reason = operation_effects(&AISOperationType::Reason);
         let qmem = operation_effects(&AISOperationType::QMem);
-        assert!(!rsn.can_reorder_with(&qmem));
+        assert!(!reason.can_reorder_with(&qmem));
     }
 }

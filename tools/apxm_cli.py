@@ -6,14 +6,16 @@ Automatically handles conda environment detection, MLIR environment setup,
 and provides convenient commands for building, running, and testing.
 
 Usage:
-    python tools/apxm_cli.py doctor
-    python tools/apxm_cli.py build
-    python tools/apxm_cli.py build --compiler
-    python tools/apxm_cli.py build --runtime
-    python tools/apxm_cli.py run examples/hello_world.ais
-    python tools/apxm_cli.py workloads check
+    apxm doctor                     # Check environment status
+    apxm build                      # Build compiler and runtime
+    apxm execute workflow.ais       # Compile and execute an AIS file
+    apxm compile workflow.ais -o out.apxmobj  # Compile to artifact
+    apxm run out.apxmobj            # Run pre-compiled artifact
+    apxm workloads list             # List available workloads
+    apxm workloads check            # Verify all workloads compile
 """
 
+import os
 import shutil
 import subprocess
 import sys
@@ -125,8 +127,8 @@ def build(
         if runtime:
             targets.append("runtime")
 
-    # Build feature set
-    features = ["driver"]
+    # Build feature set (always include metrics for proper observability)
+    features = ["driver", "metrics"]
     if no_trace:
         features.append("no-trace")
         print_header("Building APXM (no-trace)")
@@ -180,21 +182,162 @@ def build(
         print_warning("Note: --trace flag at runtime will have no effect")
 
 
-# Run Command (executes pre-compiled artifacts)
-@app.command()
-def run(
-    file: Path = typer.Argument(..., help="Compiled artifact (.apxmobj) to run"),
+# Execute Command (compile + run .ais files)
+@app.command(context_settings={"allow_interspersed_args": False})
+def execute(
+    file: Path = typer.Argument(..., help="AIS file to compile and execute"),
+    args: Optional[list[str]] = typer.Argument(None, help="Arguments for entry flow"),
+    opt_level: int = typer.Option(1, "-O", "--opt-level", help="Optimization level (0-3)"),
     trace: Optional[str] = typer.Option(
         None, "--trace", help="Enable tracing (levels: trace, debug, info, warn, error)"
     ),
+    emit_metrics: Optional[Path] = typer.Option(
+        None, "--emit-metrics", help="Emit runtime metrics to JSON file"
+    ),
+    cargo: bool = typer.Option(
+        False, "--cargo", help="Use cargo run instead of pre-built binary (slower, but auto-rebuilds)"
+    ),
 ):
-    """Run a pre-compiled artifact (.apxmobj). Use 'apxm compiler run' for .ais files."""
+    """Compile and execute an AIS file.
+
+    Options must come BEFORE the file path. Arguments after file are passed to entry flow:
+        apxm execute [options] workflow.ais [args...]
+
+    Examples:
+        apxm execute workflow.ais "quantum computing"
+        apxm execute --emit-metrics metrics.json workflow.ais "topic"
+        apxm execute -O2 --trace debug workflow.ais "input"
+    """
     config = get_config()
     conda_prefix = ensure_conda_env()
     env = setup_mlir_environment(conda_prefix, config.target_dir)
 
-    # Resolve to absolute path (subprocess runs from repo root)
+    # Resolve to absolute paths (relative to current working directory)
+    cwd = Path.cwd()
     file = file.resolve()
+    if emit_metrics and not emit_metrics.is_absolute():
+        emit_metrics = (cwd / emit_metrics).resolve()
+
+    if not file.exists():
+        print_error(f"File not found: {file}")
+        raise typer.Exit(1)
+
+    print_header(f"Executing {file.name}")
+
+    if cargo:
+        cmd = [
+            "cargo", "run", "-p", "apxm-cli", "--features", "driver,metrics", "--release",
+            "--", "execute", f"-O{opt_level}"
+        ]
+        if trace:
+            cmd.extend(["--trace", trace])
+        if emit_metrics:
+            cmd.extend(["--emit-metrics", str(emit_metrics)])
+        cmd.append(str(file))
+        if args:
+            cmd.extend(args)
+    else:
+        if not config.compiler_bin.exists():
+            print_error("Compiler not built!")
+            print_info("Run: apxm build")
+            print_info("Or use --cargo to auto-build")
+            raise typer.Exit(1)
+        cmd = [str(config.compiler_bin), "execute", f"-O{opt_level}"]
+        if trace:
+            cmd.extend(["--trace", trace])
+        if emit_metrics:
+            cmd.extend(["--emit-metrics", str(emit_metrics)])
+        cmd.append(str(file))
+        if args:
+            cmd.extend(args)
+
+    result = subprocess.run(cmd, cwd=config.apxm_dir, env=env)
+    raise typer.Exit(result.returncode)
+
+
+# Compile Command (compile .ais to .apxmobj)
+@app.command()
+def compile(
+    file: Path = typer.Argument(..., help="AIS file to compile"),
+    output: Path = typer.Option(..., "-o", "--output", help="Output artifact path"),
+    emit_diagnostics: Optional[Path] = typer.Option(
+        None, "--emit-diagnostics", help="Emit diagnostics JSON file"
+    ),
+    opt_level: int = typer.Option(1, "-O", "--opt-level", help="Optimization level (0-3)"),
+    cargo: bool = typer.Option(
+        False, "--cargo", help="Use cargo run instead of pre-built binary (slower, but auto-rebuilds)"
+    ),
+):
+    """Compile an AIS file to an artifact (.apxmobj)."""
+    config = get_config()
+    conda_prefix = ensure_conda_env()
+    env = setup_mlir_environment(conda_prefix, config.target_dir)
+
+    # Resolve to absolute paths (relative to current working directory)
+    cwd = Path.cwd()
+    file = file.resolve()
+    output = (cwd / output).resolve() if not output.is_absolute() else output
+    if emit_diagnostics:
+        emit_diagnostics = (cwd / emit_diagnostics).resolve() if not emit_diagnostics.is_absolute() else emit_diagnostics
+
+    if not file.exists():
+        print_error(f"File not found: {file}")
+        raise typer.Exit(1)
+
+    print_step(f"Compiling {file.name}...")
+
+    if cargo:
+        cmd = [
+            "cargo", "run", "-p", "apxm-cli", "--features", "driver,metrics", "--release",
+            "--", "compile", str(file), "-o", str(output), f"-O{opt_level}"
+        ]
+        if emit_diagnostics:
+            cmd.extend(["--emit-diagnostics", str(emit_diagnostics)])
+    else:
+        if not config.compiler_bin.exists():
+            print_error("Compiler not built!")
+            print_info("Run: apxm build")
+            print_info("Or use --cargo to auto-build")
+            raise typer.Exit(1)
+        cmd = [str(config.compiler_bin), "compile", str(file), "-o", str(output), f"-O{opt_level}"]
+        if emit_diagnostics:
+            cmd.extend(["--emit-diagnostics", str(emit_diagnostics)])
+
+    result = subprocess.run(cmd, cwd=config.apxm_dir, env=env)
+
+    if result.returncode == 0:
+        print_success(f"Compiled to {output}")
+    else:
+        print_error("Compilation failed!")
+
+    raise typer.Exit(result.returncode)
+
+
+# Run Command (run pre-compiled .apxmobj artifacts)
+@app.command(context_settings={"allow_interspersed_args": False})
+def run(
+    file: Path = typer.Argument(..., help="Compiled artifact (.apxmobj) to run"),
+    args: Optional[list[str]] = typer.Argument(None, help="Arguments for entry flow"),
+    trace: Optional[str] = typer.Option(
+        None, "--trace", help="Enable tracing (levels: trace, debug, info, warn, error)"
+    ),
+    emit_metrics: Optional[Path] = typer.Option(
+        None, "--emit-metrics", help="Emit runtime metrics to JSON file"
+    ),
+):
+    """Run a pre-compiled artifact (.apxmobj).
+
+    Use 'apxm execute <file.ais>' to compile and run source files.
+    """
+    config = get_config()
+    conda_prefix = ensure_conda_env()
+    env = setup_mlir_environment(conda_prefix, config.target_dir)
+
+    # Resolve to absolute paths (relative to current working directory)
+    cwd = Path.cwd()
+    file = file.resolve()
+    if emit_metrics:
+        emit_metrics = (cwd / emit_metrics).resolve() if not emit_metrics.is_absolute() else emit_metrics
 
     if not file.exists():
         print_error(f"File not found: {file}")
@@ -203,7 +346,7 @@ def run(
     # Validate file extension
     if file.suffix != ".apxmobj":
         print_error(f"Expected .apxmobj artifact file, got: {file.suffix or 'no extension'}")
-        print_info("Use 'apxm compiler run <file.ais>' to compile and run source files.")
+        print_info("Use 'apxm execute <file.ais>' to compile and run source files.")
         raise typer.Exit(1)
 
     if not config.compiler_bin.exists():
@@ -211,11 +354,15 @@ def run(
         print_info("Run: apxm build")
         raise typer.Exit(1)
 
-    print_header(f"Executing {file.name}")
+    print_header(f"Running {file.name}")
 
-    cmd = [str(config.compiler_bin), "exec", str(file)]
+    cmd = [str(config.compiler_bin), "run", str(file)]
     if trace:
         cmd.extend(["--trace", trace])
+    if emit_metrics:
+        cmd.extend(["--emit-metrics", str(emit_metrics)])
+    if args:
+        cmd.extend(args)
     result = subprocess.run(cmd, cwd=config.apxm_dir, env=env)
     raise typer.Exit(result.returncode)
 
@@ -279,7 +426,7 @@ def doctor():
         print_success(f"Compiler binary: {config.compiler_bin}")
     else:
         print_warning("Compiler not built")
-        print_info("  Build with: python tools/apxm_cli.py compiler build")
+        print_info("  Build with: apxm build")
 
     # Check workloads directory
     if config.workloads_dir.exists():
@@ -314,8 +461,8 @@ def compiler_build(
         print_error("Cannot specify both --trace and --no-trace")
         raise typer.Exit(1)
 
-    # Build feature set
-    features = ["driver"]
+    # Build feature set (always include metrics for proper observability)
+    features = ["driver", "metrics"]
     if no_trace:
         features.append("no-trace")
         print_header("Building APXM Compiler (no-trace)")
@@ -348,132 +495,6 @@ def compiler_build(
     else:
         print_error("Build failed!")
         raise typer.Exit(1)
-
-
-@compiler_app.command("run", context_settings={"allow_interspersed_args": False})
-def compiler_run(
-    file: Path = typer.Argument(..., help="AIS file to compile and run"),
-    args: Optional[list[str]] = typer.Argument(None, help="Arguments for entry flow"),
-    optimization: str = typer.Option("O1", "-O", help="Optimization level (O0/O1/O2)"),
-    trace: Optional[str] = typer.Option(
-        None, "--trace", help="Enable tracing (levels: trace, debug, info, warn, error)"
-    ),
-    emit_diagnostics: Optional[Path] = typer.Option(
-        None, "--emit-diagnostics", help="Emit diagnostics to file"
-    ),
-    cargo: bool = typer.Option(
-        False, "--cargo", help="Use cargo run instead of pre-built binary (slower, but auto-rebuilds)"
-    ),
-):
-    """Compile and run an AIS file.
-
-    Pass arguments after the file path for entry flow parameters:
-        apxm compiler run workflow.ais "quantum computing"
-    """
-    config = get_config()
-    conda_prefix = ensure_conda_env()
-    env = setup_mlir_environment(conda_prefix, config.target_dir)
-
-    # Resolve to absolute paths (subprocess runs from repo root)
-    file = file.resolve()
-    if emit_diagnostics:
-        emit_diagnostics = emit_diagnostics.resolve()
-
-    if not file.exists():
-        print_error(f"File not found: {file}")
-        raise typer.Exit(1)
-
-    print_header(f"Running {file.name}")
-
-    if cargo:
-        # Use cargo run (auto-rebuilds if needed)
-        # Options must come before the file for trailing_var_arg to work
-        cmd = [
-            "cargo", "run", "-p", "apxm-cli", "--features", "driver", "--release",
-            "--", "run", f"-{optimization}"
-        ]
-        if trace:
-            cmd.extend(["--trace", trace])
-        if emit_diagnostics:
-            cmd.extend(["--emit-diagnostics", str(emit_diagnostics)])
-        # File and entry flow arguments come after all options
-        cmd.append(str(file))
-        if args:
-            cmd.extend(args)
-    else:
-        # Use pre-built binary (faster)
-        if not config.compiler_bin.exists():
-            print_error("Compiler not built!")
-            print_info("Run: python tools/apxm_cli.py compiler build")
-            print_info("Or use --cargo to auto-build")
-            raise typer.Exit(1)
-        # Options must come before the file for trailing_var_arg to work
-        cmd = [str(config.compiler_bin), "run", f"-{optimization}"]
-        if trace:
-            cmd.extend(["--trace", trace])
-        if emit_diagnostics:
-            cmd.extend(["--emit-diagnostics", str(emit_diagnostics)])
-        # File and entry flow arguments come after all options
-        cmd.append(str(file))
-        if args:
-            cmd.extend(args)
-
-    result = subprocess.run(cmd, cwd=config.apxm_dir, env=env)
-    raise typer.Exit(result.returncode)
-
-
-@compiler_app.command("compile")
-def compiler_compile(
-    file: Path = typer.Argument(..., help="AIS file to compile"),
-    output: Path = typer.Option(..., "-o", "--output", help="Output artifact path"),
-    emit_mlir: bool = typer.Option(False, "--emit-mlir", help="Emit MLIR output"),
-    optimization: str = typer.Option("O1", "-O", help="Optimization level (O0/O1/O2)"),
-    cargo: bool = typer.Option(
-        False, "--cargo", help="Use cargo run instead of pre-built binary (slower, but auto-rebuilds)"
-    ),
-):
-    """Compile an AIS file to an artifact."""
-    config = get_config()
-    conda_prefix = ensure_conda_env()
-    env = setup_mlir_environment(conda_prefix, config.target_dir)
-
-    # Resolve to absolute paths (subprocess runs from repo root)
-    file = file.resolve()
-    output = output.resolve()
-
-    if not file.exists():
-        print_error(f"File not found: {file}")
-        raise typer.Exit(1)
-
-    print_step(f"Compiling {file.name}...")
-
-    if cargo:
-        # Use cargo run (auto-rebuilds if needed)
-        cmd = [
-            "cargo", "run", "-p", "apxm-cli", "--features", "driver", "--release",
-            "--", "compile", str(file), "-o", str(output), f"-{optimization}"
-        ]
-        if emit_mlir:
-            cmd.append("--emit-mlir")
-    else:
-        # Use pre-built binary (faster)
-        if not config.compiler_bin.exists():
-            print_error("Compiler not built!")
-            print_info("Run: python tools/apxm_cli.py compiler build")
-            print_info("Or use --cargo to auto-build")
-            raise typer.Exit(1)
-        cmd = [str(config.compiler_bin), "compile", str(file), "-o", str(output), f"-{optimization}"]
-        if emit_mlir:
-            cmd.append("--emit-mlir")
-
-    result = subprocess.run(cmd, cwd=config.apxm_dir, env=env)
-
-    if result.returncode == 0:
-        print_success(f"Compiled to {output}")
-    else:
-        print_error("Compilation failed!")
-
-    raise typer.Exit(result.returncode)
 
 
 # Workload Commands

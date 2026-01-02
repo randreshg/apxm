@@ -49,25 +49,51 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     );
 
     // Convert inputs to HashMap<String, Value>
-    // For now, we use numbered keys (arg0, arg1, ...) if capability expects positional args
-    // or expects args to be in node attributes
+    // Priority: 1) params_json attribute, 2) arg_* attributes, 3) positional inputs
     let mut args = HashMap::new();
 
-    // Check if args are in attributes (named arguments)
-    let args_from_attrs = node
-        .attributes
-        .iter()
-        .filter(|(k, _)| k.starts_with("arg_"))
-        .map(|(k, v)| (k.trim_start_matches("arg_").to_string(), v.clone()))
-        .collect::<HashMap<String, Value>>();
+    // First, check for params_json attribute (from InvOp MLIR)
+    if let Some(params_json) = node.attributes.get("params_json").and_then(|v| v.as_string()) {
+        // Parse JSON and extract key-value pairs
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(params_json) {
+            if let Some(obj) = parsed.as_object() {
+                for (k, v) in obj {
+                    let value = match v {
+                        serde_json::Value::String(s) => Value::String(s.clone()),
+                        serde_json::Value::Number(n) => {
+                            if let Some(i) = n.as_i64() {
+                                Value::Number(apxm_core::types::values::Number::Integer(i))
+                            } else if let Some(f) = n.as_f64() {
+                                Value::Number(apxm_core::types::values::Number::Float(f))
+                            } else {
+                                continue;
+                            }
+                        }
+                        serde_json::Value::Bool(b) => Value::Bool(*b),
+                        _ => continue, // Skip complex nested values
+                    };
+                    args.insert(k.clone(), value);
+                }
+            }
+        }
+    }
 
-    if !args_from_attrs.is_empty() {
-        // Use named arguments from attributes
-        args = args_from_attrs;
-    } else {
-        // Use positional arguments from inputs
-        for (i, input_value) in inputs.iter().enumerate() {
-            args.insert(format!("arg{}", i), input_value.clone());
+    // If no args from params_json, check for arg_* attributes (named arguments)
+    if args.is_empty() {
+        let args_from_attrs = node
+            .attributes
+            .iter()
+            .filter(|(k, _)| k.starts_with("arg_"))
+            .map(|(k, v)| (k.trim_start_matches("arg_").to_string(), v.clone()))
+            .collect::<HashMap<String, Value>>();
+
+        if !args_from_attrs.is_empty() {
+            args = args_from_attrs;
+        } else {
+            // Fall back to positional arguments from inputs
+            for (i, input_value) in inputs.iter().enumerate() {
+                args.insert(format!("arg{}", i), input_value.clone());
+            }
         }
     }
 

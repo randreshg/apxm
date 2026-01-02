@@ -61,7 +61,7 @@ This document defines the complete JSON output format for benchmark runs.
 ```json
 {
   "input": {
-    "workflow_source": "agent LLMProbe { flow main { rsn \"What is 2+2?\" -> answer } }",
+    "workflow_source": "agent LLMProbe { flow main { rsn(\"What is 2+2?\") -> answer } }",
     "workflow_path": "/path/to/workflow.ais"
   }
 }
@@ -259,7 +259,7 @@ Array of per-iteration data collected without metrics feature:
     "opt_level": 1
   },
   "input": {
-    "workflow_source": "agent LLMProbe {\n  flow main {\n    rsn \"What is 2+2?\" -> answer\n  }\n}",
+    "workflow_source": "agent LLMProbe {\n  flow main {\n    rsn(\"What is 2+2?\") -> answer\n  }\n}",
     "workflow_path": null
   },
   "compiler": {

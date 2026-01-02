@@ -10,22 +10,10 @@ extern "C" {
 #endif
 
 typedef struct {
-  bool optimize;
-  bool emit_comments;
-  bool emit_debug_symbols;
-  bool standalone;
-  const char *module_name;
-} ApxmCodegenOptions;
-
-typedef struct {
   const char *module_name;
   bool emit_debug_json;
   const char *target_version;
 } ApxmArtifactOptions;
-
-// Rust code generation interface
-char *apxm_codegen_emit_rust(ApxmModule *module);
-char *apxm_codegen_emit_rust_with_options(ApxmModule *module, const ApxmCodegenOptions *options);
 
 // Artifact generation interface
 char *apxm_codegen_emit_artifact(ApxmModule *module, const ApxmArtifactOptions *options);

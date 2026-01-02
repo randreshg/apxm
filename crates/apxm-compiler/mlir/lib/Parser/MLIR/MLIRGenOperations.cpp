@@ -157,8 +157,9 @@ mlir::Value MLIRGenOperations::generateUMemOp(MLIRGen &gen, llvm::ArrayRef<std::
 mlir::Value MLIRGenOperations::generateInvOp(MLIRGen &gen, llvm::StringRef callee,
                                            llvm::ArrayRef<std::unique_ptr<Expr>> args,
                                            mlir::Location loc) {
+  // If no args, use callee as capability name (e.g., `inv` -> capability="inv")
+  // If args provided, use first arg as capability (empty string triggers verifier error)
   llvm::StringRef capability = args.empty() ? callee : extractStringArg(args[0].get());
-  if (capability.empty()) capability = callee;
 
   llvm::StringRef params = args.size() > 1 ? extractStringArg(args[1].get())
                                           : llvm::StringRef(data::EMPTY_JSON);
@@ -181,8 +182,8 @@ mlir::Value MLIRGenOperations::generateInvOp(MLIRGen &gen, llvm::StringRef calle
 //===----------------------------------------------------------------------===//
 
 /// Helper to collect context arguments and extract template from args
-static std::pair<llvm::StringRef, llvm::SmallVector<mlir::Value, 4>>
-extractTemplateAndContext(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args) {
+std::pair<llvm::StringRef, llvm::SmallVector<mlir::Value, 4>>
+MLIRGenOperations::extractTemplateAndContext(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args) {
   llvm::SmallVector<mlir::Value, 4> contextArgs;
   llvm::StringRef templateStr;
 

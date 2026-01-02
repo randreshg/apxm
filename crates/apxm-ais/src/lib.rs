@@ -36,6 +36,7 @@
 pub mod aam;
 pub mod memory;
 pub mod operations;
+pub mod passes;
 pub mod types;
 pub mod validation;
 
@@ -44,10 +45,10 @@ pub use aam::{AAM, Beliefs, Capabilities, Goals};
 pub use memory::MemoryTier;
 pub use operations::tablegen::generate_tablegen;
 pub use operations::{
-    AGENT, AIS_OPERATIONS, AISOperationType, BRANCH_ON_VALUE, COMMUNICATE, CONST_STR, ERR, EXC,
+    AGENT, AIS_OPERATIONS, AISOperationType, ASK, BRANCH_ON_VALUE, COMMUNICATE, CONST_STR, ERR, EXC,
     FENCE, INTERNAL_OPERATIONS, INV, JUMP, LOOP_END, LOOP_START, MERGE, METADATA_OPERATIONS,
     OperationCategory, OperationEmit, OperationField, OperationMetadata, OperationSpec, PLAN, QMEM,
-    REFLECT, RETURN, RSN, TRY_CATCH, UMEM, VERIFY, WAIT_ALL, find_operation_by_mnemonic,
+    REASON, REFLECT, RETURN, THINK, TRY_CATCH, UMEM, VERIFY, WAIT_ALL, find_operation_by_mnemonic,
     find_operation_by_name, get_all_operations, get_operation_metadata, get_operation_spec,
     get_public_operations,
 };
@@ -56,3 +57,6 @@ pub use validation::{
     ValidationError, has_required_fields, missing_required_fields, validate_operation,
     validate_operation_strict,
 };
+
+// Re-export pass generation functions (used by build.rs)
+pub use passes::{generate_pass_descriptors, generate_pass_dispatch, generate_passes_tablegen};

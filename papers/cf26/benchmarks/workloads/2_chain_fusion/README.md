@@ -2,22 +2,22 @@
 
 ## Purpose
 
-Demonstrate that A-PXM's typed IR enables compiler optimizations impossible in opaque orchestration frameworks. The FuseReasoning pass batches dependent RSN chains into a single LLM call.
+Demonstrate that A-PXM's typed IR enables compiler optimizations impossible in opaque orchestration frameworks. The FuseAskOps pass batches dependent ask chains into a single LLM call.
 
 ## What We're Demonstrating
 
-**A-PXM Property**: Typed IR enables FuseReasoning optimization
+**A-PXM Property**: Typed IR enables FuseAskOps optimization
 
-Because A-PXM represents operations in a typed intermediate representation, the compiler can analyze dependency chains and transform them. FuseReasoning identifies sequential RSN operations where each depends on the previous output, then batches them into a single prompt.
+Because A-PXM represents operations in a typed intermediate representation, the compiler can analyze dependency chains and transform them. FuseAskOps identifies sequential ask operations where each depends on the previous output, then batches them into a single prompt.
 
 ```
 WITHOUT FUSION (5 API calls):
-[RSN 1] --2s--> [RSN 2] --2s--> [RSN 3] --2s--> [RSN 4] --2s--> [RSN 5]
+[ASK 1] --2s--> [ASK 2] --2s--> [ASK 3] --2s--> [ASK 4] --2s--> [ASK 5]
 Total: ~10s, 5 LLM calls
 
 WITH FUSION (1 API call):
 +--------------------------------------------------+
-| FUSED RSN (single batched prompt)                |
+| FUSED ASK (single batched prompt)                |
 | "Define quantum computing                        |
 | ---                                              |
 | Using the above, explain qubits                  |
@@ -37,13 +37,13 @@ SPEEDUP: 5x
 ```
 agent ChainFusion {
     @entry flow main() -> str {
-        // These 5 RSN ops form a dependency chain
-        // FuseReasoning pass will batch them into a single prompt
-        rsn("Define quantum computing") -> step1
-        rsn("Using: " + step1 + ", explain qubits") -> step2
-        rsn("Using: " + step2 + ", explain superposition") -> step3
-        rsn("Using: " + step3 + ", explain entanglement") -> step4
-        rsn("Summarize all concepts above: " + step4) -> summary
+        // These 5 ask ops form a dependency chain
+        // FuseAskOps pass will batch them into a single prompt
+        ask("Define quantum computing") -> step1
+        ask("Using: " + step1 + ", explain qubits") -> step2
+        ask("Using: " + step2 + ", explain superposition") -> step3
+        ask("Using: " + step3 + ", explain entanglement") -> step4
+        ask("Summarize all concepts above: " + step4) -> summary
         return summary
     }
 }
@@ -60,44 +60,42 @@ LangGraph has no visibility into prompt structure:
 
 ## How to Run
 
-### Prerequisites
+### Quick Run (Compile + Execute)
 
 ```bash
-# Start Ollama (local LLM backend)
-ollama serve
-ollama pull gpt-oss:20b-cloud
+cd papers/cf26/benchmarks/workloads/2_chain_fusion
 
-# Install Python dependencies
-pip install langgraph langchain-ollama
+# Execute without fusion (O0)
+apxm execute -O0 workflow.ais
 
-# Build A-PXM compiler (from repo root)
-apxm compiler build
+# Execute with fusion (O1) - should be faster
+apxm execute -O1 workflow.ais
 ```
 
-### Run A-PXM Version
+### Compile Only
 
 ```bash
-cd papers/CF26/benchmarks/workloads/2_chain_fusion
+# Compile without fusion
+apxm compile workflow.ais -o workflow_O0.apxmobj -O0 --emit-diagnostics diagnostics_O0.json
 
-# Compile without fusion (O0)
-apxm compiler compile workflow.ais -O0
+# Compile with fusion
+apxm compile workflow.ais -o workflow_O1.apxmobj -O1 --emit-diagnostics diagnostics_O1.json
+```
 
-# Compile with fusion (O1)
-apxm compiler compile workflow.ais -O1
+### Run Pre-compiled Artifact
 
-# Compare both optimization levels
-apxm compiler run workflow.ais -O0
-apxm compiler run workflow.ais -O1
+```bash
+# Run with metrics export
+apxm run --emit-metrics metrics.json workflow_O1.apxmobj
 ```
 
 ### Run LangGraph Comparison
 
 ```bash
-cd papers/CF26/benchmarks/workloads/2_chain_fusion
 python workflow.py
 ```
 
-### Run Full Benchmark (Both)
+### Run Full Benchmark
 
 ```bash
 # From repo root
@@ -111,36 +109,70 @@ apxm workloads run 2_chain_fusion --json
 
 ## Results
 
-*To be filled after benchmark execution*
+### Measured Values
 
-| Metric | LangGraph | A-PXM (O0) | A-PXM (O1) | Notes |
-|--------|-----------|------------|------------|-------|
-| LLM Calls | 5 | 5 | 1 | Fusion reduces calls |
-| Mean latency (ms) | - | - | - | |
-| API cost estimate | ~$0.05 | ~$0.05 | ~$0.01 | |
-| Speedup | 1x | 1x | ~5x | |
+| Metric | O0 (No Fusion) | O1 (With Fusion) | Improvement |
+|--------|----------------|------------------|-------------|
+| Duration (ms) | 11276 | 5062 | **2.2x faster** |
+| LLM Calls | 5 | 1 | **5x reduction** |
+| DAG Nodes | 20 | 2 | 10x simpler graph |
+| DAG Edges | 19 | 1 | Minimal dependencies |
+| Input Tokens | 743 | 141 | 5x reduction |
+| Output Tokens | 1075 | 589 | Fewer total tokens |
 
----
+### Compiler Passes Applied
+
+| O0 | O1 |
+|----|-----|
+| lower-to-async | normalize, scheduling, **fuse-ask-ops**, canonicalizer, cse, symbol-dce, lower-to-async |
 
 ## Analysis
 
-*To be filled after benchmark execution*
+### Observations
 
-### Expected Observations
+1. **Significant latency reduction**: 5 sequential LLM calls at ~2s each = ~11s unfused. Fusion reduces to 1 call at ~5s = **2.2x speedup**.
 
-1. **Fusion mechanism works**: The compiler successfully identifies the dependency chain and batches operations.
+2. **Cost savings**: Fewer API calls + fewer total tokens (743 → 141 input) = significant cost reduction.
 
-2. **Latency reduction**: With 5 sequential calls at ~2s each, unfused takes ~10s. Fused should take ~2-3s.
-
-3. **Cost savings**: Fewer API calls means lower cost, especially with per-call overhead.
-
-### Research Insights from EVALUATION_DISCUSSION.md
-
-The evaluation revealed that **naive fusion isn't always optimal**:
-- FuseReasoning reduced LLM calls from 5 to 1
-- But fused prompts can be harder for LLMs to process
-- This demonstrates the IR enables the optimization, and opens research into cost-aware fusion heuristics
+3. **Framework overhead negligible**: Scheduling overhead (~2µs/op) is 6 orders of magnitude below LLM latency.
 
 ### Key Insight
 
-This workload demonstrates that A-PXM's typed IR enables compiler transformations impossible in frameworks where operations are opaque functions. The IR exposes structure needed for optimization research.
+This workload demonstrates that A-PXM's **typed IR enables compiler transformations impossible in opaque frameworks**. LangGraph/CrewAI cannot see inside Python functions to optimize prompt chains. A-PXM's IR exposes the structure needed for automatic optimization.
+
+---
+
+## Future Work: Fusion Heuristics
+
+The current FuseAskOps pass eagerly fuses all valid ask chains. Production deployment requires heuristics to identify cases where fusion may harm output quality. The pass infrastructure is defined in `Passes.td` with the following options:
+
+### Configurable Options (Defined, Not Yet Implemented)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `max-fusion-depth` | 5 | Maximum operations to fuse (0 = unlimited) |
+| `max-template-tokens` | 2000 | Maximum estimated tokens in fused template |
+| `fusion-mode` | "auto" | Strategy: `eager`, `conservative`, `auto` |
+
+### Planned Heuristics
+
+1. **Chain Length Limits**: Long chains (>5 ops) may overwhelm the model's ability to produce coherent multi-part responses. Track fusion depth during chain tracing.
+
+2. **Token Budget**: Estimate combined template token count. Very long prompts degrade response quality and may hit context limits.
+
+3. **Fusion Modes**:
+   - `eager`: Always fuse (current behavior, good for latency-critical workloads)
+   - `conservative`: Only fuse short chains (2-3 ops)
+   - `auto`: Apply quality-preservation heuristics based on task type
+
+4. **Per-Operation Opt-Out**: Support `@[no_fuse]` attribute on individual operations where developers know fusion would harm quality (e.g., complex reasoning steps).
+
+5. **Task-Type Awareness**: Different tasks tolerate fusion differently:
+   - **Classification/Extraction**: Highly fusible (structured output)
+   - **Creative/Reasoning**: Less fusible (model needs separation)
+
+### Research Questions
+
+- What is the quality degradation curve as fusion depth increases?
+- Can we detect task type from template content to auto-select fusion strategy?
+- Should we fuse only within "homogeneous" chains (same task type)?

@@ -90,8 +90,12 @@ static bool hasSideEffects(Operation *op) {
 
 /// Returns a human-readable name for the operation for warning messages.
 static StringRef getOpDisplayName(Operation *op) {
-  if (isa<RsnOp>(op))
-    return "reasoning";
+  if (isa<AskOp>(op))
+    return "ask";
+  if (isa<ThinkOp>(op))
+    return "think";
+  if (isa<ReasonOp>(op))
+    return "reason";
   if (isa<QMemOp>(op))
     return "memory query";
   if (isa<PlanOp>(op))

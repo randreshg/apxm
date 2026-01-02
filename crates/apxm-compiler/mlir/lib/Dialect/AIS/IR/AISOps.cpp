@@ -134,9 +134,9 @@ LogicalResult AskOp::verify() {
   if (failed(verifyType<TokenType>(*this, getResult(), "result must be !ais.token type")))
     return failure();
 
-  // Must have template (ask always needs a prompt)
-  if (getTemplateStr().empty())
-    return emitOpError("ask operation requires a template");
+  // Must have template OR context operands (dynamic prompts use context)
+  if (getTemplateStr().empty() && getContext().empty())
+    return emitOpError("ask operation requires a template or context operands");
 
   // Check all context operands are tokens, handles, or goals
   if (failed(verifyTypes<TokenType, HandleType, GoalType>(
@@ -156,9 +156,9 @@ LogicalResult ThinkOp::verify() {
   if (failed(verifyType<TokenType>(*this, getResult(), "result must be !ais.token type")))
     return failure();
 
-  // Must have template (think always needs a prompt)
-  if (getTemplateStr().empty())
-    return emitOpError("think operation requires a template");
+  // Must have template OR context operands (dynamic prompts use context)
+  if (getTemplateStr().empty() && getContext().empty())
+    return emitOpError("think operation requires a template or context operands");
 
   // Check all context operands are tokens, handles, or goals
   if (failed(verifyTypes<TokenType, HandleType, GoalType>(
@@ -637,6 +637,11 @@ LogicalResult SwitchOp::verify() {
   size_t totalRegions = getRegions().size();
   if (totalRegions == 0)
     return emitOpError("switch must have at least a default region");
+
+  // Switch must have at least one case (besides default)
+  if (numLabels == 0)
+    return emitOpError("switch must have at least one case label");
+
   size_t numCaseRegions = totalRegions - 1;  // Last region is default
   if (numLabels != numCaseRegions)
     return emitOpError() << "expected " << numLabels << " case regions but got " << numCaseRegions;

@@ -88,6 +88,72 @@ impl CapabilityExecutor for EchoCapability {
     }
 }
 
+/// Mock search capability for testing and demos
+///
+/// Returns simulated search results for any query.
+/// Useful for demonstrating tool invocation without external dependencies.
+pub struct MockSearchCapability {
+    metadata: CapabilityMetadata,
+}
+
+impl MockSearchCapability {
+    pub fn new() -> Self {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query"
+                }
+            },
+            "required": ["query"]
+        });
+
+        Self {
+            metadata: CapabilityMetadata::new(
+                "search",
+                "Mock search capability that returns simulated results",
+                schema,
+            )
+            .with_returns("string")
+            .with_latency(50),
+        }
+    }
+}
+
+impl Default for MockSearchCapability {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl CapabilityExecutor for MockSearchCapability {
+    async fn execute(&self, args: HashMap<String, Value>) -> CapabilityResult<Value> {
+        // Accept query from various sources:
+        // - "query": standard schema key
+        // - "arg_query": named argument from attributes
+        // - "arg0": first positional argument
+        let query = args
+            .get("query")
+            .or_else(|| args.get("arg_query"))
+            .or_else(|| args.get("arg0"))
+            .and_then(|v| v.as_string())
+            .map(|s| s.as_str())
+            .unwrap_or("unknown");
+
+        // Return mock search results
+        Ok(Value::String(format!(
+            "[Search Results for '{}']: 1. Overview of {}. 2. Key concepts in {}. 3. Related topics and applications.",
+            query, query, query
+        )))
+    }
+
+    fn metadata(&self) -> &CapabilityMetadata {
+        &self.metadata
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

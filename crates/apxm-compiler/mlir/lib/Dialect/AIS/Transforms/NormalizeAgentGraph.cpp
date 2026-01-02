@@ -4,7 +4,7 @@
  *        predictable attribute values and operand order.
  *
  * The pass performs two local transformations:
- *   1. Deduplicate the context operand list of every `ais.rsn`
+ *   1. Deduplicate the context operand list of LLM ops (ask, think, reason)
  *   2. Lower-case the string attributes `space` and `capability` on every op
  *
  * Both changes are semantics-preserving and idempotent, so the pass can be
@@ -53,13 +53,27 @@ struct NormalizeAgentGraphPass : impl::NormalizeAgentGraphBase<NormalizeAgentGra
       uint64_t stringNorms = 0;
     } stats;
 
-    // Phase 1: Deduplicate reasoning contexts
-    APXM_AIS_DEBUG("Deduplicating reasoning contexts...");
-    module.walk([&](RsnOp op) {
+    // Phase 1: Deduplicate LLM op contexts (ask, think, reason)
+    APXM_AIS_DEBUG("Deduplicating LLM op contexts...");
+    module.walk([&](AskOp op) {
       if (needsDeduplication(op.getContext())) {
-        deduplicateReasoningContext(op);
+        deduplicateLlmContext(op);
         stats.contextDedups++;
-        APXM_AIS_DEBUG("  Deduplicated context in: " << op.getTemplateStrAttr());
+        APXM_AIS_DEBUG("  Deduplicated context in ask: " << op.getTemplateStrAttr());
+      }
+    });
+    module.walk([&](ThinkOp op) {
+      if (needsDeduplication(op.getContext())) {
+        deduplicateLlmContext(op);
+        stats.contextDedups++;
+        APXM_AIS_DEBUG("  Deduplicated context in think: " << op.getTemplateStrAttr());
+      }
+    });
+    module.walk([&](ReasonOp op) {
+      if (needsDeduplication(op.getContext())) {
+        deduplicateLlmContext(op);
+        stats.contextDedups++;
+        APXM_AIS_DEBUG("  Deduplicated context in reason: " << op.getTemplateStrAttr());
       }
     });
 
@@ -100,7 +114,9 @@ private:
     return true;
   }
 
-  static void deduplicateReasoningContext(RsnOp op) {
+  /// Deduplicate context operands for any LLM op (ask, think, reason)
+  template <typename LlmOpT>
+  static void deduplicateLlmContext(LlmOpT op) {
     // Preserve operand order while removing duplicates
     llvm::SmallDenseSet<Value, 8> seen;
     SmallVector<Value> uniqueContext;

@@ -1,20 +1,18 @@
 /**
  * @file  Passes.td
- * @brief Transform and lowering passes that operate on the AIS dialect.
+ * @brief Transform passes that operate on the AIS dialect.
  *
- * Passes are split into two categories:
- *
- * 1. Domain-specific transforms
- *    - normalize, scheduling, fuse-reasoning – work purely on AIS ops
- * 2. Lowering passes
- *    - lower-to-async – convert to `async.execute` so the runtime can schedule
- *    - ais-emit-rust  – transpile to Rust source that uses apxm-runtime
+ * Domain-specific transforms:
+ *   - normalize      – canonicalize graph structure
+ *   - scheduling     – annotate with tier/cost/parallel-safe flags
+ *   - fuse-ask-ops   – batch ask LLM calls (highest ROI)
+ *   - unconsumed-value-warning – warn about unused results
  *
  * Each pass declares its constructor, dependent dialects, and tunable options
  * so that `mlir-opt --help` displays them.  Options are wired to the
  * generated pass class via `PassOptions` and can be set on the command line:
  *
- *   mlir-opt --pass-pipeline='builtin.module(ais-fuse-reasoning)' \
+ *   mlir-opt --pass-pipeline='builtin.module(ais-fuse-ask-ops)' \
  *            --ais-parallel-threshold=5
  */
 
@@ -65,19 +63,35 @@ def CapabilityScheduling : Pass<"scheduling", "mlir::ModuleOp"> {
   ];
 }
 
-def FuseReasoning : Pass<"fuse-reasoning", "mlir::ModuleOp"> {
-  let summary = "Fuse reasoning chains to reduce LLM calls";
+def FuseAskOps : Pass<"fuse-ask-ops", "mlir::ModuleOp"> {
+  let summary = "Fuse adjacent ask operations to reduce LLM calls";
   let description = [{
-    Identifies producer-consumer ais.rsn chains and merges them into single
+    Identifies producer-consumer ais.ask chains and merges them into single
     batched operations. This is the highest-ROI optimization (100-400x) as it:
 
     - Reduces serialized LLM API calls (each ~500ms-2s)
-    - Concatenates reasoning templates with separator
+    - Concatenates ask templates with separator
     - Combines contexts from both operations
 
-    Only fuses when producer has single use.
+    Only fuses AskOp (LOW latency). ThinkOp/ReasonOp are not fused because
+    they have different semantics (extended thinking, structured output).
+
+    Fusion is guarded by heuristics to prevent quality degradation:
+    - Max fusion depth limits chain length (default: 5)
+    - Max template tokens prevents overly long prompts (default: 2000)
+    - Operations can opt-out via `ais.no_fuse` attribute
+
+    Only fuses when producer has single use through the consumer chain.
   }];
-  let constructor = "mlir::ais::createFuseReasoningPass()";
+  let constructor = "mlir::ais::createFuseAskOpsPass()";
+  let options = [
+    Option<"maxFusionDepth", "max-fusion-depth", "unsigned", /*default=*/"5",
+           "Maximum number of operations to fuse into one (0 = unlimited)">,
+    Option<"maxTemplateTokens", "max-template-tokens", "unsigned", /*default=*/"2000",
+           "Maximum estimated tokens in fused template (0 = unlimited)">,
+    Option<"fusionMode", "fusion-mode", "std::string", /*default=*/"\"auto\"",
+           "Fusion strategy: 'eager' (always), 'conservative' (short chains), 'auto' (heuristics)">
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -101,47 +115,6 @@ def UnconsumedValueWarning : Pass<"unconsumed-value-warning", "mlir::ModuleOp"> 
     emission, as a diagnostic aid rather than a transformation.
   }];
   let constructor = "mlir::ais::createUnconsumedValueWarningPass()";
-}
-
-//===----------------------------------------------------------------------===//
-// Conversion/Lowering Passes
-//===----------------------------------------------------------------------===//
-
-def AISToAsyncPass : Pass<"lower-to-async", "mlir::ModuleOp"> {
-  let summary = "Lower AIS operations to async dialect";
-  let description = [{
-    Converts AIS operations (inv, rsn, qmem, umem, wait_all) to MLIR's
-    async dialect by wrapping them in async.execute regions. This:
-
-    - Makes parallelism explicit in the IR
-    - Enables async-aware optimizations
-    - Prepares for runtime interpretation
-
-    Note: Runtime interprets async dialect directly without additional
-    lowering layer (no AsyncToRuntime pass needed per ais-compiler design).
-  }];
-  let constructor = "mlir::ais::createAISToAsyncPass()";
-  let dependentDialects = ["async::AsyncDialect", "func::FuncDialect"];
-}
-
-def AISToRustPass : Pass<"ais-emit-rust", "mlir::ModuleOp"> {
-  let summary = "Emit Rust source code from AIS dialect";
-  let description = [{
-    Transpiles AIS operations to Rust source code that uses apxm-runtime.
-    The generated code:
-
-    - Uses apxm-runtime's public API (AgentBuilder, Executor, operations)
-    - Is human-readable and debuggable
-    - Compiles to native code with rustc
-    - Achieves native performance (no interpretation overhead)
-
-    This pass enables ahead-of-time compilation of agent programs.
-  }];
-  let constructor = "mlir::ais::createAISToRustPass()";
-  let options = [
-    Option<"output", "output", "std::string", /*default=*/"\"\"",
-           "Output file path for generated Rust code">
-  ];
 }
 
 #endif // APXM_AIS_PASSES

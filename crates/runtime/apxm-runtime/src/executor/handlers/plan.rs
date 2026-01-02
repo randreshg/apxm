@@ -46,8 +46,19 @@ use std::collections::HashMap;
 /// }
 /// ```
 pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -> Result<Value> {
-    let _ = inputs;
-    let goal = get_string_attribute(node, "goal")?;
+    // Get goal from attribute or first input (for dynamic goals from variables)
+    let goal_attr = get_optional_string_attribute(node, "goal")?.unwrap_or_default();
+    let goal = if goal_attr.is_empty() && !inputs.is_empty() {
+        // Use first input as goal if attribute is empty
+        inputs[0].to_string()
+    } else if goal_attr.is_empty() {
+        return Err(RuntimeError::Operation {
+            op_type: node.op_type.clone(),
+            message: "PLAN requires either a goal attribute or input".to_string(),
+        });
+    } else {
+        goal_attr
+    };
     let model = get_optional_string_attribute(node, "model")?;
     let context_key = get_optional_string_attribute(node, "context_key")?;
     let supports_inner_plan = node

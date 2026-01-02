@@ -18,8 +18,10 @@
 #include "ais/Parser/MLIR/MLIRGenForwards.h"
 #include "mlir/IR/Value.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include <memory>
+#include <utility>
 
 namespace apxm::parser {
 
@@ -76,6 +78,10 @@ private:
 
   /// Extract string literal from expression if possible
   static llvm::StringRef extractStringArg(Expr *expr);
+
+  /// Extract template string and context arguments from LLM op args
+  static std::pair<llvm::StringRef, llvm::SmallVector<mlir::Value, 4>>
+  extractTemplateAndContext(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args);
 };
 
 } // namespace apxm::parser

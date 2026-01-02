@@ -329,7 +329,7 @@ async fn handle_success(event: &WorkerEvent<'_>, value: Value, attempts: u32) {
     #[cfg(feature = "metrics")]
     let routing_start = std::time::Instant::now();
 
-    publish_outputs(event.state, event.outputs, value).await;
+    publish_outputs(event.state, event.node_id, event.outputs, value).await;
 
     #[cfg(feature = "metrics")]
     event
@@ -410,7 +410,7 @@ async fn handle_failure(event: &WorkerEvent<'_>, error: RuntimeError, attempts: 
             "Using fallback value"
         );
         // Use fallback value instead of failing
-        publish_outputs(event.state, event.outputs, fallback).await;
+        publish_outputs(event.state, event.node_id, event.outputs, fallback).await;
         finish_one(event.state);
         false // Don't abort
     } else {
@@ -425,8 +425,21 @@ async fn handle_failure(event: &WorkerEvent<'_>, error: RuntimeError, attempts: 
 }
 
 /// Publish output tokens and propagate readiness to downstream consumers.
-async fn publish_outputs(state: &SchedulerState, outputs: &[TokenId], value: Value) {
+///
+/// If a token is marked as delegated by this node, we skip publishing
+/// (a spliced sub-DAG will produce the actual value).
+async fn publish_outputs(state: &SchedulerState, node_id: u64, outputs: &[TokenId], value: Value) {
     for &token_id in outputs {
+        // Fast path: check sparse delegation set (almost always empty)
+        if state.delegated_tokens.contains(&(node_id, token_id)) {
+            apxm_token!(trace,
+                token_id = token_id,
+                delegator = node_id,
+                "Token delegated by this node; skipping publish"
+            );
+            continue;
+        }
+
         // Mark token as ready with value
         if let Some(mut token) = state.tokens.get_mut(&token_id) {
             if token.ready {

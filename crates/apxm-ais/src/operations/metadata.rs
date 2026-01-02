@@ -103,19 +103,55 @@ pub static UMEM: OperationMetadata = OperationMetadata {
     needs_submission: true,
 };
 
-/// Reason operation metadata.
-pub static RSN: OperationMetadata = OperationMetadata {
-    name: "rsn",
+/// Ask operation metadata - simple Q&A (LOW latency).
+pub static ASK: OperationMetadata = OperationMetadata {
+    name: "ask",
+    fields: &[
+        OperationField {
+            name: "prompt",
+            required: true,
+            description: "Prompt template for asking",
+        },
+        OperationField {
+            name: "context",
+            required: false,
+            description: "Additional context for the question",
+        },
+    ],
+    needs_submission: true,
+};
+
+/// Think operation metadata - extended thinking with budget (HIGH latency).
+pub static THINK: OperationMetadata = OperationMetadata {
+    name: "think",
+    fields: &[
+        OperationField {
+            name: "prompt",
+            required: true,
+            description: "Prompt template for thinking",
+        },
+        OperationField {
+            name: "budget_tokens",
+            required: false,
+            description: "Token budget for extended thinking",
+        },
+        OperationField {
+            name: "context",
+            required: false,
+            description: "Additional context for thinking",
+        },
+    ],
+    needs_submission: true,
+};
+
+/// Reason operation metadata - structured reasoning with belief/goal updates (MEDIUM latency).
+pub static REASON: OperationMetadata = OperationMetadata {
+    name: "reason",
     fields: &[
         OperationField {
             name: "prompt",
             required: true,
             description: "Prompt template for reasoning",
-        },
-        OperationField {
-            name: "model",
-            required: false,
-            description: "LLM model to use",
         },
         OperationField {
             name: "context",
@@ -491,7 +527,9 @@ pub fn get_operation_metadata(op_type: AISOperationType) -> &'static OperationMe
         AISOperationType::Agent => &AGENT,
         AISOperationType::QMem => &QMEM,
         AISOperationType::UMem => &UMEM,
-        AISOperationType::Rsn => &RSN,
+        AISOperationType::Ask => &ASK,
+        AISOperationType::Think => &THINK,
+        AISOperationType::Reason => &REASON,
         AISOperationType::Plan => &PLAN,
         AISOperationType::Reflect => &REFLECT,
         AISOperationType::Verify => &VERIFY,

@@ -113,7 +113,7 @@ private:
   mlir::Value generateUMemOp(llvm::ArrayRef<std::unique_ptr<Expr>> args, mlir::Location loc);
   mlir::Value generateInvOp(llvm::StringRef callee, llvm::ArrayRef<std::unique_ptr<Expr>> args,
                            mlir::Location loc);
-  mlir::Value generateRsnOp(llvm::ArrayRef<std::unique_ptr<Expr>> args, mlir::Location loc);
+  // LLM operations are now in MLIRGenOperations (ask, think, reason)
   mlir::Value generateReflectOp(llvm::ArrayRef<std::unique_ptr<Expr>> args, mlir::Location loc,
                                llvm::SmallVector<mlir::Value, 4> &contextArgs);
   mlir::Value generatePlanOp(llvm::ArrayRef<std::unique_ptr<Expr>> args, mlir::Location loc,

@@ -9,14 +9,15 @@
 
 agent ToolAgent {
     @entry flow main(query: str) -> str {
-        // 1. Invoke registered capability (search tool)
+        // 1. Invoke registered capability (mock search tool)
         // The runtime's capability registry validates this at compile time
-        // Syntax: inv "capability_name" ("params") -> result
-        inv "search" ("{}") -> search_results
+        inv("search", "{\"query\": \"quantum computing\"}") -> search_results
 
         // 2. Reason about results to formulate answer
-        rsn "Given search results: " + search_results + ", answer the query: " + query -> answer
+        ask("Given search results: " + search_results + ", answer this query: " + query) -> answer
 
+        print("Tool Invocation Result")
+        print(answer)
         return answer
     }
 }

@@ -146,9 +146,12 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
             request = request.with_system_prompt(system_prompt);
         }
         LlmMode::Think => {
-            // Extended thinking - set budget if available
+            // Extended thinking - set budget via metadata for backends that support it
             if let Some(budget_tokens) = budget {
-                request = request.with_thinking_budget(budget_tokens as u32);
+                request = request.with_metadata_value(
+                    "thinking_budget",
+                    serde_json::json!(budget_tokens),
+                );
             }
             let system_prompt = apxm_backends::render_prompt("think_system", &serde_json::json!({}))
                 .unwrap_or_else(|_| {

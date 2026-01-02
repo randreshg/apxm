@@ -5,7 +5,9 @@ use std::{
     process::Command,
 };
 
-use apxm_ais::generate_tablegen;
+use apxm_ais::{
+    generate_pass_descriptors, generate_pass_dispatch, generate_passes_tablegen, generate_tablegen,
+};
 use apxm_core::utils::build::{
     LibraryConfig, LinkSpec, Platform, detect_llvm_version, emit_link_directives,
     find_versioned_mlir_library, get_target_dir, get_workspace_root, locate_library,
@@ -90,6 +92,7 @@ fn setup_rerun_triggers() {
     }
     // Also rerun if apxm-ais changes (for TableGen regeneration)
     println!("cargo:rerun-if-changed=../apxm-ais/src/operations/");
+    println!("cargo:rerun-if-changed=../apxm-ais/src/passes/");
 }
 
 /// Generate TableGen (.td) file from Rust definitions.
@@ -111,6 +114,72 @@ fn generate_tablegen_file(out_dir: &Path) -> Result<PathBuf> {
     );
 
     Ok(tablegen_path)
+}
+
+/// Generate pass-related files from Rust definitions.
+///
+/// This makes Rust the single source of truth for AIS passes.
+/// Generates:
+/// - Passes.generated.td - MLIR TableGen pass definitions
+/// - PassDispatch.inc - C API dispatch switch statement
+/// - PassDescriptors.inc - Pass registry descriptors
+fn generate_pass_files(out_dir: &Path, build_dir: Option<&Path>) -> Result<()> {
+    // Generate Passes.generated.td
+    let passes_td_content = generate_passes_tablegen();
+    let passes_td_path = out_dir.join("Passes.generated.td");
+    fs::write(&passes_td_path, &passes_td_content)
+        .with_context(|| format!("Failed to write Passes.td: {}", passes_td_path.display()))?;
+    log_info!(
+        "apxm-compiler-build",
+        "Generated Passes.td: {} ({} bytes)",
+        passes_td_path.display(),
+        passes_td_content.len()
+    );
+
+    // Generate PassDispatch.inc
+    let dispatch_content = generate_pass_dispatch();
+    let dispatch_path = out_dir.join("PassDispatch.inc");
+    fs::write(&dispatch_path, &dispatch_content)
+        .with_context(|| format!("Failed to write PassDispatch.inc: {}", dispatch_path.display()))?;
+    log_info!(
+        "apxm-compiler-build",
+        "Generated PassDispatch.inc: {} ({} bytes)",
+        dispatch_path.display(),
+        dispatch_content.len()
+    );
+
+    // Generate PassDescriptors.inc
+    let descriptors_content = generate_pass_descriptors();
+    let descriptors_path = out_dir.join("PassDescriptors.inc");
+    fs::write(&descriptors_path, &descriptors_content)
+        .with_context(|| format!("Failed to write PassDescriptors.inc: {}", descriptors_path.display()))?;
+    log_info!(
+        "apxm-compiler-build",
+        "Generated PassDescriptors.inc: {} ({} bytes)",
+        descriptors_path.display(),
+        descriptors_content.len()
+    );
+
+    // Copy .inc files to CMake build directory if available
+    if let Some(build_dir) = build_dir {
+        let cmake_include_dir = build_dir.join("include/ais/CAPI");
+        fs::create_dir_all(&cmake_include_dir)?;
+
+        for file in ["PassDispatch.inc", "PassDescriptors.inc"] {
+            let src = out_dir.join(file);
+            let dst = cmake_include_dir.join(file);
+            fs::copy(&src, &dst)
+                .with_context(|| format!("Failed to copy {} to CMake build dir", file))?;
+            log_info!(
+                "apxm-compiler-build",
+                "Copied {} to {}",
+                file,
+                dst.display()
+            );
+        }
+    }
+
+    Ok(())
 }
 
 /// Locate MLIR installation and return key directories.
@@ -329,6 +398,13 @@ fn build() -> Result<()> {
         "Generating TableGen from Rust definitions..."
     );
     let _tablegen_path = generate_tablegen_file(&config.out_dir)?;
+
+    // ═══ STEP 1b: Generate Pass files from Rust (Single Source of Truth) ═══
+    log_info!(
+        "apxm-compiler-build",
+        "Generating Pass files from Rust definitions..."
+    );
+    generate_pass_files(&config.out_dir, Some(&config.build_dir))?;
 
     // ═══ STEP 2: Locate MLIR installation ═══
     let MlirLayout {

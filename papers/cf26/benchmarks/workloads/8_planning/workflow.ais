@@ -3,19 +3,21 @@
 
 agent PlannerAgent {
     @entry flow main(objective: str) -> str {
-        // 1. Decompose goal into executable steps
-        plan(objective) -> steps
+        // 1. Generate structured plan using native PLAN operation
+        // PLAN returns a goal type with structured steps and priorities
+        plan(objective) -> plan_result
 
-        // 2. Execute each step (compiler detects parallelism opportunities)
-        ask("Execute step 1: ", steps) -> step1_result
-        ask("Execute step 2: ", steps) -> step2_result
-        ask("Execute step 3: ", steps) -> step3_result
+        // 2. Execute steps in parallel, using plan as context
+        // Goal types can be passed as variadic context to ask operations
+        ask("Execute step 1 - create detailed design:", plan_result) -> step1
+        ask("Execute step 2 - implement core features:", plan_result) -> step2
+        ask("Execute step 3 - testing and refinement:", plan_result) -> step3
 
-        // 3. Merge step results
-        merge(step1_result, step2_result, step3_result) -> combined
+        // 3. Merge step results (tokens, not goals)
+        merge(step1, step2, step3) -> combined
 
         // 4. Synthesize final result
-        ask("Synthesize all step results: " + combined) -> final_result
+        ask("Synthesize these step results into a final deliverable:", combined) -> final_result
         print("=== Planning Result ===")
         print(final_result)
         return final_result

@@ -27,17 +27,13 @@ void apxm_pass_manager_add_unconsumed_value_warning(ApxmPassManager *pm);
 
 // Transform passes
 void apxm_pass_manager_add_normalize(ApxmPassManager *pm);
-void apxm_pass_manager_add_fuse_reasoning(ApxmPassManager *pm);
+void apxm_pass_manager_add_fuse_ask_ops(ApxmPassManager *pm);
 void apxm_pass_manager_add_scheduling(ApxmPassManager *pm);
 
 // Optimization passes
 void apxm_pass_manager_add_canonicalizer(ApxmPassManager *pm);  // Includes DCE
 void apxm_pass_manager_add_cse(ApxmPassManager *pm);
 void apxm_pass_manager_add_symbol_dce(ApxmPassManager *pm);
-
-// Lowering passes
-void apxm_pass_manager_add_lower_to_async(ApxmPassManager *pm);
-// NOTE: lower_to_runtime intentionally not provided.
 
 #ifdef __cplusplus
 }

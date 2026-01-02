@@ -27,6 +27,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     let space = match memory_tier.as_deref() {
         Some("stm") | Some("STM") => MemorySpace::Stm,
         Some("ltm") | Some("LTM") => MemorySpace::Ltm,
+        Some("episodic") | Some("EPISODIC") => MemorySpace::Episodic,
         None => MemorySpace::Stm, // Default to STM
         Some(other) => {
             return Err(apxm_core::error::RuntimeError::Memory {
@@ -36,8 +37,17 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         }
     };
 
-    // Store in memory
-    ctx.memory.write(space, key.clone(), value.clone()).await?;
+    // Store in memory - episodic uses record (append-only), others use write
+    match space {
+        MemorySpace::Episodic => {
+            ctx.memory
+                .record_episode(key.clone(), value.clone(), ctx.execution_id.clone())
+                .await?;
+        }
+        _ => {
+            ctx.memory.write(space, key.clone(), value.clone()).await?;
+        }
+    }
 
     ctx.aam.set_belief(
         key,

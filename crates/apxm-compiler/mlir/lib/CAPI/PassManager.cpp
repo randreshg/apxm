@@ -117,8 +117,8 @@ bool apxm_pass_manager_has_pass(ApxmPassManager* pm, const char* pass_name) {
 
   // Simple implementation - in real system would use pass registry
   static const char* known_passes[] = {
-    "normalize", "fuse-reasoning", "scheduling",
-    "canonicalizer", "cse", "symbol-dce", "inline", "lower-to-async",
+    "normalize", "fuse-ask-ops", "scheduling",
+    "canonicalizer", "cse", "symbol-dce", "inline",
     "unconsumed-value-warning"
   };
 
@@ -133,44 +133,11 @@ bool apxm_pass_manager_has_pass(ApxmPassManager* pm, const char* pass_name) {
 bool apxm_pass_manager_add_pass_by_name(ApxmPassManager* pm, const char* pass_name) {
   if (!pm || !pass_name) return false;
 
-  if (strcmp(pass_name, "normalize") == 0) {
-    apxm_pass_manager_add_normalize(pm);
-    return true;
-  }
-  if (strcmp(pass_name, "fuse-reasoning") == 0) {
-    apxm_pass_manager_add_fuse_reasoning(pm);
-    return true;
-  }
-  if (strcmp(pass_name, "scheduling") == 0) {
-    apxm_pass_manager_add_scheduling(pm);
-    return true;
-  }
-  if (strcmp(pass_name, "canonicalizer") == 0) {
-    apxm_pass_manager_add_canonicalizer(pm);
-    return true;
-  }
-  if (strcmp(pass_name, "cse") == 0) {
-    apxm_pass_manager_add_cse(pm);
-    return true;
-  }
-  if (strcmp(pass_name, "symbol-dce") == 0) {
-    apxm_pass_manager_add_symbol_dce(pm);
-    return true;
-  }
-  if (strcmp(pass_name, "inline") == 0) {
-    apxm_pass_manager_add_inline(pm);
-    return true;
-  }
-  if (strcmp(pass_name, "lower-to-async") == 0) {
-    apxm_pass_manager_add_lower_to_async(pm);
-    return true;
-  }
-  if (strcmp(pass_name, "unconsumed-value-warning") == 0) {
-    apxm_pass_manager_add_unconsumed_value_warning(pm);
-    return true;
-  }
+  // Use generated dispatch from Rust pass definitions
+  llvm::StringRef name(pass_name);
+  #include "ais/CAPI/PassDispatch.inc"
 
-  return false;
+  return false;  // Unknown pass
 }
 
 // Analysis Passes
@@ -183,8 +150,8 @@ void apxm_pass_manager_add_normalize(ApxmPassManager* pm) {
   if (pm) pm->pass_manager->addPass(mlir::ais::createNormalizeAgentGraphPass());
 }
 
-void apxm_pass_manager_add_fuse_reasoning(ApxmPassManager* pm) {
-  if (pm) pm->pass_manager->addPass(mlir::ais::createFuseReasoningPass());
+void apxm_pass_manager_add_fuse_ask_ops(ApxmPassManager* pm) {
+  if (pm) pm->pass_manager->addPass(mlir::ais::createFuseAskOpsPass());
 }
 
 void apxm_pass_manager_add_scheduling(ApxmPassManager* pm) {
@@ -206,15 +173,6 @@ void apxm_pass_manager_add_symbol_dce(ApxmPassManager* pm) {
 
 void apxm_pass_manager_add_inline(ApxmPassManager* pm) {
   if (pm) pm->pass_manager->addPass(mlir::createInlinerPass());
-}
-
-// Lowering Passes
-void apxm_pass_manager_add_lower_to_async(ApxmPassManager* pm) {
-#if defined(APXM_HAS_AIS_TO_ASYNC)
-  if (pm) pm->pass_manager->addPass(mlir::ais::createAISToAsyncPass());
-#else
-  (void)pm;
-#endif
 }
 
 } // extern "C"

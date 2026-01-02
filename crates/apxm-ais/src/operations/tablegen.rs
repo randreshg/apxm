@@ -395,7 +395,9 @@ fn to_tablegen_name(op_type: AISOperationType) -> String {
         AISOperationType::Agent => "Agent",
         AISOperationType::QMem => "QMem",
         AISOperationType::UMem => "UMem",
-        AISOperationType::Rsn => "Rsn",
+        AISOperationType::Ask => "Ask",
+        AISOperationType::Think => "Think",
+        AISOperationType::Reason => "Reason",
         AISOperationType::Plan => "Plan",
         AISOperationType::Reflect => "Reflect",
         AISOperationType::Verify => "Verify",
@@ -509,7 +511,12 @@ fn derive_mlir_spec(base: &'static OperationSpec) -> MlirOperationSpec {
     let memory_effects: &'static [MemoryEffect] = match base.op_type {
         QMem => &[MemoryEffect::MemRead(AISResource::Belief)],
         UMem => &[MemoryEffect::MemWrite(AISResource::Belief)],
-        Rsn => &[
+        // Ask: reads beliefs only (simple Q&A)
+        Ask => &[MemoryEffect::MemRead(AISResource::Belief)],
+        // Think: reads beliefs only (extended thinking, no side effects)
+        Think => &[MemoryEffect::MemRead(AISResource::Belief)],
+        // Reason: reads AND writes beliefs + goals (structured reasoning updates)
+        Reason => &[
             MemoryEffect::MemRead(AISResource::Belief),
             MemoryEffect::MemWrite(AISResource::Belief),
             MemoryEffect::MemWrite(AISResource::Goal),
@@ -526,7 +533,8 @@ fn derive_mlir_spec(base: &'static OperationSpec) -> MlirOperationSpec {
 
     // Determine which ops have verifiers/canonicalizers
     let has_verifier = !matches!(base.op_type, Agent | ConstStr);
-    let has_canonicalizer = matches!(base.op_type, Rsn | WaitAll | Merge);
+    // Ask ops are fusible and have canonicalizers
+    let has_canonicalizer = matches!(base.op_type, Ask | WaitAll | Merge);
     let has_folder = matches!(base.op_type, ConstStr);
 
     MlirOperationSpec {
@@ -598,7 +606,9 @@ mod tests {
     #[test]
     fn test_tablegen_op_names() {
         assert_eq!(to_tablegen_name(AISOperationType::Agent), "AIS_AgentOp");
-        assert_eq!(to_tablegen_name(AISOperationType::Rsn), "AIS_RsnOp");
+        assert_eq!(to_tablegen_name(AISOperationType::Ask), "AIS_AskOp");
+        assert_eq!(to_tablegen_name(AISOperationType::Think), "AIS_ThinkOp");
+        assert_eq!(to_tablegen_name(AISOperationType::Reason), "AIS_ReasonOp");
         assert_eq!(to_tablegen_name(AISOperationType::QMem), "AIS_QMemOp");
     }
 }

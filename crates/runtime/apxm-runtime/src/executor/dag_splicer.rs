@@ -38,6 +38,17 @@ pub trait DagSplicer: Send + Sync {
         inner_dag: ExecutionDag,
         token_connections: HashMap<TokenId, TokenId>,
     ) -> SpliceResult;
+
+    /// Mark tokens as delegated to a spliced sub-DAG
+    ///
+    /// When a token is marked as delegated by a node, that node's publish
+    /// will be skipped, allowing the spliced sub-DAG to produce the actual value.
+    ///
+    /// # Arguments
+    ///
+    /// * `delegator_node_id` - The node that is delegating (e.g., the Switch node)
+    /// * `token_ids` - The tokens to mark as delegated
+    fn mark_tokens_delegated(&self, delegator_node_id: u64, token_ids: &[TokenId]);
 }
 
 /// No-op splicer for contexts that don't support dynamic splicing
@@ -53,6 +64,10 @@ impl DagSplicer for NoOpSplicer {
         Err(RuntimeError::State(
             "Dynamic DAG splicing not supported in this context".to_string(),
         ))
+    }
+
+    fn mark_tokens_delegated(&self, _delegator_node_id: u64, _token_ids: &[TokenId]) {
+        // No-op: tokens cannot be delegated without scheduler state
     }
 }
 

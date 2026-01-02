@@ -161,7 +161,7 @@ mod tests {
     fn map_inputs_prefers_outer_node_inputs() {
         let mut dag = ExecutionDag::new();
 
-        let mut dangling = Node::new(1, AISOperationType::Rsn);
+        let mut dangling = Node::new(1, AISOperationType::Ask);
         dangling.input_tokens = vec![5, 6];
         dangling.output_tokens = vec![7];
 

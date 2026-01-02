@@ -1,0 +1,38 @@
+{
+  "execution": {
+    "duration_ms": 5818,
+    "nodes_executed": 12,
+    "nodes_failed": 0,
+    "status": "success"
+  },
+  "input": "/Users/randreshg/Documents/apxm/papers/CF26/benchmarks/workloads/4_scalability/workflow_n8.ais",
+  "link_phases": {
+    "artifact_ms": 0.07225,
+    "compile_ms": 0.404458,
+    "runtime_ms": 5818.610583,
+    "validation_ms": 0.006458
+  },
+  "llm": {
+    "avg_latency_ms": 3591,
+    "p50_latency_ms": 3559,
+    "p99_latency_ms": 5814,
+    "total_input_tokens": 712,
+    "total_output_tokens": 1008,
+    "total_requests": 8
+  },
+  "optimization_level": "O1",
+  "scheduler": {
+    "avg_parallelism": 5.5,
+    "max_parallelism": 9,
+    "operations_executed": 12,
+    "operations_failed": 0,
+    "overhead_breakdown": {
+      "input_collection_us": 0.5519999999999999,
+      "operation_dispatch_us": 0.0,
+      "ready_set_update_us": 0.0,
+      "token_routing_us": 1.0660833333333333,
+      "work_stealing_us": 440585.08599999995
+    },
+    "per_op_overhead_us": 440586.7040833333
+  }
+}

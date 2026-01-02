@@ -10,10 +10,8 @@
  * Pass list (in canonical order):
  *   1. normalize                 – canonicalise the graph
  *   2. scheduling                – annotate with tier/cost/parallel-safe flags
- *   3. fuse-reasoning            – batch LLM calls (highest ROI)
+ *   3. fuse-ask-ops              – batch ask LLM calls (highest ROI)
  *   4. unconsumed-value-warning  – warn about unused results (DCE)
- *   5. lower-to-async            – expose parallelism to the runtime
- *   6. ais-emit-rust             – ahead-of-time Rust code generation
  */
 
 #ifndef APXM_AIS_PASSES_H
@@ -42,14 +40,8 @@ std::unique_ptr<Pass> createNormalizeAgentGraphPass();
 /// Create CapabilityScheduling pass - annotate with scheduling metadata
 std::unique_ptr<Pass> createCapabilitySchedulingPass();
 
-/// Create FuseReasoning pass - merge reasoning chains (highest ROI)
-std::unique_ptr<Pass> createFuseReasoningPass();
-
-/// Create AISToAsync pass - lower to async dialect for runtime interpretation
-std::unique_ptr<Pass> createAISToAsyncPass();
-
-/// Create AISToRust pass - emit Rust source code from AIS dialect
-std::unique_ptr<Pass> createAISToRustPass();
+/// Create FuseAskOps pass - merge ask chains (highest ROI)
+std::unique_ptr<Pass> createFuseAskOpsPass();
 
 /// Create UnconsumedValueWarning pass - warn about unused operation results
 std::unique_ptr<Pass> createUnconsumedValueWarningPass();

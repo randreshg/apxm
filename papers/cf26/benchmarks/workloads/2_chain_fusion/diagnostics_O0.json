@@ -1,0 +1,17 @@
+{
+  "compilation_phases": {
+    "artifact_gen_ms": 0.11716599999999999,
+    "total_ms": 69.569666
+  },
+  "dag_statistics": {
+    "entry_nodes": 8,
+    "exit_nodes": 1,
+    "total_edges": 19,
+    "total_nodes": 20
+  },
+  "input": "/Users/randreshg/Documents/apxm/papers/CF26/benchmarks/workloads/2_chain_fusion/workflow.ais",
+  "optimization_level": "O0",
+  "passes_applied": [
+    "lower-to-async"
+  ]
+}

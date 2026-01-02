@@ -1,0 +1,38 @@
+{
+  "execution": {
+    "duration_ms": 5062,
+    "nodes_executed": 2,
+    "nodes_failed": 0,
+    "status": "success"
+  },
+  "input": "/Users/randreshg/Documents/apxm/papers/CF26/benchmarks/workloads/2_chain_fusion/workflow.ais",
+  "link_phases": {
+    "artifact_ms": 0.040375,
+    "compile_ms": 0.412458,
+    "runtime_ms": 5062.824541,
+    "validation_ms": 0.0029170000000000003
+  },
+  "llm": {
+    "avg_latency_ms": 5062,
+    "p50_latency_ms": 5062,
+    "p99_latency_ms": 5062,
+    "total_input_tokens": 141,
+    "total_output_tokens": 589,
+    "total_requests": 1
+  },
+  "optimization_level": "O1",
+  "scheduler": {
+    "avg_parallelism": 1.0,
+    "max_parallelism": 1,
+    "operations_executed": 2,
+    "operations_failed": 0,
+    "overhead_breakdown": {
+      "input_collection_us": 1.271,
+      "operation_dispatch_us": 0.0,
+      "ready_set_update_us": 0.0,
+      "token_routing_us": 0.9375,
+      "work_stealing_us": 3776489.009
+    },
+    "per_op_overhead_us": 3776491.2175000003
+  }
+}

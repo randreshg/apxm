@@ -51,8 +51,8 @@ impl<'ctx> PassManager<'ctx> {
         self.add_pass("scheduling")
     }
 
-    pub fn fuse_reasoning(&mut self) -> Result<&mut Self> {
-        self.add_pass("fuse-reasoning")
+    pub fn fuse_ask_ops(&mut self) -> Result<&mut Self> {
+        self.add_pass("fuse-ask-ops")
     }
 
     pub fn canonicalizer(&mut self) -> Result<&mut Self> {
@@ -65,10 +65,6 @@ impl<'ctx> PassManager<'ctx> {
 
     pub fn symbol_dce(&mut self) -> Result<&mut Self> {
         self.add_pass("symbol-dce")
-    }
-
-    pub fn lower_to_async(&mut self) -> Result<&mut Self> {
-        self.add_pass("lower-to-async")
     }
 
     pub fn unconsumed_value_warning(&mut self) -> Result<&mut Self> {

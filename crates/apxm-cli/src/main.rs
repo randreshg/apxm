@@ -76,9 +76,9 @@ enum Commands {
         #[arg(short = 'O', long = "opt-level", default_value = "1")]
         opt_level: u8,
     },
-    /// Compile + run DSL/MLIR through the runtime
+    /// Compile and execute a DSL/MLIR file through the runtime
     #[command(trailing_var_arg = true)]
-    Run {
+    Execute {
         /// Input file (.ais or .mlir)
         input: PathBuf,
         /// Arguments to pass to the entry flow
@@ -95,10 +95,13 @@ enum Commands {
         #[arg(long)]
         emit_metrics: Option<PathBuf>,
     },
-    /// Execute a pre-compiled artifact (.apxmobj) without compilation
-    Exec {
+    /// Run a pre-compiled artifact (.apxmobj)
+    Run {
         /// Input artifact file (.apxmobj)
         input: PathBuf,
+        /// Arguments to pass to the entry flow
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
         /// Emit metrics JSON file with runtime execution statistics
         #[arg(long)]
         emit_metrics: Option<PathBuf>,
@@ -141,17 +144,18 @@ async fn run_cli() -> Result<()> {
             emit_diagnostics,
             opt_level,
         } => compile_command(input, mlir, output, emit_diagnostics, opt_level),
-        Commands::Run {
+        Commands::Execute {
             input,
             args,
             mlir,
             opt_level,
             emit_metrics,
-        } => run_command(input, args, mlir, opt_level, cli.config, emit_metrics).await,
-        Commands::Exec {
+        } => execute_command(input, args, mlir, opt_level, cli.config, emit_metrics).await,
+        Commands::Run {
             input,
+            args,
             emit_metrics,
-        } => exec_command(input, cli.config, emit_metrics).await,
+        } => run_command(input, args, cli.config, emit_metrics).await,
         Commands::Doctor => doctor_command(cli.config),
         Commands::Activate { shell } => activate_command(&shell),
         Commands::Install => install_command(),
@@ -328,7 +332,7 @@ fn compile_command(
             },
             "passes_applied": match opt_level {
                 0 => vec!["lower-to-async"],
-                _ => vec!["normalize", "scheduling", "fuse-reasoning", "canonicalizer", "cse", "symbol-dce", "lower-to-async"]
+                _ => vec!["normalize", "scheduling", "fuse-ask-ops", "canonicalizer", "cse", "symbol-dce", "lower-to-async"]
             }
         });
 
@@ -348,7 +352,7 @@ fn compile_command(
 }
 
 #[cfg(feature = "driver")]
-async fn run_command(
+async fn execute_command(
     input: PathBuf,
     args: Vec<String>,
     mlir: bool,
@@ -429,8 +433,9 @@ async fn run_command(
 }
 
 #[cfg(feature = "driver")]
-async fn exec_command(
+async fn run_command(
     input: PathBuf,
+    args: Vec<String>,
     config: Option<PathBuf>,
     emit_metrics: Option<PathBuf>,
 ) -> Result<()> {
@@ -440,7 +445,7 @@ async fn exec_command(
     // Validate file extension
     if input.extension().and_then(|e| e.to_str()) != Some("apxmobj") {
         return Err(anyhow::anyhow!(
-            "Expected .apxmobj artifact file. Use 'run' command for .ais source files."
+            "Expected .apxmobj artifact file. Use 'execute' command for .ais source files."
         ));
     }
 
@@ -457,9 +462,9 @@ async fn exec_command(
         .await
         .context("Failed to initialize runtime")?;
 
-    // Execute artifact
+    // Execute artifact with args
     let result = runtime
-        .execute_artifact_auto(artifact)
+        .execute_artifact_with_args(artifact, args)
         .await
         .map_err(|e| anyhow::anyhow!("Execution failed: {}", e))?;
 
