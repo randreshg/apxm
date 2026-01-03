@@ -26,7 +26,8 @@ across the toolchain.
 |----------|------------|
 | **Metadata** | Agent |
 | **Memory** | QMem, UMem |
-| **Reasoning** | Rsn, Plan, Reflect, Verify |
+| **LLM** | Ask, Think, Reason |
+| **Planning & Analysis** | Plan, Reflect, Verify |
 | **Tools** | Inv, Exc |
 | **Control Flow** | Jump, BranchOnValue, LoopStart, LoopEnd, Return |
 | **Synchronization** | Merge, Fence, WaitAll |
@@ -41,7 +42,7 @@ use apxm_ais::{
     AISOperationType, OperationMetadata, get_operation_metadata, generate_tablegen,
 };
 
-let meta: &OperationMetadata = get_operation_metadata(AISOperationType::Rsn);
+let meta: &OperationMetadata = get_operation_metadata(AISOperationType::Ask);
 println!("Operation: {}", meta.name);
 
 let tablegen = generate_tablegen();

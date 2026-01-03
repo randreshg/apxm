@@ -215,7 +215,8 @@ mod tests {
         // Check AIS passes are present
         assert!(output.contains("def NormalizeAgentGraph"));
         assert!(output.contains("def FuseAskOps"));
-        assert!(output.contains("def AISToAsyncPass"));
+        assert!(output.contains("def CapabilityScheduling"));
+        assert!(output.contains("def UnconsumedValueWarning"));
 
         // Check built-in passes are NOT present (they're not generated)
         assert!(!output.contains("def Canonicalizer"));
@@ -248,10 +249,10 @@ mod tests {
         assert!(output.contains("\"fuse-ask-ops\""));
         assert!(output.contains("\"canonicalizer\""));
 
-        // Check categories
+        // Check categories (only Transform, Optimization, Analysis are used currently)
         assert!(output.contains("APXM_PASS_TRANSFORM"));
         assert!(output.contains("APXM_PASS_OPTIMIZATION"));
-        assert!(output.contains("APXM_PASS_LOWERING"));
+        assert!(output.contains("APXM_PASS_ANALYSIS"));
     }
 
     #[test]
@@ -268,8 +269,9 @@ mod tests {
     fn test_dependent_dialects_in_tablegen() {
         let output = generate_passes_tablegen();
 
-        // Check lower-to-async has dependent dialects
-        assert!(output.contains("async::AsyncDialect"));
-        assert!(output.contains("func::FuncDialect"));
+        // Currently no passes have dependent dialects
+        // This test verifies the output is well-formed (header/footer present)
+        assert!(output.contains("#ifndef APXM_AIS_PASSES_GENERATED"));
+        assert!(output.contains("#endif // APXM_AIS_PASSES_GENERATED"));
     }
 }

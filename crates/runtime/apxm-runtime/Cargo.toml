@@ -54,7 +54,4 @@ metrics = ["apxm-backends/metrics"]
 # Compile out all tracing for zero overhead (propagates to apxm-core)
 no-trace = ["apxm-core/no-trace"]
 
-[[example]]
-name = "paper_benchmarks"
-path = "../../../papers/cf26/benchmarks/runtime/paper_benchmarks.rs"
 

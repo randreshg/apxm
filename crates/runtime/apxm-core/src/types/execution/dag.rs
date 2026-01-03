@@ -296,7 +296,7 @@ mod tests {
     fn test_add_duplicate_node() {
         let mut dag = ExecutionDag::new();
         let node1 = Node::new(1, AISOperationType::Inv);
-        let node2 = Node::new(1, AISOperationType::Rsn);
+        let node2 = Node::new(1, AISOperationType::Ask);
         dag.add_node(node1)
             .expect("initial node insertion should succeed");
         assert!(dag.add_node(node2).is_err());
@@ -307,7 +307,7 @@ mod tests {
         let mut dag = ExecutionDag::new();
         dag.add_node(Node::new(1, AISOperationType::Inv))
             .expect("node insertion should succeed");
-        dag.add_node(Node::new(2, AISOperationType::Rsn))
+        dag.add_node(Node::new(2, AISOperationType::Ask))
             .expect("node insertion should succeed");
         let edge = Edge::new(1, 2, 10, crate::types::DependencyType::Data);
         assert!(dag.add_edge(edge).is_ok());
@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn test_add_edge_invalid_source() {
         let mut dag = ExecutionDag::new();
-        dag.add_node(Node::new(2, AISOperationType::Rsn))
+        dag.add_node(Node::new(2, AISOperationType::Ask))
             .expect("node insertion should succeed");
         let edge = Edge::new(1, 2, 10, crate::types::DependencyType::Data);
         assert!(dag.add_edge(edge).is_err());
@@ -338,7 +338,7 @@ mod tests {
         let mut dag = ExecutionDag::new();
         dag.add_node(Node::new(1, AISOperationType::Inv))
             .expect("node insertion should succeed");
-        dag.add_node(Node::new(2, AISOperationType::Rsn))
+        dag.add_node(Node::new(2, AISOperationType::Ask))
             .expect("node insertion should succeed");
         dag.add_node(Node::new(3, AISOperationType::QMem))
             .expect("node insertion should succeed");
@@ -355,7 +355,7 @@ mod tests {
         let mut dag = ExecutionDag::new();
         dag.add_node(Node::new(1, AISOperationType::Inv))
             .expect("node insertion should succeed");
-        dag.add_node(Node::new(2, AISOperationType::Rsn))
+        dag.add_node(Node::new(2, AISOperationType::Ask))
             .expect("node insertion should succeed");
         dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
             .expect("edge insertion should succeed");
@@ -368,7 +368,7 @@ mod tests {
         let mut dag = ExecutionDag::new();
         dag.add_node(Node::new(1, AISOperationType::Inv))
             .expect("node insertion should succeed");
-        dag.add_node(Node::new(2, AISOperationType::Rsn))
+        dag.add_node(Node::new(2, AISOperationType::Ask))
             .expect("node insertion should succeed");
         dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
             .expect("edge insertion should succeed");
@@ -381,7 +381,7 @@ mod tests {
         let mut dag = ExecutionDag::new();
         dag.add_node(Node::new(1, AISOperationType::Inv))
             .expect("node insertion should succeed");
-        dag.add_node(Node::new(2, AISOperationType::Rsn))
+        dag.add_node(Node::new(2, AISOperationType::Ask))
             .expect("node insertion should succeed");
         dag.add_node(Node::new(3, AISOperationType::QMem))
             .expect("node insertion should succeed");
@@ -397,7 +397,7 @@ mod tests {
         let mut dag = ExecutionDag::new();
         dag.add_node(Node::new(1, AISOperationType::Inv))
             .expect("node insertion should succeed");
-        dag.add_node(Node::new(2, AISOperationType::Rsn))
+        dag.add_node(Node::new(2, AISOperationType::Ask))
             .expect("node insertion should succeed");
         dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
             .expect("edge insertion should succeed");
@@ -412,7 +412,7 @@ mod tests {
         let mut node1 = Node::new(1, AISOperationType::Inv);
         node1.add_output_token(10);
         dag.add_node(node1).expect("node insertion should succeed");
-        let mut node2 = Node::new(2, AISOperationType::Rsn);
+        let mut node2 = Node::new(2, AISOperationType::Ask);
         node2.add_input_token(10);
         dag.add_node(node2).expect("node insertion should succeed");
         dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
@@ -427,7 +427,7 @@ mod tests {
         let mut dag = ExecutionDag::new();
         dag.add_node(Node::new(1, AISOperationType::Inv))
             .expect("node insertion should succeed");
-        dag.add_node(Node::new(2, AISOperationType::Rsn))
+        dag.add_node(Node::new(2, AISOperationType::Ask))
             .expect("node insertion should succeed");
         dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
             .expect("edge insertion should succeed");

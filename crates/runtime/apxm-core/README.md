@@ -33,7 +33,7 @@ use apxm_core::types::values::{Token, TokenStatus, Value};
 let mut dag = ExecutionDag::new("my_module");
 
 // Add nodes
-let node = Node::new("node_1", AISOperationType::Rsn);
+let node = Node::new("node_1", AISOperationType::Ask);
 dag.add_node(node)?;
 
 // Add edges
