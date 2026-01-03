@@ -9,7 +9,6 @@
 
 use super::{
     ExecutionContext, Node, Result, Value, execute_llm_request, get_optional_string_attribute,
-    get_string_attribute,
     inner_plan::{InnerPlanOptions, execute_inner_plan},
 };
 use crate::aam::{Goal as AamGoal, GoalId, GoalStatus, TransitionLabel};

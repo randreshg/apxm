@@ -5,17 +5,9 @@ CANNOT fuse - each node is a separate LLM call.
 Compare with workflow.ais where the compiler fuses 5 calls into 1.
 """
 
-import os
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
-from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
-
-# Ollama model configuration
-OLLAMA_MODEL = (
-    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
-    or os.environ.get("OLLAMA_MODEL")
-    or "phi3:mini"
-)
+from llm_instrumentation import get_llm, HAS_OLLAMA
 
 
 class ChainState(TypedDict):
@@ -27,14 +19,14 @@ class ChainState(TypedDict):
     summary: str
 
 
-def get_llm():
-    """Get the LLM instance (Ollama only)."""
-    return get_ollama_llm(OLLAMA_MODEL)
+def get_llm_instance():
+    """Get the configured LLM instance."""
+    return get_llm()
 
 
 def define_quantum(state: ChainState) -> dict:
     """Step 1: Define quantum computing."""
-    llm = get_llm()
+    llm = get_llm_instance()
 
     prompt = "Define quantum computing in 1-2 sentences."
     response = llm.invoke(prompt)
@@ -43,7 +35,7 @@ def define_quantum(state: ChainState) -> dict:
 
 def explain_qubits(state: ChainState) -> dict:
     """Step 2: Explain qubits using previous context."""
-    llm = get_llm()
+    llm = get_llm_instance()
     context = state["step1"]
 
     prompt = f"Using this context: {context}\n\nExplain qubits in 1-2 sentences."
@@ -53,7 +45,7 @@ def explain_qubits(state: ChainState) -> dict:
 
 def explain_superposition(state: ChainState) -> dict:
     """Step 3: Explain superposition using previous context."""
-    llm = get_llm()
+    llm = get_llm_instance()
     context = state["step2"]
 
     prompt = f"Using this context: {context}\n\nExplain superposition in 1-2 sentences."
@@ -63,7 +55,7 @@ def explain_superposition(state: ChainState) -> dict:
 
 def explain_entanglement(state: ChainState) -> dict:
     """Step 4: Explain entanglement using previous context."""
-    llm = get_llm()
+    llm = get_llm_instance()
     context = state["step3"]
 
     prompt = f"Using this context: {context}\n\nExplain quantum entanglement in 1-2 sentences."
@@ -73,7 +65,7 @@ def explain_entanglement(state: ChainState) -> dict:
 
 def summarize(state: ChainState) -> dict:
     """Step 5: Summarize all concepts."""
-    llm = get_llm()
+    llm = get_llm_instance()
     context = state["step4"]
 
     prompt = f"Summarize all the quantum computing concepts discussed: {context}"

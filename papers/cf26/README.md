@@ -88,38 +88,173 @@ See `benchmarks/workloads/` for individual workload documentation.
 ### Prerequisites
 
 ```bash
-# Start Ollama (local LLM backend)
+# 1. Install/update conda environment (includes LangGraph for comparison)
+apxm install
+
+# 2. Activate the environment
+conda activate apxm
+
+# 3. Start Ollama (local LLM backend)
 ollama serve
 ollama pull gpt-oss:20b-cloud
 
-# Install Python dependencies
-pip install typer rich langgraph langchain-ollama
-
-# Add apxm to PATH (add to ~/.zshrc or ~/.bashrc for persistence)
-export PATH="$PATH:$(pwd)/bin"
-
-# Build A-PXM compiler
-apxm compiler build
+# 4. Build A-PXM compiler
+apxm build
 ```
 
-### Run Individual Workload
+### Quick Start
 
 ```bash
-# List available workloads
-apxm workloads list
+# Run all workloads with CSV table generation
+apxm benchmarks run --workloads --tables
 
-# Run a specific workload
-apxm workloads run 1_parallel_research
-
-# With JSON output
-apxm workloads run 1_parallel_research --json
+# Quick mode (3 iterations instead of 10)
+apxm benchmarks run --workloads --quick --tables
 ```
 
-### Run All Workloads
+### Run Specific Workloads
 
 ```bash
-cd papers/CF26/benchmarks/workloads
-python run_all.py --paper
+# Run a single workload (e.g., workload 1: Parallel Research)
+apxm benchmarks run --workloads --workload 1
+
+# Run multiple workloads
+apxm benchmarks run --workloads --workload 1,2,5
+
+# With quick mode and table generation
+apxm benchmarks run --workloads --quick --workload 1 --tables
+```
+
+### Output Structure
+
+Results are saved to `papers/CF26/benchmarks/results/`:
+
+```
+results/
+  benchmark_<timestamp>.json           # Combined results (all workloads)
+  run_<timestamp>/
+    manifest.json                      # Run metadata and artifact index
+    tables/summary.csv                 # CSV summary table
+    workload_parallel_research.json    # Per-workload detailed results
+    workload_chain_fusion.json
+    ...
+```
+
+### Output Format: CSV
+
+The `summary.csv` provides one row per benchmark for paper tables:
+
+| Column | Description |
+|--------|-------------|
+| `workload` | Benchmark name (e.g., `parallel_research`) |
+| `description` | What the benchmark demonstrates |
+| `apxm_mean_ms` | A-PXM mean latency |
+| `apxm_std_ms` | Standard deviation |
+| `apxm_p50_ms` | Median (50th percentile) |
+| `apxm_p95_ms` | 95th percentile |
+| `apxm_compile_ms` | Compile time |
+| `apxm_llm_ms` | Total LLM call time |
+| `apxm_input_tokens` | Mean input tokens |
+| `apxm_output_tokens` | Mean output tokens |
+| `lg_mean_ms` | LangGraph mean latency |
+| `lg_std_ms` | LangGraph standard deviation |
+| `lg_p50_ms` | LangGraph median |
+| `lg_p95_ms` | LangGraph 95th percentile |
+| `speedup` | `lg_mean / apxm_mean` |
+
+### Output Format: JSON
+
+Each `workload_*.json` contains detailed per-iteration data:
+
+```json
+{
+  "meta": { "run_id": "...", "timestamp": "...", "workload": "parallel_research" },
+  "suite_config": { "iterations": 10, "warmup": 3 },
+  "result": {
+    "results": {
+      "langgraph": {
+        "mean_ms": 22012.89, "std_ms": 7062.03, "p50_ms": 18561.43, "p95_ms": 28979.35,
+        "samples": [30136.90, 18561.43, 17340.36],
+        "llm": {
+          "total_ms_mean": 28315.99, "calls_mean": 4.0,
+          "input_tokens_mean": 658.67, "output_tokens_mean": 3360.0
+        }
+      },
+      "apxm": {
+        "mean_ms": 6834.87, "std_ms": 1353.85, "p50_ms": 7442.95, "p95_ms": 7744.55,
+        "samples": [5283.59, 7442.95, 7778.06],
+        "compiler": {
+          "diagnostics": {
+            "passes_applied": ["normalize", "scheduling", "fuse-ask-ops", "canonicalizer", "cse"],
+            "dag_statistics": { "total_nodes": 23, "total_edges": 22 }
+          }
+        },
+        "metrics": {
+          "compile_ms": { "mean_ms": 0.42 },
+          "llm_total_ms": { "mean_ms": 10610.67 },
+          "llm_requests": { "mean_ms": 4.0 },
+          "llm_input_tokens": { "mean_ms": 643.33 },
+          "llm_output_tokens": { "mean_ms": 919.0 }
+        },
+        "sample_details": [
+          {
+            "iteration": 0, "wall_time_ms": 5283.59,
+            "runtime_metrics": {
+              "execution": { "duration_ms": 5155, "nodes_executed": 23 },
+              "llm": { "avg_latency_ms": 2410, "p50_latency_ms": 3162, "total_input_tokens": 653 },
+              "scheduler": {
+                "avg_parallelism": 2.5, "max_parallelism": 6,
+                "overhead_breakdown": {
+                  "input_collection_us": 0.85, "token_routing_us": 1.61, "work_stealing_us": 298130.72
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+**Key sections:**
+- `samples` — Per-iteration wall times for statistical analysis
+- `compiler.diagnostics` — Optimization passes applied, DAG structure
+- `metrics` — Aggregated statistics (mean, std, p50, p95) for all metrics
+- `sample_details` — Per-iteration breakdown including scheduler overhead
+
+### Example: Full Benchmark Run
+
+```bash
+# Run all 10 workloads in quick mode with tables
+apxm benchmarks run --workloads --quick --tables
+
+# Expected output:
+# Results saved to: papers/CF26/benchmarks/results/benchmark_20260103_XXXXXX.json
+# Tables saved to: .../run_20260103_XXXXXX/tables/summary.csv
+```
+
+### CLI Reference
+
+| Option | Description |
+|--------|-------------|
+| `--workloads` | Run DSL comparison workloads |
+| `--quick` | Quick mode (3 iterations, 1 warmup) |
+| `--tables` | Auto-generate CSV tables after run |
+| `--workload N` | Run specific workload(s) (comma-separated) |
+| `--iterations N` | Override iteration count |
+| `--warmup N` | Override warmup iterations |
+| `--json` | Output JSON only (no progress messages) |
+| `--list` | List available workloads |
+
+### Verify Dependencies
+
+```bash
+apxm doctor
+# Should show:
+#   LangGraph: <version>
+#   LangChain Ollama: <version>
+#   LangChain OpenAI: <version>
 ```
 
 ---

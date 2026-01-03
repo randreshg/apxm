@@ -22,3 +22,8 @@ dependencies:
     - zlib
     - libxml2
     - zstd
+    # Pip packages for benchmarks (LangGraph comparison)
+    - pip:
+        - langgraph>=0.2.0
+        - langchain-ollama>=0.1.0
+        - langchain-openai>=0.1.0

@@ -6,17 +6,9 @@ Compare with workflow.ais which has native agent definitions
 and communicate operations for inter-agent messaging.
 """
 
-import os
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
-from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
-
-# Ollama model configuration
-OLLAMA_MODEL = (
-    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
-    or os.environ.get("OLLAMA_MODEL")
-    or "phi3:mini"
-)
+from llm_instrumentation import get_llm, HAS_OLLAMA
 
 
 class MultiAgentState(TypedDict):
@@ -27,9 +19,9 @@ class MultiAgentState(TypedDict):
     final_report: str
 
 
-def get_llm():
-    """Get the LLM instance (Ollama only)."""
-    return get_ollama_llm(OLLAMA_MODEL)
+def get_llm_instance():
+    """Get the configured LLM instance."""
+    return get_llm()
 
 
 def researcher_agent(state: MultiAgentState) -> dict:
@@ -38,7 +30,7 @@ def researcher_agent(state: MultiAgentState) -> dict:
     Note: In LangGraph, this is just a function node.
     A-PXM has native agent spawning with spawn operator.
     """
-    llm = get_llm()
+    llm = get_llm_instance()
     topic = state["topic"]
 
     prompt = f"Conduct thorough research on this topic and provide key findings:\n\n{topic}"
@@ -52,7 +44,7 @@ def critic_agent(state: MultiAgentState) -> dict:
     Note: In LangGraph, agents are just nodes.
     No native agent lifecycle management.
     """
-    llm = get_llm()
+    llm = get_llm_instance()
     research = state["research_result"]
 
     prompt = f"Critically analyze this research and identify weaknesses or gaps:\n\n{research}"
@@ -62,7 +54,7 @@ def critic_agent(state: MultiAgentState) -> dict:
 
 def coordinator_synthesize(state: MultiAgentState) -> dict:
     """Coordinator synthesizes final report from agent outputs."""
-    llm = get_llm()
+    llm = get_llm_instance()
     research = state["research_result"]
     critique = state["critique_result"]
 

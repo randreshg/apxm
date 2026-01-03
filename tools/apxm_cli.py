@@ -13,6 +13,7 @@ Usage:
     apxm run out.apxmobj            # Run pre-compiled artifact
     apxm workloads list             # List available workloads
     apxm workloads check            # Verify all workloads compile
+    apxm benchmarks run             # Run benchmark suite (workloads + runtime)
 """
 
 import os
@@ -44,9 +45,11 @@ app = typer.Typer(
 )
 compiler_app = typer.Typer(help="Compiler operations")
 workloads_app = typer.Typer(help="Workload validation and benchmarks")
+benchmarks_app = typer.Typer(help="Benchmark suite runner")
 
 app.add_typer(compiler_app, name="compiler")
 app.add_typer(workloads_app, name="workloads")
+app.add_typer(benchmarks_app, name="benchmarks")
 
 
 # Configuration
@@ -367,6 +370,52 @@ def run(
     raise typer.Exit(result.returncode)
 
 
+# Install Command
+@app.command()
+def install():
+    """Install or update the conda environment from environment.yaml."""
+    config = get_config()
+    env_yaml = config.apxm_dir / "environment.yaml"
+
+    if not env_yaml.exists():
+        print_error(f"environment.yaml not found: {env_yaml}")
+        raise typer.Exit(1)
+
+    print_header("APXM Install")
+
+    # Check for mamba
+    mamba_path = shutil.which("mamba")
+    if not mamba_path:
+        print_error("mamba not found in PATH. Install mamba first.")
+        raise typer.Exit(1)
+
+    print_success("mamba: found")
+    print_info("Creating/updating conda environment...")
+
+    # Try create first, then update
+    result = subprocess.run(
+        ["mamba", "env", "create", "-f", str(env_yaml)],
+        capture_output=False,
+    )
+
+    if result.returncode != 0:
+        # Environment exists, try update
+        result = subprocess.run(
+            ["mamba", "env", "update", "-f", str(env_yaml), "-n", "apxm"],
+            capture_output=False,
+        )
+
+        if result.returncode != 0:
+            print_error("mamba env create/update failed")
+            raise typer.Exit(1)
+
+    print_success("Environment ready")
+    console.print()
+    console.print("[bold]Next steps:[/bold]")
+    console.print("  conda activate apxm")
+    console.print("  eval \"$(apxm activate)\"")
+
+
 # Doctor Command
 @app.command()
 def doctor():
@@ -434,6 +483,31 @@ def doctor():
         print_success(f"Workloads: {len(workflows)} workflows found")
     else:
         print_warning(f"Workloads directory not found: {config.workloads_dir}")
+
+    # Check benchmark dependencies (optional, for LangGraph comparisons)
+    console.print("\n[dim]Benchmark Dependencies (optional):[/dim]")
+    benchmark_packages = [
+        ("langgraph", "LangGraph"),
+        ("langchain_ollama", "LangChain Ollama"),
+        ("langchain_openai", "LangChain OpenAI"),
+    ]
+    missing = []
+    for pkg, name in benchmark_packages:
+        try:
+            import importlib.util
+            if importlib.util.find_spec(pkg) is not None:
+                mod = __import__(pkg)
+                version = getattr(mod, "__version__", "installed")
+                print_success(f"  {name}: {version}")
+            else:
+                print_warning(f"  {name}: not installed")
+                missing.append(name)
+        except Exception:
+            print_warning(f"  {name}: not available")
+            missing.append(name)
+
+    if missing:
+        print_info("  Install with: conda env update --file environment.yaml")
 
     console.print()
 
@@ -557,7 +631,11 @@ def workloads_check(
     quick: bool = typer.Option(False, "--quick", "-q", help="Quick mode (skip slow workloads)"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show compilation output"),
 ):
-    """Compile all benchmark workloads to verify they work."""
+    """Compile all benchmark workloads to verify they work.
+
+    Workloads with an 'expect_error' marker file are expected to fail compilation
+    (used for error-detection test cases). These count as passed if compilation fails.
+    """
     _ = quick  # Reserved for future use (skip slow benchmarks)
     config = get_config()
     conda_prefix = ensure_conda_env()
@@ -577,19 +655,31 @@ def workloads_check(
 
     for i, workflow in enumerate(workflows, 1):
         name = workflow.parent.name
+        expect_error = (workflow.parent / "expect_error").exists()
         print_step(f"[{i}/{len(workflows)}] {name}...")
 
         result = compile_ais(workflow, env, config)
 
-        if result.returncode == 0:
-            print_success(name)
-            passed += 1
+        if expect_error:
+            # This workload is expected to fail compilation (error test case)
+            if result.returncode != 0:
+                console.print(f"  [{Colors.PASS}]\u2713[/{Colors.PASS}] {name} [dim](expected error)[/dim]")
+                passed += 1
+            else:
+                console.print(f"  [{Colors.FAIL}]\u2717[/{Colors.FAIL}] {name} [dim](should have failed)[/dim]")
+                failed += 1
+                failed_names.append(f"{name} (expected error but compiled)")
         else:
-            print_error(name)
-            failed += 1
-            failed_names.append(name)
-            if verbose:
-                console.print(f"    [dim]{result.stderr[:500]}[/dim]")
+            # Normal workload - should compile successfully
+            if result.returncode == 0:
+                print_success(name)
+                passed += 1
+            else:
+                print_error(name)
+                failed += 1
+                failed_names.append(name)
+                if verbose:
+                    console.print(f"    [dim]{result.stderr[:500]}[/dim]")
 
     # Summary
     console.print()
@@ -708,6 +798,66 @@ def workloads_run(
                 console.print(f"  A-PXM: Success")
             elif "note" in apxm_result:
                 console.print(f"  A-PXM: {apxm_result['note']}")
+
+
+@benchmarks_app.command("run")
+def benchmarks_run(
+    workloads: bool = typer.Option(False, "--workloads", help="Run only DSL workloads"),
+    runtime: bool = typer.Option(False, "--runtime", help="Run only Rust runtime benchmarks"),
+    analyze: bool = typer.Option(False, "--analyze", help="Analyze existing results"),
+    quick: bool = typer.Option(False, "--quick", help="Quick mode (fewer iterations)"),
+    workload: Optional[str] = typer.Option(None, "--workload", help="Comma-separated workload numbers (e.g., 1,2,5)"),
+    iterations: Optional[int] = typer.Option(None, "--iterations", help="Override number of iterations"),
+    warmup: Optional[int] = typer.Option(None, "--warmup", help="Override warmup iterations"),
+    benchmark: Optional[str] = typer.Option(None, "--benchmark", help="Run a single workload by folder name"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON only"),
+    no_save: bool = typer.Option(False, "--no-save", help="Do not save results to file"),
+    output_dir: Optional[Path] = typer.Option(None, "--output-dir", help="Directory for per-workload results"),
+    list_only: bool = typer.Option(False, "--list", help="List available benchmarks"),
+    tables: bool = typer.Option(False, "--tables", help="Auto-generate CSV tables after benchmark run"),
+):
+    """Run the full benchmark suite via the unified runner."""
+    config = get_config()
+    conda_prefix = ensure_conda_env()
+    env = setup_mlir_environment(conda_prefix, config.target_dir)
+
+    run_all_path = config.workloads_dir.parent / "run_all.py"
+    if not run_all_path.exists():
+        print_error(f"Benchmark runner not found: {run_all_path}")
+        raise typer.Exit(1)
+
+    cmd = [sys.executable, str(run_all_path)]
+
+    if list_only:
+        cmd.append("--list")
+    else:
+        if workloads:
+            cmd.append("--workloads")
+        if runtime:
+            cmd.append("--runtime")
+        if analyze:
+            cmd.append("--analyze")
+        if quick:
+            cmd.append("--quick")
+        if workload:
+            cmd.extend(["--workload", workload])
+        if iterations is not None:
+            cmd.extend(["--iterations", str(iterations)])
+        if warmup is not None:
+            cmd.extend(["--warmup", str(warmup)])
+        if benchmark:
+            cmd.extend(["--benchmark", benchmark])
+        if json_output:
+            cmd.append("--json")
+        if no_save:
+            cmd.append("--no-save")
+        if output_dir:
+            cmd.extend(["--output-dir", str(output_dir)])
+        if tables:
+            cmd.append("--tables")
+
+    result = subprocess.run(cmd, cwd=run_all_path.parent, env=env)
+    raise typer.Exit(result.returncode)
 
 
 @workloads_app.command("benchmark")

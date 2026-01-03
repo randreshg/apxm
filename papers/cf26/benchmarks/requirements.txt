@@ -3,15 +3,14 @@
 # LangGraph (baseline comparison)
 langgraph>=0.2.0
 langchain-core>=0.3.0
+langchain-ollama>=0.1.0
+langchain-openai>=0.1.0
 
 # For checkpoint benchmarks
 langgraph-checkpoint>=2.0.0
 
-# Async support
-asyncio
+# TOML config parsing (Python < 3.11 needs tomli, 3.11+ has stdlib tomllib)
+tomli>=2.0.0;python_version<"3.11"
 
-# JSON output
-# (stdlib json is sufficient)
-
-# Statistical analysis
-# (stdlib statistics is sufficient for mean, stdev, etc.)
+# JSON output: stdlib json is sufficient
+# Statistical analysis: stdlib statistics is sufficient for mean, stdev, etc.

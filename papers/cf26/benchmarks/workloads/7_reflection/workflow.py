@@ -5,17 +5,9 @@ Demonstrates self-critique and improvement loop.
 Compare with workflow.ais which has native reflect operation.
 """
 
-import os
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
-from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
-
-# Ollama model configuration
-OLLAMA_MODEL = (
-    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
-    or os.environ.get("OLLAMA_MODEL")
-    or "phi3:mini"
-)
+from llm_instrumentation import get_llm, HAS_OLLAMA
 
 
 class ReflectionState(TypedDict):
@@ -26,14 +18,14 @@ class ReflectionState(TypedDict):
     improved_answer: str
 
 
-def get_llm():
-    """Get the LLM instance (Ollama only)."""
-    return get_ollama_llm(OLLAMA_MODEL)
+def get_llm_instance():
+    """Get the configured LLM instance."""
+    return get_llm()
 
 
 def initial_attempt(state: ReflectionState) -> dict:
     """Make initial attempt at solving the task."""
-    llm = get_llm()
+    llm = get_llm_instance()
     task = state["task"]
 
     prompt = f"Solve this task concisely:\n\n{task}"
@@ -47,7 +39,7 @@ def reflect(state: ReflectionState) -> dict:
     Note: LangGraph has no native reflection operation.
     Must use custom prompting.
     """
-    llm = get_llm()
+    llm = get_llm_instance()
     answer = state["initial_answer"]
 
     prompt = f"""Critically analyze this answer and identify improvements:
@@ -61,7 +53,7 @@ Provide specific, actionable feedback for improvement."""
 
 def improve(state: ReflectionState) -> dict:
     """Improve the answer based on reflection."""
-    llm = get_llm()
+    llm = get_llm_instance()
     task = state["task"]
     reflection = state["reflection"]
 

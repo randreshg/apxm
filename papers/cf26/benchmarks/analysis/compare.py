@@ -17,6 +17,17 @@ from pathlib import Path
 from typing import Any, Optional
 
 
+def get_nested(data: dict, path: list[str]) -> Optional[Any]:
+    cur: Any = data
+    for key in path:
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(key)
+        if cur is None:
+            return None
+    return cur
+
+
 def calculate_speedup(baseline_ms: float, optimized_ms: float) -> float:
     """Calculate speedup ratio."""
     if optimized_ms <= 0:
@@ -52,13 +63,14 @@ def analyze_parallel_research(data: dict) -> dict:
         }
 
     # Extract A-PXM metrics
-    if "execution" in apxm and isinstance(apxm["execution"], dict):
-        exec_data = apxm["execution"]
+    if "mean_ms" in apxm:
+        compile_time_ms = get_nested(apxm, ["metrics", "compile_ms", "mean_ms"])
         result["apxm"] = {
-            "compile_time_ms": apxm.get("compile_time_ms", 0),
-            "mean_ms": exec_data.get("mean_ms", 0),
-            "std_ms": exec_data.get("std_ms", 0),
-            "p50_ms": exec_data.get("p50_ms", 0),
+            "compile_time_ms": compile_time_ms or 0,
+            "mean_ms": apxm.get("mean_ms", 0),
+            "std_ms": apxm.get("std_ms", 0),
+            "p50_ms": apxm.get("p50_ms", apxm.get("mean_ms", 0)),
+            "p95_ms": apxm.get("p95_ms", 0),
         }
     elif "note" in apxm:
         result["apxm"]["note"] = apxm["note"]
@@ -99,11 +111,12 @@ def analyze_chain_fusion(data: dict) -> dict:
         }
 
     # A-PXM: Fused into 1 call
-    if "execution" in apxm:
-        exec_data = apxm.get("execution", {})
+    if "mean_ms" in apxm:
         result["apxm"] = {
             "llm_calls": 1,  # Fused
-            "mean_ms": exec_data.get("mean_ms", 0),
+            "mean_ms": apxm.get("mean_ms", 0),
+            "p50_ms": apxm.get("p50_ms", 0),
+            "p95_ms": apxm.get("p95_ms", 0),
             "fusion_enabled": True,
         }
     elif "note" in apxm:
@@ -142,9 +155,9 @@ def analyze_scalability(data: dict) -> dict:
             if "mean_ms" in level_data.get("langgraph", {}):
                 lg = level_data["langgraph"]
                 level["langgraph_ms"] = lg["mean_ms"]
-            if "mean_ms" in level_data.get("apxm", {}).get("execution", {}):
-                apxm = level_data["apxm"]["execution"]
-                level["apxm_ms"] = apxm["mean_ms"]
+            apxm_data = level_data.get("apxm", {})
+            if "mean_ms" in apxm_data:
+                level["apxm_ms"] = apxm_data["mean_ms"]
             result["levels"].append(level)
 
     # Calculate efficiency at each level

@@ -6,17 +6,9 @@ Compare with workflow.ais which uses dataflow-based parallel preparation.
 A-PXM automatically parallelizes independent response preparation.
 """
 
-import os
 from typing import TypedDict, Literal
 from langgraph.graph import StateGraph, START, END
-from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
-
-# Ollama model configuration
-OLLAMA_MODEL = (
-    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
-    or os.environ.get("OLLAMA_MODEL")
-    or "phi3:mini"
-)
+from llm_instrumentation import get_llm, HAS_OLLAMA
 
 
 class RoutingState(TypedDict):
@@ -26,14 +18,14 @@ class RoutingState(TypedDict):
     response: str
 
 
-def get_llm():
-    """Get the LLM instance (Ollama only)."""
-    return get_ollama_llm(OLLAMA_MODEL)
+def get_llm_instance():
+    """Get the configured LLM instance."""
+    return get_llm()
 
 
 def classify_input(state: RoutingState) -> dict:
     """Classify input into a category."""
-    llm = get_llm()
+    llm = get_llm_instance()
     user_input = state["input"]
 
     prompt = f"""Classify this input into exactly one category.
@@ -76,7 +68,7 @@ def route_by_category(state: RoutingState) -> str:
 
 def technical_response(state: RoutingState) -> dict:
     """Handle technical queries."""
-    llm = get_llm()
+    llm = get_llm_instance()
     user_input = state["input"]
 
     prompt = f"Provide a detailed technical explanation for: {user_input}"
@@ -86,7 +78,7 @@ def technical_response(state: RoutingState) -> dict:
 
 def creative_response(state: RoutingState) -> dict:
     """Handle creative queries."""
-    llm = get_llm()
+    llm = get_llm_instance()
     user_input = state["input"]
 
     prompt = f"Provide a creative, imaginative response for: {user_input}"
@@ -96,7 +88,7 @@ def creative_response(state: RoutingState) -> dict:
 
 def factual_response(state: RoutingState) -> dict:
     """Handle factual queries."""
-    llm = get_llm()
+    llm = get_llm_instance()
     user_input = state["input"]
 
     prompt = f"Provide accurate, factual information for: {user_input}"
@@ -106,7 +98,7 @@ def factual_response(state: RoutingState) -> dict:
 
 def general_response(state: RoutingState) -> dict:
     """Handle general/default queries."""
-    llm = get_llm()
+    llm = get_llm_instance()
     user_input = state["input"]
 
     prompt = f"Provide a helpful response for: {user_input}"

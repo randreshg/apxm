@@ -5,17 +5,9 @@ Demonstrates tool/function calling with LangChain tools.
 Compare with workflow.ais which has native capability system.
 """
 
-import os
 from typing import TypedDict, Any
 from langgraph.graph import StateGraph, START, END
-from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
-
-# Ollama model configuration
-OLLAMA_MODEL = (
-    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
-    or os.environ.get("OLLAMA_MODEL")
-    or "phi3:mini"
-)
+from llm_instrumentation import get_llm, HAS_OLLAMA
 
 
 class ToolState(TypedDict):
@@ -26,9 +18,9 @@ class ToolState(TypedDict):
     answer: str
 
 
-def get_llm():
-    """Get the LLM instance (Ollama only)."""
-    return get_ollama_llm(OLLAMA_MODEL)
+def get_llm_instance():
+    """Get the configured LLM instance."""
+    return get_llm()
 
 
 def mock_search(query: str) -> str:
@@ -38,7 +30,7 @@ def mock_search(query: str) -> str:
 
 def decide_tool(state: ToolState) -> dict:
     """Reason about which tool to use."""
-    llm = get_llm()
+    llm = get_llm_instance()
     query = state["query"]
 
     prompt = f"Analyze this query and decide which tool is needed. Just respond with a brief tool recommendation.\n\nQuery: {query}"
@@ -55,7 +47,7 @@ def invoke_tool(state: ToolState) -> dict:
 
 def synthesize_answer(state: ToolState) -> dict:
     """Synthesize final answer from tool results."""
-    llm = get_llm()
+    llm = get_llm_instance()
     query = state["query"]
     results = state["search_results"]
 

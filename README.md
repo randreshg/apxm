@@ -15,9 +15,8 @@ APXM is a full toolchain for building autonomous agents:
 git clone https://github.com/randreshg/apxm
 cd apxm
 
-# Install MLIR/LLVM toolchain
-cargo run -p apxm-cli -- install
-pip install typer rich
+# Create conda environment (includes Python, MLIR/LLVM, and all dependencies)
+mamba env create -f environment.yaml
 
 # Add apxm to PATH (add to ~/.zshrc or ~/.bashrc for persistence)
 export PATH="$PATH:$(pwd)/bin"
@@ -25,29 +24,37 @@ export PATH="$PATH:$(pwd)/bin"
 # Build the project
 apxm build
 
+# Verify installation
+apxm doctor
+
 # Run an example
-apxm run examples/hello_world.ais
+apxm execute examples/hello_world.ais
 ```
 
 ## Prerequisites
 
 - **mamba** or **conda** ([miniforge](https://github.com/conda-forge/miniforge) recommended)
 - **Rust nightly** (managed via `rust-toolchain.toml`)
-- **Python 3.10+** with `typer` and `rich`
 
 ---
 
 ## CLI Commands
 
 ```bash
-apxm doctor           # Check environment
-apxm build            # Build full project
-apxm build --compiler # Build compiler only
-apxm build --runtime  # Build runtime only
-apxm build --no-trace # Build without tracing (zero overhead)
-apxm run <file>       # Compile and run
-apxm run <file> --trace debug  # Run with debug tracing
-apxm workloads check  # Validate workloads
+apxm doctor                     # Check environment
+apxm install                    # Install/update conda environment
+apxm build                      # Build full project
+apxm build --compiler           # Build compiler only
+apxm build --runtime            # Build runtime only
+apxm build --no-trace           # Build without tracing (zero overhead)
+apxm execute <file.ais>         # Compile and run an AIS file
+apxm execute <file.ais> --trace debug  # Run with debug tracing
+apxm compile <file.ais> -o out.apxmobj # Compile to artifact
+apxm run <file.apxmobj>         # Run pre-compiled artifact
+apxm workloads list             # List benchmark workloads
+apxm workloads check            # Validate workloads compile
+apxm workloads run <name>       # Run a specific workload
+apxm benchmarks run --workloads # Run all benchmark workloads
 ```
 
 See [docs/AGENTS.md](docs/AGENTS.md) for complete reference.
@@ -66,29 +73,38 @@ apxm build --no-trace   # Zero-overhead build (tracing compiled out)
 
 **Runtime control** (when built with tracing):
 ```bash
-apxm run workflow.ais                  # Silent execution
-apxm run workflow.ais --trace info     # High-level execution flow
-apxm run workflow.ais --trace debug    # Detailed worker/operation info
-apxm run workflow.ais --trace trace    # Full verbosity (tokens, LLM calls)
+apxm execute workflow.ais                  # Silent execution
+apxm execute workflow.ais --trace info     # High-level execution flow
+apxm execute workflow.ais --trace debug    # Detailed worker/operation info
+apxm execute workflow.ais --trace trace    # Full verbosity (tokens, LLM calls)
 ```
 
 Trace targets: `apxm::scheduler`, `apxm::ops`, `apxm::llm`, `apxm::tokens`, `apxm::dag`
 
 ---
 
-## Reasoning Syntax (Explicit)
+## LLM Operations
 
-`rsn` now requires parentheses, even for single-argument prompts.
+APXM provides three core LLM operations with different reasoning characteristics:
+
+| Operation | Purpose | Example |
+|-----------|---------|---------|
+| `ask` | Simple Q&A with LLM | `ask("What is 2+2?") -> answer` |
+| `think` | Extended thinking with token budget | `think("Analyze this problem", budget: 1000) -> analysis` |
+| `reason` | Structured reasoning with belief updates | `reason("Solve step by step", context) -> solution` |
 
 ```ais
-// Single prompt expression (token concatenation).
-rsn("Explain the domain background of " + topic) -> background
+// Simple ask - direct question and answer
+ask("Explain the domain background of " + topic) -> background
 
-// Template + context operands (comma separates context).
-rsn("Execute step 1: ", steps) -> step1_result
+// Think - extended reasoning with budget
+think("Analyze the implications", data, budget: 2000) -> analysis
+
+// Reason - structured with context operands
+reason("Execute step 1: ", steps) -> step1_result
 ```
 
-The comma does not concatenate. It passes context operands, which are appended at runtime as:
+Context operands (comma-separated) are appended at runtime as:
 
 ```
 <template>
@@ -97,7 +113,7 @@ Context 1: <value>
 Context 2: <value>
 ```
 
-`+` merges tokens and cannot be used with goals/handles; use the comma form for those.
+The `+` operator merges tokens; use the comma form for context operands.
 
 ---
 
@@ -152,6 +168,6 @@ docs/             # Documentation
 
 ## Documentation
 
-- [AGENTS.md](docs/AGENTS.md) - CLI reference and usage
-- [architecture.md](docs/architecture.md) - System architecture
-- [contract.md](docs/contract.md) - Compiler-runtime contract
+- [Getting Started](docs/GETTING_STARTED.md) - Installation, setup, and first steps
+- [AGENTS.md](docs/AGENTS.md) - CLI reference and AI agent guide
+- [Benchmark Workloads](papers/CF26/benchmarks/workloads/README.md) - DSL comparison benchmarks with examples

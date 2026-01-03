@@ -29,29 +29,17 @@ pub mod error;
 pub mod linker;
 pub mod runtime;
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Config Re-exports
-// ═══════════════════════════════════════════════════════════════════════════
-
+// --- Config ---
 pub use config::{
     ApXmConfig, CapabilityConfig, ChatConfig, ConfigError, ExecPolicyConfig, LlmBackendConfig,
     ToolConfig,
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Linker Re-exports
-// ═══════════════════════════════════════════════════════════════════════════
-
+// --- Linker ---
 pub use linker::{LinkResult, Linker, LinkerConfig};
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Error Re-exports
-// ═══════════════════════════════════════════════════════════════════════════
-
+// --- Error ---
 pub use error::DriverError;
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Runtime Re-exports
-// ═══════════════════════════════════════════════════════════════════════════
-
+// --- Runtime ---
 pub use runtime::RuntimeExecutor;

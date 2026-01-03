@@ -43,7 +43,7 @@ def main():
     )
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--list", action="store_true", help="List available workloads")
-    parser.add_argument("--workload", type=int, help="Run specific workload (1-14)")
+    parser.add_argument("--workload", type=int, help="Run specific workload (1-10)")
     parser.add_argument("--iterations", type=int, default=10, help="Iterations per benchmark")
     parser.add_argument("--warmup", type=int, default=3, help="Warmup iterations (not counted)")
     parser.add_argument("--output", type=str, help="Output file path")

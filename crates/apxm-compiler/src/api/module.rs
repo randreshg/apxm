@@ -13,7 +13,6 @@ use apxm_artifact::{Artifact, ArtifactMetadata};
 use apxm_core::error::builder::ErrorBuilder;
 use apxm_core::error::codes::ErrorCode;
 use apxm_core::error::compiler::{CompilerError, Result};
-use apxm_core::types::CodegenOptions;
 use std::ffi::CString;
 use std::fs;
 use std::marker::PhantomData;
@@ -109,58 +108,6 @@ impl Module {
         let c_str = ffi::handle_null_result(
             unsafe { ffi::apxm_module_to_string(self.raw) },
             "module serialization",
-        )?;
-
-        let result = unsafe {
-            std::ffi::CStr::from_ptr(c_str)
-                .to_string_lossy()
-                .into_owned()
-        };
-
-        unsafe { ffi::apxm_string_free(c_str as *mut _) };
-
-        Ok(result)
-    }
-
-    pub fn generate_rust_code(&self) -> Result<String> {
-        let c_str = ffi::handle_null_result(
-            unsafe { ffi::apxm_codegen_emit_rust(self.raw) },
-            "Rust code generation",
-        )?;
-
-        let result = unsafe {
-            std::ffi::CStr::from_ptr(c_str)
-                .to_string_lossy()
-                .into_owned()
-        };
-
-        unsafe { ffi::apxm_string_free(c_str as *mut _) };
-
-        Ok(result)
-    }
-
-    pub fn generate_rust_code_with_options(&self, options: &CodegenOptions) -> Result<String> {
-        let module_name_cstr = options
-            .module_name
-            .as_deref()
-            .map(CString::new)
-            .transpose()
-            .map_err(|e| invalid_input_error(format!("Invalid module name: {}", e)))?;
-
-        let ffi_opts = ffi::ApxmCodegenOptions {
-            optimize: options.optimize,
-            emit_comments: options.emit_comments,
-            emit_debug_symbols: options.emit_debug_symbols,
-            standalone: options.standalone,
-            module_name: module_name_cstr
-                .as_ref()
-                .map(|c| c.as_ptr())
-                .unwrap_or(std::ptr::null()),
-        };
-
-        let c_str = ffi::handle_null_result(
-            unsafe { ffi::apxm_codegen_emit_rust_with_options(self.raw, &ffi_opts) },
-            "Rust code generation",
         )?;
 
         let result = unsafe {

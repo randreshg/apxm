@@ -75,3 +75,11 @@ papers/**/workloads/**/05_switch_empty_cases
 papers/**/metrics.json
 papers/**/diagnostics.json
 metrics.json
+
+# Benchmark run results (generated, not committed)
+papers/**/benchmarks/results/
+!papers/**/benchmarks/results/.gitkeep
+
+# Conda/mamba temp files
+condaenv.*.requirements.txt
+mamba*

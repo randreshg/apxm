@@ -24,6 +24,42 @@ from typing import Optional
 
 # Paths
 BENCHMARKS_DIR = Path(__file__).parent
+
+
+def get_conda_python() -> str:
+    """Get the Python executable from the apxm conda environment.
+
+    Returns the conda Python if available, otherwise falls back to sys.executable.
+    """
+    # Check CONDA_PREFIX environment variable first
+    conda_prefix = os.environ.get("CONDA_PREFIX")
+    if conda_prefix:
+        conda_python = Path(conda_prefix) / "bin" / "python"
+        if conda_python.exists():
+            return str(conda_python)
+
+    # Try to find apxm conda environment
+    try:
+        result = subprocess.run(
+            ["conda", "info", "--envs", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            info = json.loads(result.stdout)
+            for env_path in info.get("envs", []):
+                if "apxm" in env_path:
+                    conda_python = Path(env_path) / "bin" / "python"
+                    if conda_python.exists():
+                        return str(conda_python)
+    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        pass
+
+    # Fall back to sys.executable
+    return sys.executable
+
+
 WORKLOADS_DIR = BENCHMARKS_DIR / "workloads"
 RUNTIME_DIR = BENCHMARKS_DIR / "runtime"
 RESULTS_DIR = BENCHMARKS_DIR / "results"
@@ -42,6 +78,19 @@ def load_config() -> dict:
     }
 
 
+def find_apxm_config() -> Optional[Path]:
+    """Locate .apxm/config.toml (project-scoped first, then user)."""
+    cwd = Path.cwd()
+    for ancestor in [cwd] + list(cwd.parents):
+        candidate = ancestor / ".apxm" / "config.toml"
+        if candidate.exists():
+            return candidate
+    home_candidate = Path.home() / ".apxm" / "config.toml"
+    if home_candidate.exists():
+        return home_candidate
+    return None
+
+
 def check_dependencies() -> dict:
     """Check availability of required dependencies."""
     deps = {
@@ -50,6 +99,7 @@ def check_dependencies() -> dict:
         "apxm": False,
         "cargo": False,
         "langgraph": False,
+        "langchain_ollama": False,
     }
 
     # Check Ollama
@@ -86,6 +136,13 @@ def check_dependencies() -> dict:
     except ImportError:
         pass
 
+    # Check langchain-ollama
+    try:
+        import langchain_ollama
+        deps["langchain_ollama"] = True
+    except ImportError:
+        pass
+
     return deps
 
 
@@ -101,35 +158,47 @@ def run_workloads(
     if not runner_script.exists():
         return {"error": f"Runner script not found: {runner_script}"}
 
-    cmd = [sys.executable, str(runner_script), "--json"]
+    python_exe = get_conda_python()
+    cmd = [python_exe, str(runner_script), "--json"]
     env = os.environ.copy()
 
     cfg = load_config()
     llm_cfg = (cfg.get("llm", {}) or {})
+    provider = llm_cfg.get("provider")
     model = llm_cfg.get("model")
+    base_url = llm_cfg.get("base_url")
     model_priority = llm_cfg.get("model_priority") or ([] if model is None else [model])
 
-    # Prefer the first locally-available model in model_priority, if `ollama` exists.
-    if model_priority:
-        try:
-            result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                available = set()
-                for line in result.stdout.splitlines():
-                    line = line.strip()
-                    if not line or line.upper().startswith("NAME"):
-                        continue
-                    available.add(line.split()[0])
-                for candidate in model_priority:
-                    if candidate in available:
-                        model = candidate
-                        break
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
+    apxm_config = find_apxm_config()
 
-    if model:
-        env["APXM_BENCH_OLLAMA_MODEL"] = model
-        env.setdefault("OLLAMA_MODEL", model)
+    if apxm_config is None:
+        # Prefer the first locally-available model in model_priority, if `ollama` exists.
+        if provider == "ollama" and model_priority:
+            try:
+                result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    available = set()
+                    for line in result.stdout.splitlines():
+                        line = line.strip()
+                        if not line or line.upper().startswith("NAME"):
+                            continue
+                        available.add(line.split()[0])
+                    for candidate in model_priority:
+                        if candidate in available:
+                            model = candidate
+                            break
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass
+
+        if provider:
+            env.setdefault("APXM_BENCH_PROVIDER", provider)
+        if model:
+            env.setdefault("APXM_BENCH_MODEL", model)
+        if base_url:
+            env.setdefault("APXM_BENCH_BASE_URL", base_url)
+        if provider == "ollama" and model:
+            env.setdefault("APXM_BENCH_OLLAMA_MODEL", model)
+            env.setdefault("OLLAMA_MODEL", model)
 
     env["APXM_BENCH_ITERATIONS"] = str(iterations)
     env["APXM_BENCH_WARMUP"] = str(warmup)
@@ -233,7 +302,7 @@ def run_single_benchmark(benchmark_name: str, iterations: int = 5, verbose: bool
         print(f"  Running {benchmark_name}...")
 
     try:
-        cmd = [sys.executable, str(run_script), "--json", "--iterations", str(iterations)]
+        cmd = [get_conda_python(), str(run_script), "--json", "--iterations", str(iterations)]
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -253,81 +322,6 @@ def run_single_benchmark(benchmark_name: str, iterations: int = 5, verbose: bool
         return {"error": "Timeout (5 min)"}
     except Exception as e:
         return {"error": str(e)}
-
-
-def run_paper_benchmarks(quick: bool = False, verbose: bool = True,
-                         benchmark_name: str | None = None) -> dict:
-    """Run paper-specific benchmarks (workloads 11-14 + Rust substrate_overhead).
-
-    These are now unified with all other DSL workloads and use the same runner.
-
-    Args:
-        quick: Use fewer iterations
-        verbose: Print progress messages
-        benchmark_name: If specified, run only this benchmark
-    """
-    iterations = 2 if quick else 5
-    warmup = 1 if quick else 2
-
-    # Paper benchmarks are now workloads 11-14 (unified with DSL comparison workloads)
-    paper_workload_nums = [11, 12, 13, 14]
-
-    if verbose:
-        print("  Running paper benchmarks via unified runner (workloads 11-14)...")
-
-    # Use the unified runner for DSL benchmarks
-    results = run_workloads(
-        workload_nums=paper_workload_nums,
-        iterations=iterations,
-        warmup=warmup,
-        verbose=verbose,
-    )
-
-    # Also run the Rust paper_benchmarks example (substrate overhead)
-    if verbose:
-        print("  Running paper_benchmarks.rs (substrate overhead)...")
-
-    substrate_result = {}
-    try:
-        crate_path = BENCHMARKS_DIR.parent.parent.parent / "crates" / "runtime" / "apxm-runtime"
-        cmd = [
-            "cargo", "run", "--release", "--features", "metrics",
-            "--example", "paper_benchmarks",
-            "-p", "apxm-runtime",
-            "--", "--json",
-        ]
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            cwd=crate_path.parent.parent.parent,
-            timeout=120,
-        )
-
-        if result.returncode == 0:
-            try:
-                start = result.stdout.find("{")
-                end = result.stdout.rfind("}") + 1
-                if start >= 0 and end > start:
-                    substrate_result = json.loads(result.stdout[start:end])
-                else:
-                    substrate_result = {"raw_output": result.stdout[:2000]}
-            except json.JSONDecodeError:
-                substrate_result = {"raw_output": result.stdout[:2000]}
-        else:
-            substrate_result = {"error": result.stderr[:500] if result.stderr else "Unknown error"}
-    except subprocess.TimeoutExpired:
-        substrate_result = {"error": "Timeout"}
-    except Exception as e:
-        substrate_result = {"error": str(e)}
-
-    # Add substrate_overhead to the workloads results
-    if "workloads" in results:
-        results["workloads"]["substrate_overhead"] = substrate_result
-    else:
-        results["workloads"] = {"substrate_overhead": substrate_result}
-
-    return results
 
 
 def run_runtime_benchmarks(quick: bool = False, verbose: bool = True) -> dict:
@@ -422,7 +416,7 @@ def run_analysis(results_file: Optional[Path] = None, verbose: bool = True) -> d
     compare_script = ANALYSIS_DIR / "compare.py"
     if compare_script.exists():
         result = subprocess.run(
-            [sys.executable, str(compare_script), "--input", str(results_file), "--json"],
+            [get_conda_python(), str(compare_script), "--input", str(results_file), "--json"],
             capture_output=True,
             text=True,
         )
@@ -440,7 +434,7 @@ def run_analysis(results_file: Optional[Path] = None, verbose: bool = True) -> d
     tables_script = ANALYSIS_DIR / "generate_tables.py"
     if tables_script.exists():
         result = subprocess.run(
-            [sys.executable, str(tables_script), "--input", str(results_file)],
+            [get_conda_python(), str(tables_script), "--input", str(results_file)],
             capture_output=True,
             text=True,
         )
@@ -454,18 +448,105 @@ def run_analysis(results_file: Optional[Path] = None, verbose: bool = True) -> d
     return analysis_results
 
 
-def save_results(results: dict, prefix: str = "benchmark") -> Path:
-    """Save results to JSON file."""
+def save_results(
+    results: dict,
+    prefix: str = "benchmark",
+    output_dir: Optional[Path] = None,
+) -> dict:
+    """Save combined and per-workload results to JSON files."""
     RESULTS_DIR.mkdir(exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{prefix}_{timestamp}.json"
-    filepath = RESULTS_DIR / filename
+    run_id = results.get("meta", {}).get("run_id") or datetime.now().strftime("%Y%m%d_%H%M%S")
+    combined_filename = f"{prefix}_{run_id}.json"
+    combined_path = RESULTS_DIR / combined_filename
 
-    with open(filepath, "w") as f:
+    with open(combined_path, "w") as f:
         json.dump(results, f, indent=2)
 
-    return filepath
+    run_dir = output_dir or (RESULTS_DIR / f"run_{run_id}")
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest = {
+        "run_id": run_id,
+        "timestamp": results.get("meta", {}).get("timestamp"),
+        "suite": results.get("meta", {}).get("suite"),
+        "config": results.get("config", {}),
+        "dependencies": results.get("dependencies", {}),
+        "artifacts": {
+            "suite": combined_filename,
+        },
+    }
+
+    workloads_payload = results.get("workloads", {})
+    workloads_meta = workloads_payload.get("meta") if isinstance(workloads_payload, dict) else None
+    workloads_config = workloads_payload.get("config") if isinstance(workloads_payload, dict) else None
+    workloads = workloads_payload.get("workloads") if isinstance(workloads_payload, dict) else None
+    if isinstance(workloads, dict):
+        workload_files = {}
+        for name, data in workloads.items():
+            filename = f"workload_{name}.json"
+            path = run_dir / filename
+            payload = {
+                "meta": {
+                    "run_id": run_id,
+                    "timestamp": results.get("meta", {}).get("timestamp"),
+                    "suite": results.get("meta", {}).get("suite"),
+                    "workload": name,
+                },
+                "suite_config": results.get("config", {}),
+                "workloads_meta": workloads_meta,
+                "workloads_config": workloads_config,
+                "result": data,
+            }
+            with open(path, "w") as f:
+                json.dump(payload, f, indent=2)
+            workload_files[name] = filename
+        manifest["artifacts"]["workloads"] = workload_files
+
+    benchmarks = results.get("benchmark")
+    if isinstance(benchmarks, dict):
+        benchmark_files = {}
+        for name, data in benchmarks.items():
+            filename = f"benchmark_{name}.json"
+            path = run_dir / filename
+            payload = {
+                "meta": {
+                    "run_id": run_id,
+                    "timestamp": results.get("meta", {}).get("timestamp"),
+                    "suite": results.get("meta", {}).get("suite"),
+                    "benchmark": name,
+                },
+                "suite_config": results.get("config", {}),
+                "result": data,
+            }
+            with open(path, "w") as f:
+                json.dump(payload, f, indent=2)
+            benchmark_files[name] = filename
+        manifest["artifacts"]["benchmarks"] = benchmark_files
+
+    runtime = results.get("runtime")
+    if runtime:
+        runtime_path = run_dir / "runtime.json"
+        with open(runtime_path, "w") as f:
+            json.dump(runtime, f, indent=2)
+        manifest["artifacts"]["runtime"] = runtime_path.name
+
+    analysis = results.get("analysis")
+    if analysis:
+        analysis_path = run_dir / "analysis.json"
+        with open(analysis_path, "w") as f:
+            json.dump(analysis, f, indent=2)
+        manifest["artifacts"]["analysis"] = analysis_path.name
+
+    manifest_path = run_dir / "manifest.json"
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    return {
+        "combined_path": combined_path,
+        "run_dir": run_dir,
+        "manifest_path": manifest_path,
+    }
 
 
 def print_summary(results: dict):
@@ -473,6 +554,22 @@ def print_summary(results: dict):
     print("\n" + "=" * 70)
     print("BENCHMARK SUMMARY")
     print("=" * 70)
+
+    def fmt_ms(value: Optional[float]) -> str:
+        if value is None:
+            return "n/a"
+        try:
+            return f"{float(value):.1f} ms"
+        except (TypeError, ValueError):
+            return "n/a"
+
+    def fmt_num(value: Optional[float]) -> str:
+        if value is None:
+            return "n/a"
+        try:
+            return f"{float(value):.1f}"
+        except (TypeError, ValueError):
+            return "n/a"
 
     # Dependencies
     if "dependencies" in results:
@@ -494,10 +591,44 @@ def print_summary(results: dict):
                 else:
                     lg = data.get("langgraph", {})
                     apxm = data.get("apxm", {})
+                    print(f"  {name}:")
                     if "mean_ms" in lg:
-                        print(f"  {name}:")
-                        print(f"    LangGraph: {lg['mean_ms']:.1f} ms")
-                    if isinstance(apxm, dict) and "note" in apxm:
+                        llm = lg.get("llm", {}) if isinstance(lg.get("llm"), dict) else {}
+                        tokens_in = llm.get("input_tokens_mean")
+                        tokens_out = llm.get("output_tokens_mean")
+                        token_text = ""
+                        if tokens_in or tokens_out:
+                            token_text = f", tokens {fmt_num(tokens_in)}/{fmt_num(tokens_out)}"
+                        print(
+                            "    LangGraph: "
+                            f"mean {fmt_ms(lg.get('mean_ms'))}, "
+                            f"p95 {fmt_ms(lg.get('p95_ms'))}, "
+                            f"llm {fmt_ms(llm.get('total_ms_mean'))}, "
+                            f"calls {fmt_num(llm.get('calls_mean'))}{token_text}"
+                        )
+                    elif "error" in lg:
+                        print(f"    LangGraph: ERROR - {lg['error'][:50]}")
+
+                    if isinstance(apxm, dict) and "mean_ms" in apxm:
+                        metrics = apxm.get("metrics", {}) if isinstance(apxm.get("metrics"), dict) else {}
+                        llm_total = metrics.get("llm_total_ms", {}) if isinstance(metrics.get("llm_total_ms"), dict) else {}
+                        llm_requests = metrics.get("llm_requests", {}) if isinstance(metrics.get("llm_requests"), dict) else {}
+                        llm_input = metrics.get("llm_input_tokens", {}) if isinstance(metrics.get("llm_input_tokens"), dict) else {}
+                        llm_output = metrics.get("llm_output_tokens", {}) if isinstance(metrics.get("llm_output_tokens"), dict) else {}
+                        token_text = ""
+                        if llm_input or llm_output:
+                            token_text = (
+                                f", tokens {fmt_num(llm_input.get('mean_ms'))}/"
+                                f"{fmt_num(llm_output.get('mean_ms'))}"
+                            )
+                        print(
+                            "    A-PXM:      "
+                            f"mean {fmt_ms(apxm.get('mean_ms'))}, "
+                            f"p95 {fmt_ms(apxm.get('p95_ms'))}, "
+                            f"llm {fmt_ms(llm_total.get('mean_ms'))}, "
+                            f"calls {fmt_num(llm_requests.get('mean_ms'))}{token_text}"
+                        )
+                    elif isinstance(apxm, dict) and "note" in apxm:
                         print(f"    A-PXM: {apxm['note']}")
 
     # Runtime
@@ -537,12 +668,8 @@ Examples:
         help="Run only Rust runtime benchmarks"
     )
     parser.add_argument(
-        "--paper", action="store_true",
-        help="Run only paper-specific benchmarks (compilation scaling, LLM probe, fusion quality)"
-    )
-    parser.add_argument(
         "--benchmark", type=str,
-        help="Run a single workload by folder name (e.g., compilation_scaling, 1_parallel_research)"
+        help="Run a single workload by folder name (e.g., 1_parallel_research, parallel_research)"
     )
     parser.add_argument(
         "--list", action="store_true",
@@ -576,15 +703,23 @@ Examples:
         "--no-save", action="store_true",
         help="Don't save results to file"
     )
+    parser.add_argument(
+        "--output-dir", type=str,
+        help="Directory to store per-workload results (defaults to results/run_<timestamp>)"
+    )
+    parser.add_argument(
+        "--tables", action="store_true",
+        help="Auto-generate CSV tables after benchmark run"
+    )
 
     args = parser.parse_args()
 
     # Handle --list: show available benchmarks and exit (use unified runner)
     if args.list:
-        print("\nAll DSL Workloads (1-14):\n")
+        print("\nAll DSL Workloads (1-10):\n")
         # Use the unified runner to list all workloads
         result = subprocess.run(
-            [sys.executable, str(WORKLOADS_DIR / "runner.py"), "--list"],
+            [get_conda_python(), str(WORKLOADS_DIR / "runner.py"), "--list"],
             capture_output=True,
             text=True,
         )
@@ -592,8 +727,8 @@ Examples:
         print("Additional Rust benchmarks:")
         print("  substrate_overhead (paper_benchmarks.rs)")
         print("\nUsage:")
-        print("  python run_all.py --workload 1,5,12    # Run specific workloads")
-        print("  python run_all.py --workloads          # Run all DSL workloads (1-14)")
+        print("  python run_all.py --workload 1,5,10    # Run specific workloads")
+        print("  python run_all.py --workloads          # Run all DSL workloads (1-10)")
         print("  python run_all.py --benchmark <name>   # Run by folder name")
         sys.exit(0)
 
@@ -620,12 +755,15 @@ Examples:
     verbose = not args.json
 
     # If no specific mode selected, run everything
-    run_all = not (args.workloads or args.runtime or args.paper or args.benchmark or args.analyze)
+    run_all = not (args.workloads or args.runtime or args.benchmark or args.analyze)
+
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     # Results container
     results = {
         "meta": {
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "run_id": run_id,
             "suite": "apxm_benchmarks",
             "mode": "full" if run_all else "partial",
         },
@@ -670,12 +808,6 @@ Examples:
         else:
             results["runtime"] = {"error": "Cargo not available"}
 
-    # Run paper-specific benchmarks
-    if run_all or args.paper:
-        if verbose:
-            print("\nRunning paper-specific benchmarks...")
-        results["paper"] = run_paper_benchmarks(quick=args.quick, verbose=verbose)
-
     # Run single benchmark by name
     if args.benchmark:
         if verbose:
@@ -690,10 +822,49 @@ Examples:
 
     # Save results before analysis
     results_file = None
-    if not args.no_save and (run_all or args.workloads or args.runtime or args.paper or args.benchmark):
-        results_file = save_results(results)
+    if not args.no_save and (run_all or args.workloads or args.runtime or args.benchmark):
+        output_dir = Path(args.output_dir) if args.output_dir else None
+        saved = save_results(results, output_dir=output_dir)
+        results_file = saved.get("combined_path")
+        run_dir = saved.get("run_dir")
         if verbose:
             print(f"\nResults saved to: {results_file}")
+            print(f"Per-workload results: {run_dir}")
+
+        # Auto-generate CSV tables if requested
+        if args.tables and results_file:
+            tables_script = ANALYSIS_DIR / "generate_tables.py"
+            if tables_script.exists():
+                tables_dir = run_dir / "tables" if run_dir else RESULTS_DIR / "tables"
+                tables_dir.mkdir(parents=True, exist_ok=True)
+                output_file = tables_dir / "summary.csv"
+
+                if verbose:
+                    print("\nGenerating CSV tables...")
+
+                table_cmd = [
+                    get_conda_python(),
+                    str(tables_script),
+                    "--input", str(results_file),
+                    "--format", "csv",
+                    "--output", str(output_file),
+                ]
+                table_result = subprocess.run(
+                    table_cmd,
+                    capture_output=True,
+                    text=True,
+                )
+                if table_result.returncode == 0:
+                    if verbose:
+                        print(f"Tables saved to: {output_file}")
+                    results["tables"] = {"output": str(output_file)}
+                else:
+                    if verbose:
+                        print(f"Table generation failed: {table_result.stderr[:200]}")
+                    results["tables"] = {"error": table_result.stderr[:500]}
+            else:
+                if verbose:
+                    print("Warning: generate_tables.py not found")
 
     # Run analysis
     if run_all or args.analyze:

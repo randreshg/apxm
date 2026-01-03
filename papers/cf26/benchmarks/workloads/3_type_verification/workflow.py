@@ -5,17 +5,9 @@ Contains the SAME bug as workflow.ais: using an undefined key.
 LangGraph discovers this at RUNTIME, after the first LLM call.
 """
 
-import os
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
-from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
-
-# Ollama model configuration
-OLLAMA_MODEL = (
-    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
-    or os.environ.get("OLLAMA_MODEL")
-    or "phi3:mini"
-)
+from llm_instrumentation import get_llm, HAS_OLLAMA
 
 
 class BrokenState(TypedDict):
@@ -24,9 +16,9 @@ class BrokenState(TypedDict):
     output: str
 
 
-def get_llm():
-    """Get the LLM instance (Ollama only)."""
-    return get_ollama_llm(OLLAMA_MODEL)
+def get_llm_instance():
+    """Get the configured LLM instance."""
+    return get_llm()
 
 
 def first_step(state: BrokenState) -> dict:
@@ -35,7 +27,7 @@ def first_step(state: BrokenState) -> dict:
     This call SUCCEEDS, costing tokens/money.
     The error will only be discovered in the second step.
     """
-    llm = get_llm()
+    llm = get_llm_instance()
 
     prompt = "Do something simple: say 'Hello World'"
     response = llm.invoke(prompt)

@@ -2,18 +2,25 @@
 
 Instructions for AI agents (Claude Code, etc.) working with the APXM codebase.
 
+**See Also:**
+- [Getting Started](GETTING_STARTED.md) - Installation and first steps
+- [Benchmark Workloads](../papers/CF26/benchmarks/workloads/README.md) - DSL comparison benchmarks
+
 ---
 
 ## CLI Setup
 
-Add the `apxm` command to your PATH:
+First, create the conda environment (includes all dependencies):
+
+```bash
+mamba env create -f environment.yaml
+```
+
+Then add the `apxm` command to your PATH:
 
 ```bash
 # Add to ~/.zshrc or ~/.bashrc
 export PATH="$PATH:$HOME/path/to/apxm/bin"
-
-# Install dependencies
-pip install typer rich
 ```
 
 The CLI automatically handles environment setup, MLIR configuration, and provides convenient commands.
@@ -28,7 +35,7 @@ apxm doctor
 apxm build
 
 # Run an AIS file
-apxm run examples/hello_world.ais
+apxm execute examples/hello_world.ais
 
 # Check all workloads compile
 apxm workloads check
@@ -44,14 +51,17 @@ apxm workloads check
 | `apxm build --runtime` | Build runtime only |
 | `apxm build --no-trace` | Build with tracing compiled out (zero overhead) |
 | `apxm build --trace` | Build with tracing enabled (default) |
-| `apxm run <file.apxmobj>` | Execute a pre-compiled artifact |
-| `apxm run <file.apxmobj> --trace <level>` | Execute with tracing |
-| `apxm compiler compile <file.ais> -o <output>` | Compile to artifact only |
-| `apxm compiler run <file.ais> [-O0/-O1/-O2]` | Compile and run an AIS file |
+| `apxm execute <file.ais>` | Compile and execute an AIS file |
+| `apxm execute <file.ais> --trace <level>` | Execute with tracing |
+| `apxm compile <file.ais> -o <output>` | Compile to artifact only |
+| `apxm run <file.apxmobj>` | Run a pre-compiled artifact |
 | `apxm compiler run <file.ais> --trace <level>` | Compile and run with tracing |
 | `apxm workloads list` | List available benchmark workloads |
 | `apxm workloads check [--verbose]` | Verify all workloads compile |
 | `apxm workloads run <name>` | Run a specific workload |
+| `apxm install` | Install/update conda environment |
+| `apxm benchmarks run --workloads` | Run A-PXM vs LangGraph benchmarks |
+| `apxm benchmarks run --workloads --quick --tables` | Quick benchmark with CSV output |
 
 ### How It Works
 
@@ -75,16 +85,18 @@ If you prefer manual setup instead of the Python CLI:
 ### Install Conda Environment
 
 ```bash
-cargo run -p apxm-cli -- install
+./target/release/apxm install
 ```
 
 This creates/updates the `apxm` conda environment from `environment.yaml`.
+
+> **Note:** If the binary isn't built yet, build it first with `cargo build -p apxm-cli --release`
 
 ### Activate Environment
 
 ```bash
 conda activate apxm
-eval "$(cargo run -p apxm-cli -- activate)"
+eval "$(./target/release/apxm activate)"
 ```
 
 The `activate` command sets required environment variables for MLIR compilation.
@@ -92,7 +104,7 @@ The `activate` command sets required environment variables for MLIR compilation.
 ### Verify Setup
 
 ```bash
-cargo run -p apxm-cli -- doctor
+apxm doctor
 ```
 
 You should see `mlir-tblgen` and `cmake/mlir` marked as OK.
@@ -216,16 +228,19 @@ apxm run workflow.ais  # --trace flag has no effect
 
 ```bash
 # Run an AIS file
-apxm run examples/hello_world.ais
+apxm execute examples/hello_world.ais
 
 # Run with optimization level
-apxm run examples/hello_world.ais -O2
+apxm execute examples/hello_world.ais -O2
 
 # Compile only
-apxm compiler compile examples/hello_world.ais -o output.apxmobj
+apxm compile examples/hello_world.ais -o output.apxmobj
+
+# Run pre-compiled artifact
+apxm run output.apxmobj
 ```
 
-### Benchmarks
+### Individual Workloads
 
 ```bash
 apxm workloads list              # List workloads
@@ -233,6 +248,39 @@ apxm workloads check             # Verify all compile
 apxm workloads run 10_multi_agent
 apxm workloads run 1 --json      # Run with JSON output
 ```
+
+### Benchmark Suite (A-PXM vs LangGraph)
+
+Run the full benchmark suite comparing A-PXM and LangGraph:
+
+```bash
+# Run all workloads with CSV table generation
+apxm benchmarks run --workloads --tables
+
+# Quick mode (3 iterations instead of 10)
+apxm benchmarks run --workloads --quick --tables
+
+# Run specific workload(s)
+apxm benchmarks run --workloads --workload 1
+apxm benchmarks run --workloads --workload 1,2,5 --quick
+
+# List available workloads
+apxm benchmarks run --list
+```
+
+**Benchmark Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--workloads` | Run DSL comparison workloads |
+| `--quick` | Quick mode (3 iterations, 1 warmup) |
+| `--tables` | Auto-generate CSV tables after run |
+| `--workload N` | Run specific workload(s) (comma-separated) |
+| `--iterations N` | Override iteration count |
+| `--warmup N` | Override warmup iterations |
+| `--json` | Output JSON only (no progress messages) |
+
+**Output:** Results saved to `papers/CF26/benchmarks/results/run_<timestamp>/`
 
 **Prerequisites:** Ollama with `gpt-oss:20b-cloud`: `ollama serve && ollama pull gpt-oss:20b-cloud`
 
@@ -255,7 +303,7 @@ cargo test -p apxm-driver
 
 ## LLM Configuration
 
-AIS programs that use `rsn`, `plan`, `reflect`, `verify`, or `talk` require an LLM backend.
+AIS programs that use `ask`, `think`, `reason`, `plan`, or `reflect` operations require an LLM backend.
 
 ### Create `.apxm/config.toml`
 
@@ -316,7 +364,7 @@ api_key = "env:GEMINI_API_KEY"
 ```ais
 agent HelloWorld {
     @entry flow main() -> str {
-        rsn("Generate a greeting") -> greeting
+        ask("Generate a greeting") -> greeting
         return greeting
     }
 }
@@ -327,7 +375,7 @@ agent HelloWorld {
 ```ais
 agent Researcher {
     flow research(topic: str) -> str {
-        rsn("Research: " + topic) -> findings
+        ask("Research: " + topic) -> findings
         return findings
     }
 }
@@ -344,36 +392,42 @@ agent Coordinator {
 
 | Operation | Syntax | Description |
 |-----------|--------|-------------|
-| Reasoning | `rsn("prompt") -> var` | LLM reasoning |
+| Ask | `ask("prompt") -> var` | Simple Q&A with LLM |
+| Think | `think("prompt", budget: N) -> var` | Extended thinking with token budget |
+| Reason | `reason("prompt", context) -> var` | Structured reasoning with belief updates |
 | Planning | `plan("goal") -> var` | Generate execution plan |
 | Reflection | `reflect("trace_id") -> var` | Self-reflection |
 | Verification | `verify expr -> var` | Verify condition |
+| Invoke | `inv(tool, args) -> var` | Tool invocation |
 | Memory Query | `qmem(store, query) -> var` | Query memory tier |
 | Memory Update | `umem(store, key, value)` | Update memory |
 | Flow Call | `Agent.flow(args) -> var` | Cross-agent call |
 
-### Reasoning Syntax (Explicit)
+### LLM Operations Syntax
 
-`rsn` now requires parentheses, even for single-argument prompts.
+APXM provides three core LLM operations:
 
 ```ais
-// Single prompt expression (token concatenation).
-rsn("Explain the domain background of " + topic) -> background
+// Ask - Simple Q&A, direct question and answer
+ask("Explain the domain background of " + topic) -> background
 
-// Template + context operands (comma separates context).
-rsn("Execute step 1: ", steps) -> step1_result
+// Think - Extended thinking with token budget
+think("Analyze the implications", data, budget: 2000) -> analysis
+
+// Reason - Structured reasoning with context operands
+reason("Execute step 1: ", steps) -> step1_result
 ```
 
-The comma does not concatenate. It passes context operands, which are appended at runtime as:
+Context operands (comma-separated) are appended at runtime as:
 
-```
+```text
 <template>
 
 Context 1: <value>
 Context 2: <value>
 ```
 
-`+` merges tokens and cannot be used with goals/handles; use the comma form for those.
+The `+` operator merges tokens; use the comma form for context operands.
 
 ### Memory Tiers
 
@@ -386,19 +440,19 @@ Context 2: <value>
 APXM uses **dataflow execution**: operations run when their inputs are ready, not in textual order.
 
 ```ais
-rsn("analyze", data) -> result
-print(result)           // Runs AFTER rsn (depends on result)
+ask("analyze", data) -> result
+print(result)           // Runs AFTER ask (depends on result)
 print("Done!")          // Runs IMMEDIATELY (no data dependency!)
 ```
 
-The `print("Done!")` has no inputs, so it can run at any time—even before `rsn` completes.
+The `print("Done!")` has no inputs, so it can run at any time—even before `ask` completes.
 
 **To enforce ordering**, pass data to create a dependency:
 
 ```ais
-rsn("analyze", data) -> result
+ask("analyze", data) -> result
 print(result)                    // Depends on result
-print("Done: ", result)          // Also depends on result - runs after rsn
+print("Done: ", result)          // Also depends on result - runs after ask
 ```
 
 This dataflow model enables automatic parallelism: independent operations run concurrently without explicit threading.
@@ -417,7 +471,7 @@ echo $CONDA_PREFIX  # Should show .../envs/apxm
 ### "Library not loaded: @rpath/libapxm_compiler_c.dylib"
 
 ```bash
-eval "$(cargo run -p apxm-cli -- activate)"
+eval "$(./target/release/apxm activate)"
 # Or manually set DYLD_LIBRARY_PATH
 ```
 

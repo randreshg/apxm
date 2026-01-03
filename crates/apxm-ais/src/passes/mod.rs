@@ -253,50 +253,6 @@ emission, as a diagnostic aid rather than a transformation."#,
     "mlir::ais::createUnconsumedValueWarningPass()",
 );
 
-/// Lower to async pass - converts AIS to async dialect.
-pub const LOWER_TO_ASYNC: PassSpec = PassSpec::new(
-    "lower-to-async",
-    "AISToAsyncPass",
-    "Lower AIS operations to async dialect",
-    r#"Converts AIS operations (inv, ask, qmem, umem, wait_all) to MLIR's
-async dialect by wrapping them in async.execute regions. This:
-
-- Makes parallelism explicit in the IR
-- Enables async-aware optimizations
-- Prepares for runtime interpretation
-
-Note: Runtime interprets async dialect directly without additional
-lowering layer (no AsyncToRuntime pass needed per ais-compiler design)."#,
-    PassCategory::Lowering,
-    "mlir::ais::createAISToAsyncPass()",
-)
-.with_dialects(&["async::AsyncDialect", "func::FuncDialect"]);
-
-/// Emit Rust pass - transpiles AIS to Rust source code.
-pub const EMIT_RUST: PassSpec = PassSpec::new(
-    "ais-emit-rust",
-    "AISToRustPass",
-    "Emit Rust source code from AIS dialect",
-    r#"Transpiles AIS operations to Rust source code that uses apxm-runtime.
-The generated code:
-
-- Uses apxm-runtime's public API (AgentBuilder, Executor, operations)
-- Is human-readable and debuggable
-- Compiles to native code with rustc
-- Achieves native performance (no interpretation overhead)
-
-This pass enables ahead-of-time compilation of agent programs."#,
-    PassCategory::Lowering,
-    "mlir::ais::createAISToRustPass()",
-)
-.with_options(&[PassOption::new(
-    "output",
-    "output",
-    "std::string",
-    "\"\"",
-    "Output file path for generated Rust code",
-)]);
-
 // ============================================================================
 // Built-in MLIR Passes (not generated, just registered)
 // ============================================================================
@@ -344,8 +300,6 @@ pub const AIS_PASSES: &[&PassSpec] = &[
     &SCHEDULING,
     &FUSE_ASK_OPS,
     &UNCONSUMED_VALUE_WARNING,
-    &LOWER_TO_ASYNC,
-    &EMIT_RUST,
 ];
 
 /// All passes including built-in MLIR passes.
@@ -355,8 +309,6 @@ pub const ALL_PASSES: &[&PassSpec] = &[
     &SCHEDULING,
     &FUSE_ASK_OPS,
     &UNCONSUMED_VALUE_WARNING,
-    &LOWER_TO_ASYNC,
-    &EMIT_RUST,
     // Built-in MLIR
     &CANONICALIZER,
     &CSE,
@@ -425,10 +377,5 @@ mod tests {
     fn test_scheduling_has_options() {
         assert!(!SCHEDULING.options.is_empty());
         assert_eq!(SCHEDULING.options.len(), 3);
-    }
-
-    #[test]
-    fn test_lower_to_async_has_dialects() {
-        assert!(!LOWER_TO_ASYNC.dependent_dialects.is_empty());
     }
 }

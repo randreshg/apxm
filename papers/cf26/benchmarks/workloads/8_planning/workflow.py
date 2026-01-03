@@ -5,17 +5,9 @@ Demonstrates multi-step task decomposition and execution.
 Compare with workflow.ais which has native PLAN operation.
 """
 
-import os
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, START, END
-from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
-
-# Ollama model configuration
-OLLAMA_MODEL = (
-    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
-    or os.environ.get("OLLAMA_MODEL")
-    or "phi3:mini"
-)
+from llm_instrumentation import get_llm, HAS_OLLAMA
 
 
 class PlanningState(TypedDict):
@@ -26,9 +18,9 @@ class PlanningState(TypedDict):
     final_result: str
 
 
-def get_llm():
-    """Get the LLM instance (Ollama only)."""
-    return get_ollama_llm(OLLAMA_MODEL)
+def get_llm_instance():
+    """Get the configured LLM instance."""
+    return get_llm()
 
 
 def create_plan(state: PlanningState) -> dict:
@@ -37,7 +29,7 @@ def create_plan(state: PlanningState) -> dict:
     Note: LangGraph has no native PLAN operation.
     Must use chain-of-thought prompting.
     """
-    llm = get_llm()
+    llm = get_llm_instance()
     goal = state["goal"]
 
     prompt = f"""Break down this goal into 3 concrete, actionable steps:
@@ -59,7 +51,7 @@ def execute_steps(state: PlanningState) -> dict:
     Note: LangGraph cannot automatically parallelize steps.
     This runs sequentially unless using Send API.
     """
-    llm = get_llm()
+    llm = get_llm_instance()
     steps = state["steps"]
     results = []
 
@@ -73,7 +65,7 @@ def execute_steps(state: PlanningState) -> dict:
 
 def synthesize(state: PlanningState) -> dict:
     """Synthesize final result from step results."""
-    llm = get_llm()
+    llm = get_llm_instance()
     goal = state["goal"]
     results = state["step_results"]
 

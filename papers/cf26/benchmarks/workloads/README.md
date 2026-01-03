@@ -6,23 +6,16 @@ DSL comparison benchmarks between A-PXM (AIS DSL) and LangGraph.
 
 ```bash
 # Run a single benchmark by folder name
-python3 run_all.py --benchmark compilation_scaling
-python3 run_all.py --benchmark real_llm_probe
-python3 run_all.py --benchmark fusion_quality
-python3 run_all.py --benchmark token_estimation
-python3 run_all.py --benchmark 1_parallel_research
+apxm benchmarks run --benchmark 1_parallel_research
 
 # Quick mode (fewer iterations)
-python3 run_all.py --benchmark compilation_scaling --quick
+apxm benchmarks run --benchmark 1_parallel_research --quick
 
 # JSON output only
-python3 run_all.py --benchmark compilation_scaling --json
+apxm benchmarks run --benchmark 1_parallel_research --json
 
-# Run all paper benchmarks
-python3 run_all.py --paper
-
-# Run everything (workloads + runtime + paper benchmarks)
-python3 run_all.py
+# Run everything (workloads + runtime)
+apxm benchmarks run
 
 # Run only DSL comparison workloads
 python3 run_all.py --workloads
@@ -49,12 +42,10 @@ workloads/
 ├── 4_scalability/           # N-way parallelism efficiency
 ├── 5_memory_augmented/      # 3-tier memory (STM/LTM/Episodic)
 ├── 6_tool_invocation/       # Native INV operations
-├── 7_reflection/            # Built-in reflect(operation)├── 8_planning/              # Native plan(operation)├── 9_conditional_routing/   # Dataflow-based routing
+├── 7_reflection/            # Built-in reflect(operation)
+├── 8_planning/              # Native plan(operation)
+├── 9_conditional_routing/   # Dataflow-based routing
 ├── 10_multi_agent/          # Multi-agent collaboration
-├── 11_compilation_scaling/  # Compilation phase timing at different scales
-├── 12_real_llm_probe/       # Real LLM latency and token measurements
-├── 13_fusion_quality/       # FuseAskOps O0 vs O1 comparison
-├── 14_token_estimation/     # Token cost estimation for fusion
 ├── apxm_runner.py           # Consolidated benchmark runner (WorkloadConfig registry)
 ├── runner.py                # Master benchmark runner (thin wrapper)
 └── README.md                # This file
@@ -64,10 +55,65 @@ Each workload folder contains:
 - `workflow.ais` - A-PXM implementation
 - `workflow.py` - LangGraph implementation (where applicable)
 - `README.md` - Workload-specific documentation
+- `expect_error` - (optional) Marker file for error-testing workloads
+
+### Error-Testing Workloads
+
+Some workloads (e.g., `3_type_verification`) are designed to test compile-time error detection.
+These contain intentionally broken code and include an `expect_error` marker file.
+
+When running `apxm workloads check`, these workloads:
+- **Pass** if compilation fails (expected behavior)
+- **Fail** if compilation succeeds (indicates a bug in the verifier)
 
 ## Prerequisites
 
-### 1. Install Ollama
+### 1. Configure LLM Backend
+
+LangGraph benchmarks read the same `.apxm/config.toml` as the runtime. Example Ollama config:
+
+```toml
+[chat]
+providers = ["ollama"]
+default_model = "ollama"
+
+[[llm_backends]]
+name = "ollama"
+provider = "ollama"
+model = "gpt-oss:20b-cloud"
+endpoint = "http://localhost:11434"
+```
+
+OpenAI example:
+
+```toml
+[chat]
+providers = ["openai"]
+default_model = "openai"
+
+[[llm_backends]]
+name = "openai"
+provider = "openai"
+model = "gpt-4o-mini"
+api_key = "env:OPENAI_API_KEY"
+```
+
+vLLM (OpenAI-compatible) example:
+
+```toml
+[chat]
+providers = ["vllm"]
+default_model = "vllm"
+
+[[llm_backends]]
+name = "vllm"
+provider = "openai"
+model = "your-model"
+endpoint = "http://localhost:8000/v1"
+api_key = "env:VLLM_API_KEY"
+```
+
+If using Ollama, install and start it:
 
 ```bash
 # macOS
@@ -83,8 +129,8 @@ ollama pull gpt-oss:20b-cloud
 ### 2. Install Python Dependencies
 
 ```bash
-cd papers/cf26/benchmarks/workloads
-pip install langgraph langchain-ollama
+cd papers/cf26/benchmarks
+pip install -r requirements.txt
 ```
 
 ### 3. Build A-PXM Compiler (optional, for DSL compilation)
@@ -126,19 +172,29 @@ apxm workloads benchmark --all --json -o results.json
 apxm workloads benchmark --all -n 10 -w 3
 ```
 
-### Manual: Run All Workloads
+### Run All Workloads
 
 ```bash
-cd papers/cf26/benchmarks/workloads
-
 # JSON output (for analysis)
-python runner.py --json > results.json
+apxm benchmarks run --workloads --json
 
 # Human-readable output
-python runner.py
+apxm benchmarks run --workloads
 
-# Specify iterations
-python runner.py --iterations 20
+# Specify iterations (DSL workloads only)
+apxm workloads benchmark --all -n 20
+```
+
+### Suite Runner (Recommended)
+
+```bash
+cd papers/cf26/benchmarks
+
+# Run all workloads + runtime benchmarks
+apxm benchmarks run
+
+# Save per-workload JSONs to a custom directory
+apxm benchmarks run --output-dir results/run_custom
 ```
 
 ### Run Individual Workload
@@ -370,28 +426,9 @@ Reduce benchmark load if LLM responses are slow:
 - Whole suite: `python runner.py --iterations 3 --warmup 1`
 - Or via env: `APXM_BENCH_ITERATIONS=3 APXM_BENCH_WARMUP=1 python runner.py`
 
-## Paper-Specific Benchmarks
+## Runtime Benchmarks
 
 These benchmarks generate data for the CF'26 paper tables and figures.
-
-### Compilation Scaling (`compilation_scaling/`)
-Measures compilation time at different operation counts (10, 25, 50, 100 ops).
-- **Output**: `tab/compilation-scaling.tex`
-- **Metrics**: Parse+Opt time, Artifact generation time, Total time
-
-### Real-LLM Probe (`real_llm_probe/`)
-Measures actual LLM latency and token usage with Ollama.
-- **Output**: `tab/real-llm.tex`
-- **Metrics**: LLM latency, Input/Output tokens, Scheduler overhead ratio
-
-### FuseAskOps Quality (`fusion_quality/`)
-Compares O0 (unfused) vs O1 (with FuseAskOps) performance.
-- **Output**: `tab/fusion-applicability.tex`
-- **Metrics**: Speedup by task type (classification, extraction, reasoning, creative)
-
-### Token Estimation (`token_estimation/`)
-Estimates token cost savings from FuseAskOps optimization.
-- **Metrics**: Token reduction percentage, API calls saved, System prompt amortization
 
 ### Rust Substrate Overhead (`../runtime/paper_benchmarks.rs`)
 Measures runtime scheduler overhead and parallelism scaling.

@@ -6,18 +6,10 @@ Requires explicit Send API for parallel execution.
 """
 
 import operator
-import os
 from typing import Annotated, TypedDict, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.constants import Send
-from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
-
-# Ollama model configuration
-OLLAMA_MODEL = (
-    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
-    or os.environ.get("OLLAMA_MODEL")
-    or "phi3:mini"
-)
+from llm_instrumentation import get_llm, HAS_OLLAMA
 
 
 class ScalabilityState(TypedDict):
@@ -26,15 +18,15 @@ class ScalabilityState(TypedDict):
     final: str
 
 
-def get_llm():
-    """Get the LLM instance (Ollama only)."""
-    return get_ollama_llm(OLLAMA_MODEL)
+def get_llm_instance():
+    """Get the configured LLM instance."""
+    return get_llm()
 
 
 def create_task_node(task_id: str):
     """Create a task node that makes a real LLM call."""
     def task_fn(state: ScalabilityState) -> dict:
-        llm = get_llm()
+        llm = get_llm_instance()
 
         prompt = f"Task {task_id}: Provide a brief fact about any topic in 1 sentence."
         response = llm.invoke(prompt)

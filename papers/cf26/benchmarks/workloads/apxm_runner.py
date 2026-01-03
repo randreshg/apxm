@@ -145,6 +145,11 @@ class APXMResult:
     validation_time_ms: Optional[float] = None
     llm_total_latency_ms: Optional[float] = None
     llm_requests: Optional[int] = None
+    llm_total_input_tokens: Optional[int] = None
+    llm_total_output_tokens: Optional[int] = None
+    llm_avg_latency_ms: Optional[float] = None
+    llm_p50_latency_ms: Optional[float] = None
+    llm_p99_latency_ms: Optional[float] = None
     stdout: str = ""
     stderr: str = ""
     error: Optional[str] = None
@@ -163,6 +168,11 @@ class APXMResult:
             "validation_time_ms": self.validation_time_ms,
             "llm_total_latency_ms": self.llm_total_latency_ms,
             "llm_requests": self.llm_requests,
+            "llm_total_input_tokens": self.llm_total_input_tokens,
+            "llm_total_output_tokens": self.llm_total_output_tokens,
+            "llm_avg_latency_ms": self.llm_avg_latency_ms,
+            "llm_p50_latency_ms": self.llm_p50_latency_ms,
+            "llm_p99_latency_ms": self.llm_p99_latency_ms,
             "error": self.error,
         }
 
@@ -230,6 +240,7 @@ def run_ais_workflow(
     workflow_path: Path,
     config: Optional[APXMConfig] = None,
     capture_metrics: bool = True,
+    args: Optional[List[str]] = None,
 ) -> APXMResult:
     """
     Run an AIS workflow through the full A-PXM pipeline.
@@ -244,6 +255,7 @@ def run_ais_workflow(
     Args:
         workflow_path: Path to the .ais file
         config: Execution configuration
+        args: Arguments to pass to the entry flow
 
     Returns:
         APXMResult with timing and execution info
@@ -274,11 +286,12 @@ def run_ais_workflow(
             error="Could not find apxm CLI. Build with: python tools/apxm_cli.py compiler build",
         )
 
-    # Build command
+    # Build command - use 'execute' for .ais source files
+    # CLI expects: apxm execute [OPTIONS] FILE [ARGS]...
+    # Options MUST come before the file path
     cmd = [
         str(cli_path),
-        "run",
-        str(workflow_path),
+        "execute",
         f"-O{config.opt_level}",
     ]
     metrics_path: Optional[Path] = None
@@ -287,6 +300,11 @@ def run_ais_workflow(
         metrics_path = Path(tmp.name)
         tmp.close()
         cmd.extend(["--emit-metrics", str(metrics_path)])
+    # File path comes after options
+    cmd.append(str(workflow_path))
+    # Entry flow arguments come after file path
+    if args:
+        cmd.extend(args)
 
     # Set up environment using shared utility
     shared_config = _ApxmConfig.detect()
@@ -327,6 +345,11 @@ def run_ais_workflow(
         validation_ms: Optional[float] = None
         llm_total_latency_ms: Optional[float] = None
         llm_requests: Optional[int] = None
+        llm_total_input_tokens: Optional[int] = None
+        llm_total_output_tokens: Optional[int] = None
+        llm_avg_latency_ms: Optional[float] = None
+        llm_p50_latency_ms: Optional[float] = None
+        llm_p99_latency_ms: Optional[float] = None
 
         if metrics_path and metrics_path.exists():
             try:
@@ -343,9 +366,30 @@ def run_ais_workflow(
 
                 llm_metrics = metrics.get("llm")
                 if llm_metrics:
-                    llm_requests = int(llm_metrics.get("total_requests", 0))
-                    avg_latency_ms = float(llm_metrics.get("avg_latency_ms", 0))
-                    llm_total_latency_ms = avg_latency_ms * llm_requests
+                    def _safe_int(value: Any) -> Optional[int]:
+                        if value is None:
+                            return None
+                        try:
+                            return int(value)
+                        except (TypeError, ValueError):
+                            return None
+
+                    def _safe_float(value: Any) -> Optional[float]:
+                        if value is None:
+                            return None
+                        try:
+                            return float(value)
+                        except (TypeError, ValueError):
+                            return None
+
+                    llm_requests = _safe_int(llm_metrics.get("total_requests"))
+                    llm_avg_latency_ms = _safe_float(llm_metrics.get("avg_latency_ms"))
+                    llm_p50_latency_ms = _safe_float(llm_metrics.get("p50_latency_ms"))
+                    llm_p99_latency_ms = _safe_float(llm_metrics.get("p99_latency_ms"))
+                    llm_total_input_tokens = _safe_int(llm_metrics.get("total_input_tokens"))
+                    llm_total_output_tokens = _safe_int(llm_metrics.get("total_output_tokens"))
+                    if llm_requests and llm_avg_latency_ms is not None:
+                        llm_total_latency_ms = llm_avg_latency_ms * llm_requests
             except Exception:
                 metrics = None
 
@@ -366,6 +410,11 @@ def run_ais_workflow(
                 validation_time_ms=validation_ms,
                 llm_total_latency_ms=llm_total_latency_ms,
                 llm_requests=llm_requests,
+                llm_total_input_tokens=llm_total_input_tokens,
+                llm_total_output_tokens=llm_total_output_tokens,
+                llm_avg_latency_ms=llm_avg_latency_ms,
+                llm_p50_latency_ms=llm_p50_latency_ms,
+                llm_p99_latency_ms=llm_p99_latency_ms,
                 stdout=stdout,
                 stderr=stderr,
                 error=f"CLI returned non-zero: {result.returncode}\n{stderr}",
@@ -397,6 +446,11 @@ def run_ais_workflow(
             validation_time_ms=validation_ms,
             llm_total_latency_ms=llm_total_latency_ms,
             llm_requests=llm_requests,
+            llm_total_input_tokens=llm_total_input_tokens,
+            llm_total_output_tokens=llm_total_output_tokens,
+            llm_avg_latency_ms=llm_avg_latency_ms,
+            llm_p50_latency_ms=llm_p50_latency_ms,
+            llm_p99_latency_ms=llm_p99_latency_ms,
             stdout=stdout,
             stderr=stderr,
             raw_output=stdout,
@@ -433,6 +487,7 @@ def run_benchmark(
     config: Optional[APXMConfig] = None,
     iterations: int = 10,
     warmup: int = 3,
+    args: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Run a benchmark with multiple iterations.
@@ -442,6 +497,7 @@ def run_benchmark(
         config: Execution configuration
         iterations: Number of benchmark iterations
         warmup: Number of warmup iterations (not counted)
+        args: Arguments to pass to the entry flow
 
     Returns:
         Dictionary with mean, std, min, max, samples
@@ -457,10 +513,11 @@ def run_benchmark(
 
     # Warmup
     for _ in range(warmup):
-        run_ais_workflow(workflow_path, config, capture_metrics=False)
+        run_ais_workflow(workflow_path, config, capture_metrics=False, args=args)
 
     # Benchmark
-    samples = []
+    samples: List[float] = []
+    sample_details: List[Dict[str, Any]] = []
     metrics_samples: List[Dict[str, float]] = []
     runtime_ms_values: List[float] = []
     compile_ms_values: List[float] = []
@@ -469,10 +526,46 @@ def run_benchmark(
     llm_total_ms_values: List[float] = []
     llm_requests_values: List[float] = []
     runtime_non_llm_ms_values: List[float] = []
+    llm_input_tokens_values: List[float] = []
+    llm_output_tokens_values: List[float] = []
+    llm_avg_latency_values: List[float] = []
+    llm_p50_latency_values: List[float] = []
+    llm_p99_latency_values: List[float] = []
     errors = []
 
     for i in range(iterations):
-        result = run_ais_workflow(workflow_path, config)
+        iteration_ts = datetime.now(timezone.utc).isoformat()
+        result = run_ais_workflow(workflow_path, config, args=args)
+
+        sample_entry: Dict[str, Any] = {
+            "iteration": i,
+            "timestamp": iteration_ts,
+            "success": result.success,
+            "wall_time_ms": result.execution_time_ms,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+        if result.error:
+            sample_entry["error"] = result.error
+        if result.metrics is not None:
+            sample_entry["runtime_metrics"] = result.metrics
+        sample_entry["phases"] = {
+            "compile_ms": result.compile_time_ms,
+            "artifact_ms": result.artifact_time_ms,
+            "validation_ms": result.validation_time_ms,
+            "runtime_ms": result.runtime_ms,
+        }
+        sample_entry["llm"] = {
+            "total_latency_ms": result.llm_total_latency_ms,
+            "requests": result.llm_requests,
+            "input_tokens": result.llm_total_input_tokens,
+            "output_tokens": result.llm_total_output_tokens,
+            "avg_latency_ms": result.llm_avg_latency_ms,
+            "p50_latency_ms": result.llm_p50_latency_ms,
+            "p99_latency_ms": result.llm_p99_latency_ms,
+        }
+        sample_details.append(sample_entry)
+
         if result.success:
             samples.append(result.execution_time_ms)
             if result.metrics is not None:
@@ -491,6 +584,16 @@ def run_benchmark(
                     llm_total_ms_values.append(llm_total_ms)
                 if llm_requests is not None:
                     llm_requests_values.append(float(llm_requests))
+                if result.llm_total_input_tokens is not None:
+                    llm_input_tokens_values.append(float(result.llm_total_input_tokens))
+                if result.llm_total_output_tokens is not None:
+                    llm_output_tokens_values.append(float(result.llm_total_output_tokens))
+                if result.llm_avg_latency_ms is not None:
+                    llm_avg_latency_values.append(result.llm_avg_latency_ms)
+                if result.llm_p50_latency_ms is not None:
+                    llm_p50_latency_values.append(result.llm_p50_latency_ms)
+                if result.llm_p99_latency_ms is not None:
+                    llm_p99_latency_values.append(result.llm_p99_latency_ms)
                 if runtime_ms is not None and llm_total_ms is not None:
                     llm_wall_ms = min(llm_total_ms, runtime_ms)
                     runtime_non_llm_ms_values.append(max(runtime_ms - llm_wall_ms, 0.0))
@@ -503,6 +606,11 @@ def run_benchmark(
                     "validation_ms": result.validation_time_ms or 0.0,
                     "llm_total_ms": llm_total_ms or 0.0,
                     "llm_requests": float(llm_requests or 0),
+                    "llm_input_tokens": float(result.llm_total_input_tokens or 0),
+                    "llm_output_tokens": float(result.llm_total_output_tokens or 0),
+                    "llm_avg_latency_ms": float(result.llm_avg_latency_ms or 0.0),
+                    "llm_p50_latency_ms": float(result.llm_p50_latency_ms or 0.0),
+                    "llm_p99_latency_ms": float(result.llm_p99_latency_ms or 0.0),
                 })
         else:
             errors.append(result.error)
@@ -512,10 +620,27 @@ def run_benchmark(
             "success": False,
             "error": errors[0] if errors else "No successful runs",
             "samples": [],
+            "sample_details": sample_details,
             "compiler": compiler_diagnostics,
+            "metrics_samples": metrics_samples,
         }
 
     import statistics
+
+    def _percentile(values: List[float], pct: float) -> float:
+        if not values:
+            return 0.0
+        ordered = sorted(values)
+        if pct <= 0:
+            return ordered[0]
+        if pct >= 100:
+            return ordered[-1]
+        idx = (len(ordered) - 1) * (pct / 100.0)
+        lo = int(idx)
+        hi = min(lo + 1, len(ordered) - 1)
+        if lo == hi:
+            return ordered[lo]
+        return ordered[lo] + (ordered[hi] - ordered[lo]) * (idx - lo)
 
     def _stats(values: List[float]) -> Dict[str, float]:
         if not values:
@@ -526,6 +651,7 @@ def run_benchmark(
             "min_ms": min(values),
             "max_ms": max(values),
             "p50_ms": statistics.median(values),
+            "p95_ms": _percentile(values, 95),
         }
 
     return {
@@ -535,7 +661,9 @@ def run_benchmark(
         "min_ms": min(samples),
         "max_ms": max(samples),
         "p50_ms": statistics.median(samples),
+        "p95_ms": _percentile(samples, 95),
         "samples": samples,
+        "sample_details": sample_details,
         "iterations": iterations,
         "opt_level": config.opt_level,
         "compiler": compiler_diagnostics,
@@ -547,6 +675,11 @@ def run_benchmark(
             "llm_total_ms": _stats(llm_total_ms_values),
             "llm_requests": _stats(llm_requests_values),
             "runtime_non_llm_ms": _stats(runtime_non_llm_ms_values),
+            "llm_input_tokens": _stats(llm_input_tokens_values),
+            "llm_output_tokens": _stats(llm_output_tokens_values),
+            "llm_avg_latency_ms": _stats(llm_avg_latency_values),
+            "llm_p50_latency_ms": _stats(llm_p50_latency_values),
+            "llm_p99_latency_ms": _stats(llm_p99_latency_values),
         },
         "metrics_samples": metrics_samples,
     }
@@ -621,6 +754,8 @@ class WorkloadConfig:
     default_warmup: int = 3
     # For LangGraph initial state
     initial_state: Dict[str, Any] = field(default_factory=dict)
+    # Entry flow arguments for A-PXM CLI
+    entry_args: List[str] = field(default_factory=list)
     # For scalability workloads
     parallel_levels: List[int] = field(default_factory=list)
     # For compilation scaling
@@ -629,13 +764,14 @@ class WorkloadConfig:
     extra_workflows: Dict[str, str] = field(default_factory=dict)
 
 
-# Workload registry - all 14 workloads
+# Workload registry - current workloads
 WORKLOADS: Dict[int, WorkloadConfig] = {
     1: WorkloadConfig(
         name="parallel_research",
         directory="1_parallel_research",
         description="Automatic parallelism from dataflow",
         initial_state={"topic": "quantum computing", "background": "", "advances": "", "impact": "", "combined": "", "report": ""},
+        entry_args=["quantum computing"],
     ),
     2: WorkloadConfig(
         name="chain_fusion",
@@ -643,6 +779,7 @@ WORKLOADS: Dict[int, WorkloadConfig] = {
         description="FuseAskOps compiler optimization (5 calls -> 1)",
         workload_type=WorkloadType.FUSION_COMPARISON,
         initial_state={"step1": "", "step2": "", "step3": "", "step4": "", "summary": ""},
+        # main() has no arguments
     ),
     3: WorkloadConfig(
         name="type_verification",
@@ -650,6 +787,7 @@ WORKLOADS: Dict[int, WorkloadConfig] = {
         description="Compile-time vs runtime error detection",
         workload_type=WorkloadType.ERROR_DETECTION,
         initial_state={"result": "", "output": ""},
+        # main() has no arguments
     ),
     4: WorkloadConfig(
         name="scalability",
@@ -658,78 +796,49 @@ WORKLOADS: Dict[int, WorkloadConfig] = {
         workload_type=WorkloadType.SCALABILITY,
         parallel_levels=[2, 4, 8],
         extra_workflows={"2": "workflow_n2.ais", "4": "workflow_n4.ais", "8": "workflow_n8.ais"},
+        # main() has no arguments
     ),
     5: WorkloadConfig(
         name="memory_augmented",
         directory="5_memory_augmented",
         description="3-tier memory system (STM/LTM/Episodic)",
         initial_state={"query": "What is machine learning?", "cached": "", "answer": ""},
+        entry_args=["What is machine learning?"],
     ),
     6: WorkloadConfig(
         name="tool_invocation",
         directory="6_tool_invocation",
         description="Native INV operations with capability system",
         initial_state={"query": "Search for recent AI news", "tool_result": "", "answer": ""},
+        entry_args=["Search for recent AI news"],
     ),
     7: WorkloadConfig(
         name="reflection",
         directory="7_reflection",
         description="Built-in reflect operation for self-improvement",
         initial_state={"task": "Write a haiku about coding", "initial_answer": "", "reflection": "", "improved_answer": ""},
+        entry_args=["Write a haiku about coding"],
     ),
     8: WorkloadConfig(
         name="planning",
         directory="8_planning",
         description="Native plan operation for task decomposition",
         initial_state={"goal": "Build a simple web app", "steps": "", "step1_result": "", "step2_result": "", "step3_result": "", "combined": "", "final_result": ""},
+        entry_args=["Build a simple web app"],
     ),
     9: WorkloadConfig(
         name="conditional_routing",
         directory="9_conditional_routing",
         description="Dataflow-based parallel preparation and routing",
         initial_state={"input": "Explain quantum entanglement", "category": "", "output": ""},
+        entry_args=["Explain quantum entanglement"],
     ),
     10: WorkloadConfig(
         name="multi_agent",
         directory="10_multi_agent",
         description="Native agent definitions with communicate operations",
         initial_state={"topic": "climate change", "research_result": "", "critique_prep": "", "critique_result": "", "final_report": ""},
-    ),
-    11: WorkloadConfig(
-        name="compilation_scaling",
-        directory="11_compilation_scaling",
-        description="Compilation phase timing at different op counts",
-        workload_type=WorkloadType.COMPILE_ONLY,
-        op_counts=[10, 25, 50, 100],
-    ),
-    12: WorkloadConfig(
-        name="real_llm_probe",
-        directory="12_real_llm_probe",
-        description="Real LLM latency and token measurement",
-        workload_type=WorkloadType.LLM_PROBE,
-    ),
-    13: WorkloadConfig(
-        name="fusion_quality",
-        directory="13_fusion_quality",
-        description="FuseAskOps optimization effectiveness by task type",
-        workload_type=WorkloadType.FUSION_COMPARISON,
-        extra_workflows={
-            "classification": "classification.ais",
-            "extraction": "extraction.ais",
-            "reasoning": "reasoning.ais",
-            "creative": "creative.ais",
-        },
-    ),
-    14: WorkloadConfig(
-        name="token_estimation",
-        directory="14_token_estimation",
-        description="Token cost estimation before/after fusion",
-        workload_type=WorkloadType.TOKEN_ESTIMATION,
-        extra_workflows={
-            "simple_chain": "simple_chain.ais",
-            "sequential_reasoning": "sequential_reasoning.ais",
-            "parallel_research": "parallel_research.ais",
-        },
+        entry_args=["climate change"],
     ),
 }
 
@@ -811,7 +920,9 @@ def _run_standard_apxm(workload: WorkloadConfig, iterations: int, warmup: int) -
         return {"error": f"Workflow file not found: {workflow_file}"}
 
     config = APXMConfig(opt_level=workload.opt_level)
-    return run_benchmark(workflow_file, config, iterations, warmup=warmup)
+    # Pass entry flow arguments if defined
+    args = workload.entry_args if workload.entry_args else None
+    return run_benchmark(workflow_file, config, iterations, warmup=warmup, args=args)
 
 
 def _run_error_detection_langgraph(workload: WorkloadConfig, iterations: int, warmup: int) -> Dict[str, Any]:
@@ -875,8 +986,9 @@ def _run_error_detection_apxm(workload: WorkloadConfig, iterations: int, warmup:
         env = setup_mlir_environment(config.conda_prefix, config.target_dir)
 
     start = time.perf_counter()
+    # CLI expects: apxm execute [OPTIONS] FILE [ARGS]...
     result = subprocess.run(
-        [str(cli_path), "run", str(workflow_file), "-O0"],
+        [str(cli_path), "execute", "-O0", str(workflow_file)],
         capture_output=True,
         text=True,
         timeout=30,
@@ -977,7 +1089,7 @@ def _run_compile_only_apxm(workload: WorkloadConfig, iterations: int, warmup: in
         for i in range(num_ops):
             result_name = f"result_{i}"
             result_names.append(result_name)
-            lines.append(f'        rsn "Task {i}: Process data element" -> {result_name}')
+            lines.append(f'        ask "Task {i}: Process data element" -> {result_name}')
         lines.append("")
         lines.append(f"        merge [{', '.join(result_names)}] -> final")
         lines.extend(["    }", "}"])
@@ -1045,7 +1157,7 @@ def run_workload_benchmark(
     Unified entry point for running any workload benchmark.
 
     Args:
-        identifier: Workload number (1-14), name, or directory
+        identifier: Workload number (1-10), name, or directory
         iterations: Number of benchmark iterations (default from workload config)
         warmup: Number of warmup iterations (default from workload config)
         run_langgraph: Whether to run LangGraph benchmark

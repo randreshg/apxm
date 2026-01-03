@@ -16,20 +16,11 @@
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/Async/IR/Async.h"
 #include "ais/Dialect/AIS/IR/AISDialect.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/raw_ostream.h"
-
-/* Make the AIS Rust codegen options type available to implementation
- * translation units that include this internal header. This allows files
- * that build the C API (which include the internal header via Types.h)
- * to see the declaration of `mlir::ais::RustCodegenOptions` without
- * adding includes in many individual .cpp files.
- */
-#include "ais/Dialect/AIS/Conversion/Rust/AISToRust.h"
 
 struct ApxmCompilerContext {
   std::unique_ptr<mlir::MLIRContext> mlir_context;
@@ -40,7 +31,6 @@ struct ApxmCompilerContext {
     // Register required dialects used across the C API implementation
     mlir_context->loadDialect<mlir::ais::AISDialect>();
     mlir_context->loadDialect<mlir::func::FuncDialect>();
-    mlir_context->loadDialect<mlir::async::AsyncDialect>();
     mlir_context->allowUnregisteredDialects(true);
 
     // Register diagnostic handler to print warnings and errors to stderr

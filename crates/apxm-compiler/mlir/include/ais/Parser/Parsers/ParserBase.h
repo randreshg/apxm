@@ -48,9 +48,14 @@ namespace apxm::parser {
   case TokenKind::kw_in: return "in";
   case TokenKind::kw_try: return "try";
   case TokenKind::kw_catch: return "catch";
+  case TokenKind::kw_case: return "case";
+  case TokenKind::kw_default: return "default";
+  case TokenKind::kw_switch: return "switch";
+  case TokenKind::kw_ask: return "ask";
   case TokenKind::kw_llm: return "llm";
   case TokenKind::kw_tool: return "tool";
   case TokenKind::kw_mem: return "mem";
+  case TokenKind::kw_reason: return "reason";
   case TokenKind::kw_think: return "think";
   case TokenKind::kw_plan: return "plan";
   case TokenKind::kw_print: return "print";
@@ -79,6 +84,8 @@ namespace apxm::parser {
   case TokenKind::kw_response: return "response";
   case TokenKind::kw_context_type: return "context";
   case TokenKind::kw_void: return "void";
+  case TokenKind::at_sign: return "@";
+  case TokenKind::kw_entry: return "entry";
   case TokenKind::identifier: return "identifier";
   case TokenKind::string_literal: return "string literal";
   case TokenKind::number_literal: return "number literal";

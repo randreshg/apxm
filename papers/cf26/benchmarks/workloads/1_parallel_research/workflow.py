@@ -5,18 +5,10 @@ Demonstrates explicit parallelism with Send API.
 Compare with workflow.ais which achieves the same with automatic dataflow parallelism.
 """
 
-import os
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.constants import Send
-from llm_instrumentation import get_ollama_llm, HAS_OLLAMA
-
-# Ollama model configuration
-OLLAMA_MODEL = (
-    os.environ.get("APXM_BENCH_OLLAMA_MODEL")
-    or os.environ.get("OLLAMA_MODEL")
-    or "phi3:mini"
-)
+from llm_instrumentation import get_llm, HAS_OLLAMA
 
 
 class ResearchState(TypedDict):
@@ -29,14 +21,14 @@ class ResearchState(TypedDict):
     report: str
 
 
-def get_llm():
-    """Get the LLM instance (Ollama only)."""
-    return get_ollama_llm(OLLAMA_MODEL)
+def get_llm_instance():
+    """Get the configured LLM instance."""
+    return get_llm()
 
 
 def research_background(state: ResearchState) -> dict:
     """Research domain background."""
-    llm = get_llm()
+    llm = get_llm_instance()
     topic = state["topic"]
 
     prompt = f"Explain the domain background of {topic} in 2-3 sentences."
@@ -46,7 +38,7 @@ def research_background(state: ResearchState) -> dict:
 
 def research_advances(state: ResearchState) -> dict:
     """Research recent advances."""
-    llm = get_llm()
+    llm = get_llm_instance()
     topic = state["topic"]
 
     prompt = f"What are the recent advances in {topic}? Answer in 2-3 sentences."
@@ -56,7 +48,7 @@ def research_advances(state: ResearchState) -> dict:
 
 def research_impact(state: ResearchState) -> dict:
     """Research societal impact."""
-    llm = get_llm()
+    llm = get_llm_instance()
     topic = state["topic"]
 
     prompt = f"What is the societal impact of {topic}? Answer in 2-3 sentences."
@@ -76,7 +68,7 @@ def merge_results(state: ResearchState) -> dict:
 
 def synthesize(state: ResearchState) -> dict:
     """Synthesize final report."""
-    llm = get_llm()
+    llm = get_llm_instance()
     combined = state["combined"]
 
     prompt = f"Synthesize this research into a coherent report:\n\n{combined}"
