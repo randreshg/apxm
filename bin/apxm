@@ -1,0 +1,60 @@
+#!/bin/bash
+# APXM CLI - Delegates to Python CLI
+#
+# Setup: export PATH="$PATH:$HOME/path/to/apxm/bin"
+# Usage: apxm doctor | apxm build | apxm execute workflow.ais
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+PYTHON_CLI="${REPO_ROOT}/tools/apxm_cli.py"
+CACHE_FILE="${SCRIPT_DIR}/.python-cache"
+
+# Try cached Python path first (fast path)
+if [[ -f "$CACHE_FILE" ]]; then
+    CACHED_PYTHON=$(cat "$CACHE_FILE")
+    if [[ -x "$CACHED_PYTHON" ]] && "$CACHED_PYTHON" -c "import typer, rich" 2>/dev/null; then
+        exec "$CACHED_PYTHON" "$PYTHON_CLI" "$@"
+    fi
+    rm -f "$CACHE_FILE"  # Invalid cache
+fi
+
+# Find Python with required dependencies
+find_python() {
+    # Try conda/mamba apxm environment first (preferred)
+    for cmd in mamba conda; do
+        if command -v $cmd &>/dev/null; then
+            local env_path=$($cmd info --envs 2>/dev/null | grep "^apxm " | awk '{print $NF}')
+            if [[ -n "$env_path" && -x "$env_path/bin/python" ]]; then
+                if "$env_path/bin/python" -c "import typer, rich" 2>/dev/null; then
+                    echo "$env_path/bin/python"
+                    return 0
+                fi
+            fi
+        fi
+    done
+
+    # Fallback to system python3
+    if python3 -c "import typer, rich" 2>/dev/null; then
+        echo "python3"
+        return 0
+    fi
+
+    return 1
+}
+
+# Verify CLI exists
+[[ -f "$PYTHON_CLI" ]] || { echo "Error: CLI not found at $PYTHON_CLI"; exit 1; }
+
+# Find Python and cache it
+PYTHON=$(find_python) || {
+    echo "Error: Python environment not found."
+    echo ""
+    echo "Create the conda environment first:"
+    echo "  mamba env create -f environment.yaml"
+    exit 1
+}
+
+# Cache for next time (only if it's an absolute path)
+[[ "$PYTHON" == /* ]] && echo "$PYTHON" > "$CACHE_FILE"
+
+exec "$PYTHON" "$PYTHON_CLI" "$@"
