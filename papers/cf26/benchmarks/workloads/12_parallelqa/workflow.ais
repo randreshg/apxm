@@ -1,0 +1,29 @@
+// ParallelQA Workflow
+// Demonstrates embarrassingly parallel sub-question handling.
+//
+// ParallelQA questions can be decomposed into independent sub-questions
+// that can be answered in parallel, then combined.
+
+agent ParallelQA {
+    @entry flow main(question: str) -> str {
+        // Step 1: Decompose question into parallel sub-questions
+        ask("Break down this question into independent sub-questions that can be answered in parallel: " + question) -> decomposition
+        
+        // Step 2: Answer sub-questions in parallel (simulated)
+        // In a full implementation, these would be parallel ask/inv operations
+        ask("Answer the first sub-question from: " + decomposition) -> sub_answer1
+        ask("Answer the second sub-question from: " + decomposition) -> sub_answer2
+        
+        // Step 3: Combine sub-answers to form final answer
+        merge(sub_answer1, sub_answer2) -> combined_answers
+        
+        // Step 4: Synthesize final answer
+        ask("Given the original question: " + question + 
+            "\nAnd the sub-answers: " + combined_answers + 
+            "\nProvide the final answer. Be concise.") -> answer
+        
+        print("Question: " + question)
+        print("Answer: " + answer)
+        return answer
+    }
+}
