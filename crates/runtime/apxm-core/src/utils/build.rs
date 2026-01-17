@@ -674,17 +674,15 @@ fn build_candidate_reports(
         }
     }
 
-    if let Some(path) = mlir_tblgen_path {
-        if let Some(prefix) = path.parent().and_then(|p| p.parent()) {
+    if let Some(path) = mlir_tblgen_path
+        && let Some(prefix) = path.parent().and_then(|p| p.parent()) {
             prefixes.push(prefix.to_path_buf());
         }
-    }
 
-    if let Some(path) = llvm_config_path {
-        if let Some(prefix) = path.parent().and_then(|p| p.parent()) {
+    if let Some(path) = llvm_config_path
+        && let Some(prefix) = path.parent().and_then(|p| p.parent()) {
             prefixes.push(prefix.to_path_buf());
         }
-    }
 
     prefixes.sort();
     prefixes.dedup();
@@ -724,21 +722,19 @@ fn scan_lib_dirs(prefix: &Path, config: &LibraryConfig) -> (bool, bool) {
             }
         }
 
-        if !has_llvm {
-            if let Ok(entries) = fs::read_dir(&lib_dir) {
+        if !has_llvm
+            && let Ok(entries) = fs::read_dir(&lib_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
-                        if file_name.starts_with(platform.llvm_library_prefix())
+                    if let Some(file_name) = path.file_name().and_then(|s| s.to_str())
+                        && file_name.starts_with(platform.llvm_library_prefix())
                             && file_name.ends_with(platform.llvm_library_suffix())
                         {
                             has_llvm = true;
                             break;
                         }
-                    }
                 }
             }
-        }
     }
 
     (has_mlir, has_llvm)

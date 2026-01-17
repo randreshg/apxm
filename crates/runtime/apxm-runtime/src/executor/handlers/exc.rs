@@ -6,7 +6,7 @@ pub async fn execute(_ctx: &ExecutionContext, node: &Node, _inputs: Vec<Value>) 
     let message = get_string_attribute(node, "message")?;
 
     Err(apxm_core::error::RuntimeError::Operation {
-        op_type: node.op_type.clone(),
+        op_type: node.op_type,
         message,
     })
 }

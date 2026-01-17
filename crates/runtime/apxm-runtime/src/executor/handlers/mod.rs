@@ -39,7 +39,7 @@ pub fn get_attribute(node: &Node, key: &str) -> Result<Value> {
         .get(key)
         .cloned()
         .ok_or_else(|| apxm_core::error::RuntimeError::Operation {
-            op_type: node.op_type.clone(),
+            op_type: node.op_type,
             message: format!("Missing required attribute: {}", key),
         })
 }
@@ -49,7 +49,7 @@ pub fn get_string_attribute(node: &Node, key: &str) -> Result<String> {
     get_attribute(node, key)?
         .as_string()
         .ok_or_else(|| apxm_core::error::RuntimeError::Operation {
-            op_type: node.op_type.clone(),
+            op_type: node.op_type,
             message: format!("Attribute {} must be a string", key),
         })
         .map(|s| s.to_string())
@@ -62,7 +62,7 @@ pub fn get_optional_string_attribute(node: &Node, key: &str) -> Result<Option<St
             .as_string()
             .map(|s| Some(s.to_string()))
             .ok_or_else(|| apxm_core::error::RuntimeError::Operation {
-                op_type: node.op_type.clone(),
+                op_type: node.op_type,
                 message: format!("Attribute {} must be a string", key),
             }),
         None => Ok(None),
@@ -77,7 +77,7 @@ pub fn get_optional_u64_attribute(node: &Node, key: &str) -> Result<Option<u64>>
                 .as_u64()
                 .map(Some)
                 .ok_or_else(|| apxm_core::error::RuntimeError::Operation {
-                    op_type: node.op_type.clone(),
+                    op_type: node.op_type,
                     message: format!("Attribute {} must be a number", key),
                 })
         }
@@ -91,7 +91,7 @@ pub fn get_input(node: &Node, inputs: &[Value], index: usize) -> Result<Value> {
         .get(index)
         .cloned()
         .ok_or_else(|| apxm_core::error::RuntimeError::Operation {
-            op_type: node.op_type.clone(),
+            op_type: node.op_type,
             message: format!("Missing input at index {}", index),
         })
 }
