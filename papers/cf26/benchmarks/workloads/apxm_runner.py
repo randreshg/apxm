@@ -739,6 +739,7 @@ class WorkloadType(Enum):
     FUSION_COMPARISON = "fusion"    # O0 vs O1 comparison
     LLM_PROBE = "probe"             # Single LLM call measurement
     TOKEN_ESTIMATION = "tokens"     # Token cost estimation
+    DATASET = "dataset"             # Dataset-driven benchmarks (accuracy/F1 metrics)
 
 
 @dataclass
@@ -762,6 +763,9 @@ class WorkloadConfig:
     op_counts: List[int] = field(default_factory=list)
     # Extra workflow files (for scalability, fusion quality, etc.)
     extra_workflows: Dict[str, str] = field(default_factory=dict)
+    # For dataset workloads
+    dataset_name: Optional[str] = None  # "hotpotqa", "parallelqa", "movie"
+    max_samples: Optional[int] = None  # Limit dataset size for benchmarks
 
 
 # Workload registry - current workloads
@@ -839,6 +843,26 @@ WORKLOADS: Dict[int, WorkloadConfig] = {
         description="Native agent definitions with communicate operations",
         initial_state={"topic": "climate change", "research_result": "", "critique_prep": "", "critique_result": "", "final_report": ""},
         entry_args=["climate change"],
+    ),
+    11: WorkloadConfig(
+        name="hotpotqa",
+        directory="11_hotpotqa",
+        description="Multi-hop question answering (HotpotQA dataset)",
+        workload_type=WorkloadType.DATASET,
+        dataset_name="hotpotqa",
+        max_samples=50,  # Default to 50 samples for benchmarks
+        default_iterations=50,  # Interpreted as max_samples for dataset workloads
+        initial_state={"question": ""},
+    ),
+    12: WorkloadConfig(
+        name="parallelqa",
+        directory="12_parallelqa",
+        description="Parallel sub-question answering (ParallelQA dataset)",
+        workload_type=WorkloadType.DATASET,
+        dataset_name="parallelqa",
+        max_samples=50,  # Default to 50 samples for benchmarks
+        default_iterations=50,  # Interpreted as max_samples for dataset workloads
+        initial_state={"question": ""},
     ),
 }
 
@@ -1142,6 +1166,217 @@ def _run_compile_only_langgraph(workload: WorkloadConfig, iterations: int, warmu
     return {"note": "LangGraph has no compilation phase"}
 
 
+def _run_dataset_apxm(workload: WorkloadConfig, iterations: int, warmup: int) -> Dict[str, Any]:
+    """
+    Run A-PXM dataset benchmark.
+    
+    For dataset workloads, iterations is interpreted as max_samples (dataset size limit).
+    Each example is run once through the workflow.
+    """
+    from dataset_eval import (
+        load_hotpotqa_dataset,
+        load_parallelqa_dataset,
+        load_movie_dataset,
+        evaluate_dataset_results,
+    )
+    
+    # Load dataset
+    dataset_name = workload.dataset_name
+    if dataset_name == "hotpotqa":
+        dataset = load_hotpotqa_dataset(max_samples=workload.max_samples or iterations)
+    elif dataset_name == "parallelqa":
+        dataset = load_parallelqa_dataset(max_samples=workload.max_samples or iterations)
+    elif dataset_name == "movie":
+        dataset = load_movie_dataset(max_samples=workload.max_samples or iterations)
+    else:
+        return {"error": f"Unknown dataset: {dataset_name}"}
+    
+    if not dataset:
+        return {"error": "Dataset is empty"}
+    
+    # Get workflow file
+    workload_dir = _get_workload_dir(workload)
+    workflow_file = workload_dir / workload.workflow_file
+    if not workflow_file.exists():
+        return {"error": f"Workflow file not found: {workflow_file}"}
+    
+    config = APXMConfig(opt_level=workload.opt_level)
+    
+    # Run each example
+    results = {}
+    latencies = []
+    errors = []
+    
+    for example in dataset:
+        example_id = str(example.get("id", len(results)))
+        question = example.get("question", "")
+        label = example.get("answer", "")
+        
+        if not question:
+            continue
+        
+        # Run workflow with question as argument
+        # For A-PXM, we pass the question as entry flow argument
+        result = run_ais_workflow(
+            workflow_file,
+            config,
+            capture_metrics=True,
+            args=[question] if question else None,
+        )
+        
+        if result.success:
+            # Extract answer from output (last line or stdout)
+            answer = result.raw_output.strip()
+            # Try to extract from last non-empty line
+            lines = [l.strip() for l in answer.split("\n") if l.strip()]
+            if lines:
+                answer = lines[-1]
+            
+            results[example_id] = {
+                "question": question,
+                "answer": answer,
+                "label": label,
+                "time": result.execution_time_ms / 1000.0,  # Convert to seconds
+            }
+            latencies.append(result.execution_time_ms)
+        else:
+            errors.append(f"Example {example_id}: {result.error}")
+            results[example_id] = {
+                "question": question,
+                "answer": "",
+                "label": label,
+                "error": result.error,
+            }
+    
+    # Evaluate metrics
+    metrics = evaluate_dataset_results(results, max_samples=None)
+    
+    return {
+        "success": len(errors) == 0 or len(results) > 0,
+        "num_examples": len(dataset),
+        "num_successful": len([r for r in results.values() if "error" not in r]),
+        "num_errors": len(errors),
+        "errors": errors[:10],  # Limit error list
+        "metrics": metrics,
+        "results": results,
+    }
+
+
+def _run_dataset_langgraph(workload: WorkloadConfig, iterations: int, warmup: int) -> Dict[str, Any]:
+    """
+    Run LangGraph dataset benchmark.
+    
+    For dataset workloads, iterations is interpreted as max_samples (dataset size limit).
+    Each example is run once through the workflow.
+    """
+    from dataset_eval import (
+        load_hotpotqa_dataset,
+        load_parallelqa_dataset,
+        load_movie_dataset,
+        evaluate_dataset_results,
+    )
+    
+    # Load dataset
+    dataset_name = workload.dataset_name
+    if dataset_name == "hotpotqa":
+        dataset = load_hotpotqa_dataset(max_samples=workload.max_samples or iterations)
+    elif dataset_name == "parallelqa":
+        dataset = load_parallelqa_dataset(max_samples=workload.max_samples or iterations)
+    elif dataset_name == "movie":
+        dataset = load_movie_dataset(max_samples=workload.max_samples or iterations)
+    else:
+        return {"error": f"Unknown dataset: {dataset_name}"}
+    
+    if not dataset:
+        return {"error": "Dataset is empty"}
+    
+    # Load LangGraph module
+    module = _load_langgraph_module(workload)
+    if module is None:
+        return {"error": "workflow.py not found"}
+    
+    if not hasattr(module, "graph"):
+        return {"error": "No 'graph' found in workflow.py"}
+    
+    from langgraph_bench import run_graph
+    
+    has_ollama = getattr(module, "HAS_OLLAMA", False)
+    
+    # Run each example
+    results = {}
+    latencies = []
+    errors = []
+    
+    for example in dataset:
+        example_id = str(example.get("id", len(results)))
+        question = example.get("question", "")
+        label = example.get("answer", "")
+        
+        if not question:
+            continue
+        
+        # Prepare initial state with question
+        # Most LangGraph workflows expect a "question" or "query" field
+        initial_state = workload.initial_state.copy()
+        if "question" in initial_state:
+            initial_state["question"] = question
+        elif "query" in initial_state:
+            initial_state["query"] = question
+        else:
+            # Try to infer from workload config
+            initial_state = {"question": question, **initial_state}
+        
+        # Run graph
+        try:
+            start_time = time.perf_counter()
+            output = module.graph.invoke(initial_state)
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            
+            # Extract answer from output
+            # Try common field names
+            answer = ""
+            if isinstance(output, dict):
+                answer = output.get("answer", output.get("output", output.get("result", "")))
+                if not answer:
+                    # Get last non-empty string value
+                    for v in reversed(output.values()):
+                        if isinstance(v, str) and v.strip():
+                            answer = v.strip()
+                            break
+            elif isinstance(output, str):
+                answer = output
+            
+            results[example_id] = {
+                "question": question,
+                "answer": answer,
+                "label": label,
+                "time": elapsed_ms / 1000.0,  # Convert to seconds
+            }
+            latencies.append(elapsed_ms)
+        except Exception as e:
+            errors.append(f"Example {example_id}: {str(e)}")
+            results[example_id] = {
+                "question": question,
+                "answer": "",
+                "label": label,
+                "error": str(e),
+            }
+    
+    # Evaluate metrics
+    metrics = evaluate_dataset_results(results, max_samples=None)
+    
+    return {
+        "success": len(errors) == 0 or len(results) > 0,
+        "num_examples": len(dataset),
+        "num_successful": len([r for r in results.values() if "error" not in r]),
+        "num_errors": len(errors),
+        "errors": errors[:10],  # Limit error list
+        "metrics": metrics,
+        "results": results,
+        "has_ollama": has_ollama,
+    }
+
+
 # =============================================================================
 # UNIFIED WORKLOAD RUNNER
 # =============================================================================
@@ -1197,6 +1432,7 @@ def run_workload_benchmark(
         WorkloadType.FUSION_COMPARISON: (_run_standard_langgraph, _run_standard_apxm),  # Use standard for now
         WorkloadType.LLM_PROBE: (_run_standard_langgraph, _run_standard_apxm),
         WorkloadType.TOKEN_ESTIMATION: (_run_compile_only_langgraph, _run_compile_only_apxm),
+        WorkloadType.DATASET: (_run_dataset_langgraph, _run_dataset_apxm),
     }
 
     lg_handler, apxm_handler = handlers.get(workload.workload_type, (_run_standard_langgraph, _run_standard_apxm))

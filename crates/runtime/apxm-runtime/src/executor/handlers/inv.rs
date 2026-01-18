@@ -55,8 +55,8 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     // First, check for params_json attribute (from InvOp MLIR)
     if let Some(params_json) = node.attributes.get("params_json").and_then(|v| v.as_string()) {
         // Parse JSON and extract key-value pairs
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(params_json) {
-            if let Some(obj) = parsed.as_object() {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(params_json)
+            && let Some(obj) = parsed.as_object() {
                 for (k, v) in obj {
                     let value = match v {
                         serde_json::Value::String(s) => Value::String(s.clone()),
@@ -75,7 +75,6 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
                     args.insert(k.clone(), value);
                 }
             }
-        }
     }
 
     // If no args from params_json, check for arg_* attributes (named arguments)

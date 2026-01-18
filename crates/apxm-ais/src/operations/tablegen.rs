@@ -488,7 +488,7 @@ pub fn get_mlir_operation_specs() -> Vec<MlirOperationSpec> {
     // For now, create basic specs from the base definitions.
     // This will be expanded to include full MLIR metadata.
     get_all_operations()
-        .map(|spec| derive_mlir_spec(spec))
+        .map(derive_mlir_spec)
         .collect()
 }
 

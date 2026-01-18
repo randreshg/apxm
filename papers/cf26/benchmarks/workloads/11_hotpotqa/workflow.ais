@@ -1,0 +1,24 @@
+// HotpotQA Multi-hop Question Answering Workflow
+// Demonstrates sequential reasoning with multiple information gathering steps.
+//
+
+agent HotpotQA {
+    @entry flow main(question: str) -> str {
+        // Step 1: Analyze question to identify entities and reasoning path
+        ask("Analyze this question and identify the key entities and reasoning steps needed: " + question) -> analysis
+        
+        // Step 2: Simulate gathering information about entities
+        // In a full implementation, these would be INV("search", entity) calls
+        ask("Based on the question '" + question + "', what information do we need to gather? " + 
+            "Provide a brief summary of what facts we need to find.") -> info_needed
+        
+        // Step 3: Reason about the gathered information to answer
+        ask("Given the question: " + question + 
+            "\nAnd the information needed: " + info_needed + 
+            "\nProvide a concise answer. The answer should be short (a few words or yes/no).") -> answer
+        
+        print("Question: " + question)
+        print("Answer: " + answer)
+        return answer
+    }
+}

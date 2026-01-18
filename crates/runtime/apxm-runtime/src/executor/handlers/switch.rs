@@ -141,46 +141,42 @@ fn parse_sub_dag(value: &Value) -> Result<ExecutionDag> {
     let mut dag = ExecutionDag::new();
 
     // Parse nodes
-    if let Some(nodes_value) = obj.get("nodes") {
-        if let Some(nodes_arr) = nodes_value.as_array() {
+    if let Some(nodes_value) = obj.get("nodes")
+        && let Some(nodes_arr) = nodes_value.as_array() {
             for node_value in nodes_arr {
                 if let Some(parsed_node) = parse_node(node_value)? {
                     dag.nodes.push(parsed_node);
                 }
             }
         }
-    }
 
     // Parse edges
-    if let Some(edges_value) = obj.get("edges") {
-        if let Some(edges_arr) = edges_value.as_array() {
+    if let Some(edges_value) = obj.get("edges")
+        && let Some(edges_arr) = edges_value.as_array() {
             for edge_value in edges_arr {
                 if let Some(parsed_edge) = parse_edge(edge_value)? {
                     dag.edges.push(parsed_edge);
                 }
             }
         }
-    }
 
     // Parse entry nodes
-    if let Some(entry_value) = obj.get("entry_nodes") {
-        if let Some(entry_arr) = entry_value.as_array() {
+    if let Some(entry_value) = obj.get("entry_nodes")
+        && let Some(entry_arr) = entry_value.as_array() {
             dag.entry_nodes = entry_arr
                 .iter()
                 .filter_map(|v| v.as_i64().map(|i| i as u64))
                 .collect();
         }
-    }
 
     // Parse exit nodes
-    if let Some(exit_value) = obj.get("exit_nodes") {
-        if let Some(exit_arr) = exit_value.as_array() {
+    if let Some(exit_value) = obj.get("exit_nodes")
+        && let Some(exit_arr) = exit_value.as_array() {
             dag.exit_nodes = exit_arr
                 .iter()
                 .filter_map(|v| v.as_i64().map(|i| i as u64))
                 .collect();
         }
-    }
 
     Ok(dag)
 }
@@ -217,33 +213,30 @@ fn parse_node(value: &Value) -> Result<Option<apxm_core::types::execution::Node>
     let mut node = apxm_core::types::execution::Node::new(id, op_type);
 
     // Parse attributes
-    if let Some(attrs_value) = obj.get("attributes") {
-        if let Some(attrs_obj) = attrs_value.as_object() {
+    if let Some(attrs_value) = obj.get("attributes")
+        && let Some(attrs_obj) = attrs_value.as_object() {
             for (key, val) in attrs_obj {
                 node.attributes.insert(key.clone(), val.clone());
             }
         }
-    }
 
     // Parse input tokens
-    if let Some(input_value) = obj.get("input_tokens") {
-        if let Some(input_arr) = input_value.as_array() {
+    if let Some(input_value) = obj.get("input_tokens")
+        && let Some(input_arr) = input_value.as_array() {
             node.input_tokens = input_arr
                 .iter()
                 .filter_map(|v| v.as_i64().map(|i| i as TokenId))
                 .collect();
         }
-    }
 
     // Parse output tokens
-    if let Some(output_value) = obj.get("output_tokens") {
-        if let Some(output_arr) = output_value.as_array() {
+    if let Some(output_value) = obj.get("output_tokens")
+        && let Some(output_arr) = output_value.as_array() {
             node.output_tokens = output_arr
                 .iter()
                 .filter_map(|v| v.as_i64().map(|i| i as TokenId))
                 .collect();
         }
-    }
 
     Ok(Some(node))
 }

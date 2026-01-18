@@ -8,14 +8,25 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
+use thiserror::Error;
+
+/// Error type for memory tier parsing.
+#[derive(Error, Debug, Clone, PartialEq)]
+pub enum MemoryTierParseError {
+    #[error("Unknown memory tier: {0}")]
+    UnknownTier(String),
+}
 
 /// Memory tier in the A-PXM memory hierarchy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum MemoryTier {
     /// Short-Term Memory: Fast access to recent context.
     /// Typically implemented as an LRU cache with O(1) access.
     #[serde(alias = "STM")]
+    #[default]
     Stm,
 
     /// Long-Term Memory: Persistent knowledge store.
@@ -37,17 +48,22 @@ impl MemoryTier {
             MemoryTier::Episodic => "episodic",
         }
     }
+}
 
-    /// Parse tier from string.
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for MemoryTier {
+    type Err = MemoryTierParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "stm" | "short-term" | "short_term" => Some(MemoryTier::Stm),
-            "ltm" | "long-term" | "long_term" => Some(MemoryTier::Ltm),
-            "episodic" | "trace" | "log" => Some(MemoryTier::Episodic),
-            _ => None,
+            "stm" | "short-term" | "short_term" => Ok(MemoryTier::Stm),
+            "ltm" | "long-term" | "long_term" => Ok(MemoryTier::Ltm),
+            "episodic" | "trace" | "log" => Ok(MemoryTier::Episodic),
+            _ => Err(MemoryTierParseError::UnknownTier(s.to_string())),
         }
     }
+}
 
+impl MemoryTier {
     /// Get typical access latency characteristics.
     pub fn latency_class(&self) -> LatencyClass {
         match self {
@@ -78,11 +94,6 @@ impl fmt::Display for MemoryTier {
     }
 }
 
-impl Default for MemoryTier {
-    fn default() -> Self {
-        MemoryTier::Stm
-    }
-}
 
 /// Latency class for memory operations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,11 +133,11 @@ mod tests {
 
     #[test]
     fn test_tier_from_str() {
-        assert_eq!(MemoryTier::from_str("stm"), Some(MemoryTier::Stm));
-        assert_eq!(MemoryTier::from_str("STM"), Some(MemoryTier::Stm));
-        assert_eq!(MemoryTier::from_str("ltm"), Some(MemoryTier::Ltm));
-        assert_eq!(MemoryTier::from_str("episodic"), Some(MemoryTier::Episodic));
-        assert_eq!(MemoryTier::from_str("unknown"), None);
+        assert_eq!("stm".parse(), Ok(MemoryTier::Stm));
+        assert_eq!("STM".parse(), Ok(MemoryTier::Stm));
+        assert_eq!("ltm".parse(), Ok(MemoryTier::Ltm));
+        assert_eq!("episodic".parse(), Ok(MemoryTier::Episodic));
+        assert!("unknown".parse::<MemoryTier>().is_err());
     }
 
     #[test]

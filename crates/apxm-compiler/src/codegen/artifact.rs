@@ -154,7 +154,7 @@ fn read_node(reader: &mut BinaryReader) -> Result<Node, CompilerError> {
 
     Ok(Node {
         id,
-        op_type: op_type.clone(),
+        op_type: *op_type,
         attributes,
         input_tokens,
         output_tokens,

@@ -83,3 +83,6 @@ papers/**/benchmarks/results/
 # Conda/mamba temp files
 condaenv.*.requirements.txt
 mamba*
+
+# Build
+.apxm

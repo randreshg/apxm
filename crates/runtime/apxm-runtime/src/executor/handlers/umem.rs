@@ -17,7 +17,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     } else {
         node.attributes.get("value").cloned().ok_or_else(|| {
             apxm_core::error::RuntimeError::Operation {
-                op_type: node.op_type.clone(),
+                op_type: node.op_type,
                 message: "UMEM requires either input or value attribute".to_string(),
             }
         })?

@@ -52,7 +52,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         inputs[0].to_string()
     } else if goal_attr.is_empty() {
         return Err(RuntimeError::Operation {
-            op_type: node.op_type.clone(),
+            op_type: node.op_type,
             message: "PLAN requires either a goal attribute or input".to_string(),
         });
     } else {

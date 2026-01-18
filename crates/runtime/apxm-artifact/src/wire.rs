@@ -108,7 +108,7 @@ impl From<&Node> for WireNode {
 
         Self {
             id: node.id,
-            op_type: node.op_type.clone(),
+            op_type: node.op_type,
             attributes,
             input_tokens: node.input_tokens.clone(),
             output_tokens: node.output_tokens.clone(),
