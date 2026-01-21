@@ -1227,11 +1227,13 @@ def _run_dataset_apxm(workload: WorkloadConfig, iterations: int, warmup: int) ->
         if result.success:
             # Extract answer from output (last line or stdout)
             answer = result.raw_output.strip()
-            # Try to extract from last non-empty line
+            # Try to extract from last non-empty line, filtering out log messages
             lines = [l.strip() for l in answer.split("\n") if l.strip()]
+            # Filter out log lines (Wrote metrics, Executing workflow, etc.)
+            lines = [l for l in lines if not l.startswith("Wrote ") and not l.startswith("┏") and not l.startswith("┃") and not l.startswith("┗")]
             if lines:
                 answer = lines[-1]
-            
+
             results[example_id] = {
                 "question": question,
                 "answer": answer,

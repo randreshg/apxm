@@ -77,11 +77,15 @@ def run_graph(
     """Run a LangGraph graph with instrumentation."""
     settings = get_llm_settings()
 
+    # Prepare config for checkpointer-based graphs
+    # Some graphs (like memory_augmented) require thread_id for checkpointer
+    config = {"configurable": {"thread_id": "benchmark-run"}}
+
     # Warmup runs
     for _ in range(warmup):
         reset_metrics()
         try:
-            graph.invoke(initial_state.copy())
+            graph.invoke(initial_state.copy(), config)
         except Exception:
             pass
         consume_metrics()
@@ -107,7 +111,7 @@ def run_graph(
 
         try:
             with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
-                result = graph.invoke(initial_state.copy())
+                result = graph.invoke(initial_state.copy(), config)
         except Exception as exc:  # pragma: no cover - runtime errors are reported
             success = False
             error = str(exc)
