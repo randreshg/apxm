@@ -33,7 +33,7 @@ impl DataflowScheduler {
     pub fn new(config: SchedulerConfig) -> Self {
         Self {
             config,
-            metrics: Arc::new(MetricsCollector),
+            metrics: Arc::new(MetricsCollector::new()),
         }
     }
 

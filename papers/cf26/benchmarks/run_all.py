@@ -114,7 +114,7 @@ def check_dependencies() -> dict:
     # Check apxm CLI
     try:
         result = subprocess.run(
-            ["apxm", "--version"], capture_output=True, timeout=5
+            ["apxm", "--help"], capture_output=True, timeout=5
         )
         deps["apxm"] = result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
