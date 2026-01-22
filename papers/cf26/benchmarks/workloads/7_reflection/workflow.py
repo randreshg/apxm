@@ -7,7 +7,9 @@ Compare with workflow.ais which has native reflect operation.
 
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import SystemMessage, HumanMessage
 from llm_instrumentation import get_llm, HAS_OLLAMA
+from prompt_config import get_system_prompt_or_none
 
 
 class ReflectionState(TypedDict):
@@ -28,8 +30,12 @@ def initial_attempt(state: ReflectionState) -> dict:
     llm = get_llm_instance()
     task = state["task"]
 
-    prompt = f"Solve this task concisely:\n\n{task}"
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Solve this task: {task}"))
+    response = llm.invoke(messages)
     return {"initial_answer": response.content}
 
 
@@ -42,12 +48,13 @@ def reflect(state: ReflectionState) -> dict:
     llm = get_llm_instance()
     answer = state["initial_answer"]
 
-    prompt = f"""Critically analyze this answer and identify improvements:
-
-Answer: {answer}
-
-Provide specific, actionable feedback for improvement."""
-    response = llm.invoke(prompt)
+    messages = []
+    # Use "reflect" system prompt for reflection operation
+    system_prompt = get_system_prompt_or_none("reflect")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=answer))
+    response = llm.invoke(messages)
     return {"reflection": response.content}
 
 
@@ -57,12 +64,12 @@ def improve(state: ReflectionState) -> dict:
     task = state["task"]
     reflection = state["reflection"]
 
-    prompt = f"""Given this feedback:
-{reflection}
-
-Provide an improved answer to the original task:
-{task}"""
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Given this feedback: {reflection}, improve the answer to: {task}"))
+    response = llm.invoke(messages)
     return {"improved_answer": response.content}
 
 

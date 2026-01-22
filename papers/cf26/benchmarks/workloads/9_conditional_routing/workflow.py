@@ -8,7 +8,9 @@ A-PXM automatically parallelizes independent response preparation.
 
 from typing import TypedDict, Literal
 from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import SystemMessage, HumanMessage
 from llm_instrumentation import get_llm, HAS_OLLAMA
+from prompt_config import get_system_prompt_or_none
 
 
 class RoutingState(TypedDict):
@@ -16,6 +18,7 @@ class RoutingState(TypedDict):
     input: str
     category: str
     response: str
+    output: str
 
 
 def get_llm_instance():
@@ -28,13 +31,12 @@ def classify_input(state: RoutingState) -> dict:
     llm = get_llm_instance()
     user_input = state["input"]
 
-    prompt = f"""Classify this input into exactly one category.
-Categories: technical, creative, factual
-
-Input: {user_input}
-
-Respond with only the category name (technical, creative, or factual)."""
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Classify this input into exactly one word: technical, creative, or factual. Input: {user_input}"))
+    response = llm.invoke(messages)
     category = response.content.strip().lower()
     # Normalize category
     if "technical" in category:
@@ -71,8 +73,12 @@ def technical_response(state: RoutingState) -> dict:
     llm = get_llm_instance()
     user_input = state["input"]
 
-    prompt = f"Provide a detailed technical explanation for: {user_input}"
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Provide a detailed technical explanation for: {user_input}"))
+    response = llm.invoke(messages)
     return {"response": response.content}
 
 
@@ -81,8 +87,12 @@ def creative_response(state: RoutingState) -> dict:
     llm = get_llm_instance()
     user_input = state["input"]
 
-    prompt = f"Provide a creative, imaginative response for: {user_input}"
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Provide a creative, imaginative response for: {user_input}"))
+    response = llm.invoke(messages)
     return {"response": response.content}
 
 
@@ -91,8 +101,12 @@ def factual_response(state: RoutingState) -> dict:
     llm = get_llm_instance()
     user_input = state["input"]
 
-    prompt = f"Provide accurate, factual information for: {user_input}"
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Provide accurate, factual information for: {user_input}"))
+    response = llm.invoke(messages)
     return {"response": response.content}
 
 
@@ -101,9 +115,27 @@ def general_response(state: RoutingState) -> dict:
     llm = get_llm_instance()
     user_input = state["input"]
 
-    prompt = f"Provide a helpful response for: {user_input}"
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Provide a helpful general response for: {user_input}"))
+    response = llm.invoke(messages)
     return {"response": response.content}
+
+
+def refine_response(state: RoutingState) -> dict:
+    """Refine and summarize the routed response."""
+    llm = get_llm_instance()
+    routed_response = state["response"]
+
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Refine and summarize this response: {routed_response}"))
+    response = llm.invoke(messages)
+    return {"output": response.content}
 
 
 def build_graph() -> StateGraph:
@@ -113,6 +145,7 @@ def build_graph() -> StateGraph:
     - Runtime conditional edges (not compile-time)
     - Manual route function
     - No static route validation
+
     """
     builder = StateGraph(RoutingState)
 
@@ -122,6 +155,7 @@ def build_graph() -> StateGraph:
     builder.add_node("creative_response", creative_response)
     builder.add_node("factual_response", factual_response)
     builder.add_node("general_response", general_response)
+    builder.add_node("refine", refine_response)
 
     # Entry point
     builder.add_edge(START, "classify")
@@ -138,11 +172,14 @@ def build_graph() -> StateGraph:
         }
     )
 
-    # All routes lead to END
-    builder.add_edge("technical_response", END)
-    builder.add_edge("creative_response", END)
-    builder.add_edge("factual_response", END)
-    builder.add_edge("general_response", END)
+    # All routes lead to refine step
+    builder.add_edge("technical_response", "refine")
+    builder.add_edge("creative_response", "refine")
+    builder.add_edge("factual_response", "refine")
+    builder.add_edge("general_response", "refine")
+
+    # Refine leads to END
+    builder.add_edge("refine", END)
 
     return builder.compile()
 
@@ -157,6 +194,7 @@ def run(user_input: str = "How does a neural network work?") -> dict:
         "input": user_input,
         "category": "",
         "response": "",
+        "output": "",
     }
     return graph.invoke(initial_state)
 
@@ -165,4 +203,4 @@ if __name__ == "__main__":
     result = run()
     print(f"Input: {result['input']}")
     print(f"Category: {result['category']}")
-    print(f"Response: {result['response'][:200]}...")
+    print(f"Output: {result['output'][:200]}...")

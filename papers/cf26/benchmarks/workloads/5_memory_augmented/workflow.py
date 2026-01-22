@@ -8,12 +8,14 @@ for 3-tier memory: STM (short-term), LTM (long-term), and Episodic.
 
 from typing import TypedDict, Dict, Any, List
 from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import SystemMessage, HumanMessage
 
 # Import LLM instrumentation for real LLM calls
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from llm_instrumentation import get_llm, HAS_OLLAMA
+from prompt_config import get_system_prompt_or_none
 
 # Try to import checkpoint support
 try:
@@ -57,39 +59,30 @@ def reason(state: MemoryState) -> dict:
     """Reason with context using LLM."""
     cached = state["cached"]
     query = state["query"]
-    
-    # Real LLM call matching the A-PXM workflow.ais:
-    # ask("Use the retrieved memory to answer the query.", cached, query) -> answer
-    prompt = f"""Use the retrieved memory to answer the query.
 
-Retrieved memory: {cached}
+    user_prompt = f"Use the retrieved memory to answer the query. {cached} {query}"
 
-Query: {query}
-
-Answer:"""
-    
     llm = get_llm_instance()
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=user_prompt))
+    response = llm.invoke(messages)
     answer = response.content if hasattr(response, 'content') else str(response)
-    
+
     return {"answer": answer}
 
 
 def record_episodic(state: MemoryState) -> dict:
-    """Record to episodic memory for audit trail.
-    
-    Matches workflow.ais: umem(answer, "episodic")
-    """
+    """Record to episodic memory for audit trail."""
     episodic = state["episodic"].copy()
     episodic.append(state["answer"])
     return {"episodic": episodic}
 
 
 def persist_ltm(state: MemoryState) -> dict:
-    """Persist to long-term memory.
-    
-    Matches workflow.ais: umem(answer, "ltm")
-    """
+    """Persist to long-term memory."""
     ltm = state["ltm"].copy()
     ltm["answer"] = state["answer"]
     return {"ltm": ltm}
@@ -152,12 +145,8 @@ def run(query: str = "What is quantum computing?") -> dict:
 
 if __name__ == "__main__":
     result = run("What is quantum computing?")
-    # Matches workflow.ais output:
-    # print("Memory-Augmented Answer")
-    # print(answer)
     print("Memory-Augmented Answer")
     print(result['answer'])
-    # Debug info (not in workflow.ais)
     print(f"Episodic log: {result['episodic']}")
     print(f"STM: {result['stm']}")
     print(f"LTM: {result['ltm']}")

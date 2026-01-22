@@ -105,12 +105,19 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
             )
         });
 
-    // Load system prompt from template
-    let system_prompt = apxm_backends::render_prompt("plan_outer_system", &serde_json::json!({}))
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "Failed to load plan_outer_system template, using fallback");
+    // Load system prompt from config, template, or fallback
+    // Priority: 1) config instruction, 2) template, 3) hardcoded fallback
+    let system_prompt = ctx
+        .instruction_config
+        .plan
+        .clone()
+        .or_else(|| {
+            apxm_backends::render_prompt("plan_outer_system", &serde_json::json!({})).ok()
+        })
+        .unwrap_or_else(|| {
             "You are an expert planning assistant. Generate structured, actionable plans. \
-             Always respond in valid JSON format with 'plan' (array of steps) and 'result' (summary).".to_string()
+             Always respond in valid JSON format with 'plan' (array of steps) and 'result' (summary)."
+                .to_string()
         });
 
     // Execute with retries and progressive temperature increase

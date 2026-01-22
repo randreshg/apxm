@@ -7,7 +7,9 @@ Compare with workflow.ais which has native PLAN operation.
 
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import SystemMessage, HumanMessage
 from llm_instrumentation import get_llm, HAS_OLLAMA
+from prompt_config import get_system_prompt_or_none
 
 
 class PlanningState(TypedDict):
@@ -32,17 +34,25 @@ def create_plan(state: PlanningState) -> dict:
     llm = get_llm_instance()
     goal = state["goal"]
 
-    prompt = f"""Break down this goal into 3 concrete, actionable steps:
-
-Goal: {goal}
-
-Respond with exactly 3 steps, one per line, numbered 1-3."""
-    response = llm.invoke(prompt)
+    messages = []
+    # Use "plan" system prompt for planning operation
+    system_prompt = get_system_prompt_or_none("plan")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=goal))
+    response = llm.invoke(messages)
     # Parse steps from response
     lines = response.content.strip().split('\n')
     steps = [line.strip() for line in lines if line.strip()][:3]
 
     return {"steps": steps}
+
+
+STEP_PROMPTS = [
+    "Execute step 1 - create detailed design:",
+    "Execute step 2 - implement core features:",
+    "Execute step 3 - testing and refinement:",
+]
 
 
 def execute_steps(state: PlanningState) -> dict:
@@ -53,11 +63,17 @@ def execute_steps(state: PlanningState) -> dict:
     """
     llm = get_llm_instance()
     steps = state["steps"]
+    plan_context = "\n".join(steps) if steps else ""
     results = []
 
-    for i, step in enumerate(steps):
-        prompt = f"Execute this step concisely (1-2 sentences):\n\n{step}"
-        response = llm.invoke(prompt)
+    system_prompt = get_system_prompt_or_none("ask")
+    for i in range(min(3, len(STEP_PROMPTS))):
+        messages = []
+        if system_prompt:
+            messages.append(SystemMessage(content=system_prompt))
+        prompt = f"{STEP_PROMPTS[i]} {plan_context}"
+        messages.append(HumanMessage(content=prompt))
+        response = llm.invoke(messages)
         results.append(response.content)
 
     return {"step_results": results}
@@ -66,16 +82,15 @@ def execute_steps(state: PlanningState) -> dict:
 def synthesize(state: PlanningState) -> dict:
     """Synthesize final result from step results."""
     llm = get_llm_instance()
-    goal = state["goal"]
     results = state["step_results"]
 
-    results_text = "\n".join([f"- {r}" for r in results])
-    prompt = f"""Given these step results:
-{results_text}
-
-Provide a concise final answer for the original goal:
-{goal}"""
-    response = llm.invoke(prompt)
+    combined = " ".join(results)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Synthesize these step results into a final deliverable: {combined}"))
+    response = llm.invoke(messages)
     return {"final_result": response.content}
 
 

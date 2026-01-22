@@ -26,6 +26,8 @@ impl RuntimeExecutor {
 
         configure_llm_registry(runtime.llm_registry(), &config.apxm_config).await?;
 
+        runtime.set_instruction_config(config.apxm_config.instruction.clone());
+
         let linker = Arc::new(CompilerInnerPlanLinker::new().map_err(DriverError::Runtime)?);
         runtime.set_inner_plan_linker(linker);
 

@@ -7,7 +7,9 @@ Compare with workflow.ais where the compiler fuses 5 calls into 1.
 
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import SystemMessage, HumanMessage
 from llm_instrumentation import get_llm, HAS_OLLAMA
+from prompt_config import get_system_prompt_or_none
 
 
 class ChainState(TypedDict):
@@ -28,8 +30,12 @@ def define_quantum(state: ChainState) -> dict:
     """Step 1: Define quantum computing."""
     llm = get_llm_instance()
 
-    prompt = "Define quantum computing in 1-2 sentences."
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content="Define quantum computing in 2 sentences"))
+    response = llm.invoke(messages)
     return {"step1": response.content}
 
 
@@ -38,8 +44,12 @@ def explain_qubits(state: ChainState) -> dict:
     llm = get_llm_instance()
     context = state["step1"]
 
-    prompt = f"Using this context: {context}\n\nExplain qubits in 1-2 sentences."
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Using: {context}, explain qubits in 2 sentences"))
+    response = llm.invoke(messages)
     return {"step2": response.content}
 
 
@@ -48,8 +58,12 @@ def explain_superposition(state: ChainState) -> dict:
     llm = get_llm_instance()
     context = state["step2"]
 
-    prompt = f"Using this context: {context}\n\nExplain superposition in 1-2 sentences."
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Using: {context}, explain superposition in 2 sentences"))
+    response = llm.invoke(messages)
     return {"step3": response.content}
 
 
@@ -58,8 +72,12 @@ def explain_entanglement(state: ChainState) -> dict:
     llm = get_llm_instance()
     context = state["step3"]
 
-    prompt = f"Using this context: {context}\n\nExplain quantum entanglement in 1-2 sentences."
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Using: {context}, explain entanglement in 2 sentences"))
+    response = llm.invoke(messages)
     return {"step4": response.content}
 
 
@@ -68,8 +86,12 @@ def summarize(state: ChainState) -> dict:
     llm = get_llm_instance()
     context = state["step4"]
 
-    prompt = f"Summarize all the quantum computing concepts discussed: {context}"
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Summarize all concepts above in 2 sentences: {context}"))
+    response = llm.invoke(messages)
     return {"summary": response.content}
 
 

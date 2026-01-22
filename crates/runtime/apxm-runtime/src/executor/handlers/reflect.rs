@@ -136,10 +136,16 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         request = request.with_model(m);
     }
 
-    // Load system prompt from template
-    let system_prompt = apxm_backends::render_prompt("reflect_system", &serde_json::json!({}))
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "Failed to load reflect_system template, using fallback");
+    // Load system prompt from config, template, or fallback
+    // Priority: 1) config instruction, 2) template, 3) hardcoded fallback
+    let system_prompt = ctx
+        .instruction_config
+        .reflect
+        .clone()
+        .or_else(|| {
+            apxm_backends::render_prompt("reflect_system", &serde_json::json!({})).ok()
+        })
+        .unwrap_or_else(|| {
             "You are an expert at analyzing execution patterns and extracting insights. \
              Always respond in valid JSON format with structured analysis."
                 .to_string()

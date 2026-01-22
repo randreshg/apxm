@@ -72,6 +72,7 @@ pub struct Runtime {
     aam: Aam,
     scheduler: DataflowScheduler,
     inner_plan_linker: Arc<dyn InnerPlanLinker>,
+    instruction_config: apxm_core::InstructionConfig,
 }
 
 impl Runtime {
@@ -115,12 +116,26 @@ impl Runtime {
             aam,
             scheduler,
             inner_plan_linker: Arc::new(NoOpLinker),
+            instruction_config: apxm_core::InstructionConfig::default(),
         })
     }
 
     /// Attach a custom inner plan linker implementation to the runtime.
     pub fn set_inner_plan_linker(&mut self, linker: Arc<dyn InnerPlanLinker>) {
         self.inner_plan_linker = linker;
+    }
+
+    /// Set the instruction configuration for system prompts.
+    ///
+    /// The instruction config is used by LLM handlers to get system prompts
+    /// for operations like ask, think, reason, plan, and reflect.
+    pub fn set_instruction_config(&mut self, config: apxm_core::InstructionConfig) {
+        self.instruction_config = config;
+    }
+
+    /// Get the instruction configuration.
+    pub fn instruction_config(&self) -> &apxm_core::InstructionConfig {
+        &self.instruction_config
     }
 
     /// Execute a DAG with parallel dataflow execution
@@ -149,6 +164,7 @@ impl Runtime {
             inner_plan_linker: Arc::clone(&self.inner_plan_linker),
             dag_splicer: Arc::new(crate::executor::NoOpSplicer),
             flow_registry: Arc::clone(&self.flow_registry),
+            instruction_config: self.instruction_config.clone(),
             start_time: std::time::Instant::now(),
             metadata: std::collections::HashMap::new(),
         };
@@ -324,6 +340,7 @@ impl Runtime {
             inner_plan_linker: Arc::clone(&self.inner_plan_linker),
             dag_splicer: Arc::new(crate::executor::NoOpSplicer),
             flow_registry: Arc::clone(&self.flow_registry),
+            instruction_config: self.instruction_config.clone(),
             start_time: std::time::Instant::now(),
             metadata: std::collections::HashMap::new(),
         };
@@ -389,6 +406,7 @@ impl Runtime {
             inner_plan_linker: Arc::clone(&self.inner_plan_linker),
             dag_splicer: Arc::new(crate::executor::NoOpSplicer),
             flow_registry: Arc::clone(&self.flow_registry),
+            instruction_config: self.instruction_config.clone(),
             start_time: std::time::Instant::now(),
             metadata: std::collections::HashMap::new(),
         };
@@ -439,6 +457,7 @@ impl Runtime {
             inner_plan_linker: Arc::clone(&self.inner_plan_linker),
             dag_splicer: Arc::new(crate::executor::NoOpSplicer),
             flow_registry: Arc::clone(&self.flow_registry),
+            instruction_config: self.instruction_config.clone(),
             start_time: std::time::Instant::now(),
             metadata: std::collections::HashMap::new(),
         }

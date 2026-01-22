@@ -2,6 +2,7 @@
 
 use crate::{aam::Aam, capability::CapabilitySystem, capability::flow_registry::FlowRegistry, memory::MemorySystem};
 use apxm_backends::LLMRegistry;
+use apxm_core::InstructionConfig;
 use std::sync::Arc;
 
 use super::dag_splicer::{DagSplicer, NoOpSplicer};
@@ -16,6 +17,7 @@ use super::inner_plan_linker::{InnerPlanLinker, NoOpLinker};
 /// - Inner plan linker for compiling DSL during execution
 /// - DAG splicer for dynamic inner/outer plan unification
 /// - Flow registry for cross-agent flow calls
+/// - Instruction config for system prompts
 /// - Execution metadata (ID, session, etc.)
 #[derive(Clone)]
 pub struct ExecutionContext {
@@ -37,6 +39,8 @@ pub struct ExecutionContext {
     pub dag_splicer: Arc<dyn DagSplicer>,
     /// Flow registry for cross-agent flow calls
     pub flow_registry: Arc<FlowRegistry>,
+    /// System prompts for LLM operations (from config)
+    pub instruction_config: InstructionConfig,
     /// Start time of execution (for timing)
     pub start_time: std::time::Instant,
     /// Custom metadata
@@ -61,6 +65,7 @@ impl ExecutionContext {
             inner_plan_linker: Arc::new(NoOpLinker),
             dag_splicer: Arc::new(NoOpSplicer),
             flow_registry: Arc::new(FlowRegistry::new()),
+            instruction_config: InstructionConfig::default(),
             start_time: std::time::Instant::now(),
             metadata: std::collections::HashMap::new(),
         }
@@ -86,6 +91,7 @@ impl ExecutionContext {
             inner_plan_linker,
             dag_splicer,
             flow_registry,
+            instruction_config: InstructionConfig::default(),
             start_time: std::time::Instant::now(),
             metadata: std::collections::HashMap::new(),
         }
@@ -114,6 +120,12 @@ impl ExecutionContext {
         self
     }
 
+    /// Set instruction config for system prompts
+    pub fn with_instruction_config(mut self, config: InstructionConfig) -> Self {
+        self.instruction_config = config;
+        self
+    }
+
     /// Get elapsed time since execution started
     pub fn elapsed(&self) -> std::time::Duration {
         self.start_time.elapsed()
@@ -131,6 +143,7 @@ impl ExecutionContext {
             inner_plan_linker: Arc::clone(&self.inner_plan_linker),
             dag_splicer: Arc::clone(&self.dag_splicer),
             flow_registry: Arc::clone(&self.flow_registry),
+            instruction_config: self.instruction_config.clone(),
             start_time: std::time::Instant::now(),
             metadata: self.metadata.clone(),
         }

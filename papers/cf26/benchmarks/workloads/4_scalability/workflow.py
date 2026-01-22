@@ -9,7 +9,9 @@ import operator
 from typing import Annotated, TypedDict, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.constants import Send
+from langchain_core.messages import SystemMessage, HumanMessage
 from llm_instrumentation import get_llm, HAS_OLLAMA
+from prompt_config import get_system_prompt_or_none
 
 
 class ScalabilityState(TypedDict):
@@ -23,13 +25,32 @@ def get_llm_instance():
     return get_llm()
 
 
+TASK_TOPICS = [
+    "science",    # task_0
+    "history",    # task_1
+    "geography",  # task_2
+    "technology", # task_3
+    "art",        # task_4
+    "music",      # task_5
+    "sports",     # task_6
+    "nature",     # task_7
+]
+
+
 def create_task_node(task_id: str):
     """Create a task node that makes a real LLM call."""
     def task_fn(state: ScalabilityState) -> dict:
         llm = get_llm_instance()
 
-        prompt = f"Task {task_id}: Provide a brief fact about any topic in 1 sentence."
-        response = llm.invoke(prompt)
+        task_idx = int(task_id.split("_")[1]) if "_" in task_id else 0
+        topic = TASK_TOPICS[task_idx % len(TASK_TOPICS)]
+
+        messages = []
+        system_prompt = get_system_prompt_or_none("ask")
+        if system_prompt:
+            messages.append(SystemMessage(content=system_prompt))
+        messages.append(HumanMessage(content=f"Provide a brief fact about {topic}"))
+        response = llm.invoke(messages)
         return {"results": [response.content]}
 
     return task_fn

@@ -6,7 +6,9 @@ For comparison with A-PXM workflow.ais
 
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import SystemMessage, HumanMessage
 from llm_instrumentation import get_llm, HAS_OLLAMA
+from prompt_config import get_system_prompt_or_none
 
 
 class HotpotQAState(TypedDict):
@@ -26,9 +28,13 @@ def analyze_question(state: HotpotQAState) -> dict:
     """Analyze question to identify entities and reasoning steps."""
     llm = get_llm_instance()
     question = state["question"]
-    
-    prompt = f"Analyze this question and identify the key entities and reasoning steps needed: {question}"
-    response = llm.invoke(prompt)
+
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Analyze this question and identify the key entities and reasoning steps needed: {question}"))
+    response = llm.invoke(messages)
     return {"analysis": response.content}
 
 
@@ -36,12 +42,16 @@ def gather_info(state: HotpotQAState) -> dict:
     """Simulate gathering information about entities."""
     llm = get_llm_instance()
     question = state["question"]
-    
-    prompt = (
+
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=(
         f"Based on the question '{question}', what information do we need to gather? "
         "Provide a brief summary of what facts we need to find."
-    )
-    response = llm.invoke(prompt)
+    )))
+    response = llm.invoke(messages)
     return {"info_needed": response.content}
 
 
@@ -50,13 +60,17 @@ def synthesize_answer(state: HotpotQAState) -> dict:
     llm = get_llm_instance()
     question = state["question"]
     info_needed = state["info_needed"]
-    
-    prompt = (
+
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=(
         f"Given the question: {question}\n"
         f"And the information needed: {info_needed}\n"
         "Provide a concise answer. The answer should be short (a few words or yes/no)."
-    )
-    response = llm.invoke(prompt)
+    )))
+    response = llm.invoke(messages)
     return {"answer": response.content}
 
 

@@ -7,7 +7,9 @@ LangGraph discovers this at RUNTIME, after the first LLM call.
 
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import SystemMessage, HumanMessage
 from llm_instrumentation import get_llm, HAS_OLLAMA
+from prompt_config import get_system_prompt_or_none
 
 
 class BrokenState(TypedDict):
@@ -29,8 +31,12 @@ def first_step(state: BrokenState) -> dict:
     """
     llm = get_llm_instance()
 
-    prompt = "Do something simple: say 'Hello World'"
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content="Do something simple: say 'Hello World'"))
+    response = llm.invoke(messages)
     return {"result": response.content}
 
 

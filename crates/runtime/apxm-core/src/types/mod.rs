@@ -4,6 +4,7 @@
 //! The single source of truth for AIS operations is in apxm-ais.
 
 pub mod compiler;
+pub mod config;
 pub mod execution;
 pub mod identifiers;
 pub mod intents;
@@ -38,3 +39,5 @@ pub use operations::{AISOperation, AISOperationType, OperationCategory, validate
 
 pub use session::{Example, Message, MessageMetadata, MessageRole};
 pub use values::{Number, Token, TokenId, TokenStatus, Value};
+
+pub use config::InstructionConfig;

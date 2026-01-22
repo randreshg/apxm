@@ -21,6 +21,6 @@ pub use error::{
 pub use plan::{InnerPlanDsl, Plan, PlanStep};
 
 pub use types::{
-    AISOperation, AISOperationType, DependencyType, Edge, Node, NodeId, NodeMetadata, Number,
-    Token, TokenId, TokenStatus, Value,
+    AISOperation, AISOperationType, DependencyType, Edge, InstructionConfig, Node, NodeId,
+    NodeMetadata, Number, Token, TokenId, TokenStatus, Value,
 };

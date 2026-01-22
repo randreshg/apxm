@@ -8,7 +8,9 @@ Demonstrates parallel sub-question handling.
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.constants import Send
+from langchain_core.messages import SystemMessage, HumanMessage
 from llm_instrumentation import get_llm, HAS_OLLAMA
+from prompt_config import get_system_prompt_or_none
 
 
 class ParallelQAState(TypedDict):
@@ -30,9 +32,13 @@ def decompose_question(state: ParallelQAState) -> dict:
     """Decompose question into parallel sub-questions."""
     llm = get_llm_instance()
     question = state["question"]
-    
-    prompt = f"Break down this question into independent sub-questions that can be answered in parallel: {question}"
-    response = llm.invoke(prompt)
+
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Break down this question into independent sub-questions that can be answered in parallel: {question}"))
+    response = llm.invoke(messages)
     return {"decomposition": response.content}
 
 
@@ -40,9 +46,13 @@ def answer_sub1(state: ParallelQAState) -> dict:
     """Answer first sub-question."""
     llm = get_llm_instance()
     decomposition = state["decomposition"]
-    
-    prompt = f"Answer the first sub-question from: {decomposition}"
-    response = llm.invoke(prompt)
+
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Answer the first sub-question from: {decomposition}"))
+    response = llm.invoke(messages)
     return {"sub_answer1": response.content}
 
 
@@ -50,9 +60,13 @@ def answer_sub2(state: ParallelQAState) -> dict:
     """Answer second sub-question."""
     llm = get_llm_instance()
     decomposition = state["decomposition"]
-    
-    prompt = f"Answer the second sub-question from: {decomposition}"
-    response = llm.invoke(prompt)
+
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Answer the second sub-question from: {decomposition}"))
+    response = llm.invoke(messages)
     return {"sub_answer2": response.content}
 
 
@@ -67,13 +81,17 @@ def synthesize_answer(state: ParallelQAState) -> dict:
     llm = get_llm_instance()
     question = state["question"]
     combined = state["combined_answers"]
-    
-    prompt = (
+
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=(
         f"Given the original question: {question}\n"
         f"And the sub-answers: {combined}\n"
         "Provide the final answer. Be concise."
-    )
-    response = llm.invoke(prompt)
+    )))
+    response = llm.invoke(messages)
     return {"answer": response.content}
 
 

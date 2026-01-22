@@ -8,7 +8,9 @@ Compare with workflow.ais which achieves the same with automatic dataflow parall
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.constants import Send
+from langchain_core.messages import SystemMessage, HumanMessage
 from llm_instrumentation import get_llm, HAS_OLLAMA
+from prompt_config import get_system_prompt_or_none
 
 
 class ResearchState(TypedDict):
@@ -31,8 +33,12 @@ def research_background(state: ResearchState) -> dict:
     llm = get_llm_instance()
     topic = state["topic"]
 
-    prompt = f"Explain the domain background of {topic} in 2-3 sentences."
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Explain in 2 sentences the domain background of {topic}"))
+    response = llm.invoke(messages)
     return {"background": response.content}
 
 
@@ -41,8 +47,12 @@ def research_advances(state: ResearchState) -> dict:
     llm = get_llm_instance()
     topic = state["topic"]
 
-    prompt = f"What are the recent advances in {topic}? Answer in 2-3 sentences."
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Give me 2 recent advances in {topic}"))
+    response = llm.invoke(messages)
     return {"advances": response.content}
 
 
@@ -51,8 +61,12 @@ def research_impact(state: ResearchState) -> dict:
     llm = get_llm_instance()
     topic = state["topic"]
 
-    prompt = f"What is the societal impact of {topic}? Answer in 2-3 sentences."
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Explain in 1 sentence what is the societal impact of {topic}"))
+    response = llm.invoke(messages)
     return {"impact": response.content}
 
 
@@ -71,8 +85,12 @@ def synthesize(state: ResearchState) -> dict:
     llm = get_llm_instance()
     combined = state["combined"]
 
-    prompt = f"Synthesize this research into a coherent report:\n\n{combined}"
-    response = llm.invoke(prompt)
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content=f"Synthesize into a 3 sentences report: {combined}"))
+    response = llm.invoke(messages)
     return {"report": response.content}
 
 

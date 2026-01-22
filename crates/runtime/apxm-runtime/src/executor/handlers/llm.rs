@@ -141,8 +141,15 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     match mode {
         LlmMode::Ask => {
             // Simple Q&A - minimal system prompt
-            let system_prompt = apxm_backends::render_prompt("ask_system", &serde_json::json!({}))
-                .unwrap_or_else(|_| "You are a helpful AI assistant. Answer concisely.".to_string());
+            // Priority: 1) config instruction, 2) template, 3) hardcoded fallback
+            let system_prompt = ctx
+                .instruction_config
+                .ask
+                .clone()
+                .or_else(|| apxm_backends::render_prompt("ask_system", &serde_json::json!({})).ok())
+                .unwrap_or_else(|| {
+                    "You are a helpful AI assistant. Answer concisely.".to_string()
+                });
             request = request.with_system_prompt(system_prompt);
         }
         LlmMode::Think => {
@@ -153,8 +160,15 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
                     serde_json::json!(budget_tokens),
                 );
             }
-            let system_prompt = apxm_backends::render_prompt("think_system", &serde_json::json!({}))
-                .unwrap_or_else(|_| {
+            // Priority: 1) config instruction, 2) template, 3) hardcoded fallback
+            let system_prompt = ctx
+                .instruction_config
+                .think
+                .clone()
+                .or_else(|| {
+                    apxm_backends::render_prompt("think_system", &serde_json::json!({})).ok()
+                })
+                .unwrap_or_else(|| {
                     "You are a deep reasoning AI. Think through problems carefully and thoroughly."
                         .to_string()
                 });
@@ -162,8 +176,15 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         }
         LlmMode::Reason => {
             // Structured reasoning - request JSON output
-            let system_prompt = apxm_backends::render_prompt("reason_system", &serde_json::json!({}))
-                .unwrap_or_else(|_| {
+            // Priority: 1) config instruction, 2) template, 3) hardcoded fallback
+            let system_prompt = ctx
+                .instruction_config
+                .reason
+                .clone()
+                .or_else(|| {
+                    apxm_backends::render_prompt("reason_system", &serde_json::json!({})).ok()
+                })
+                .unwrap_or_else(|| {
                     "You are a helpful AI assistant. When providing structured responses, \
                      use JSON format with fields: belief_updates (object), new_goals (array), \
                      and result (any type)."

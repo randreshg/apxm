@@ -33,6 +33,10 @@ pub struct ApXmConfig {
 
     /// Exec policy references.
     pub execpolicy: ExecPolicyConfig,
+
+    /// System prompts for LLM operations (ask, think, reason, plan, reflect).
+    #[serde(default)]
+    pub instruction: InstructionConfig,
 }
 
 /// Configuration for the chat/runtime surface.
@@ -137,6 +141,9 @@ pub struct ExecPolicyConfig {
     pub default_policy: Option<String>,
 }
 
+// Re-export InstructionConfig from apxm-core for consistency
+pub use apxm_core::InstructionConfig;
+
 fn default_true() -> bool {
     true
 }
@@ -231,6 +238,55 @@ mod tests {
         );
         assert_eq!(config.llm_backends.first().unwrap().name, "openai");
         assert!(config.tools.contains_key("shell"));
+    }
+
+    #[test]
+    fn deserialize_instruction_config() {
+        let toml = r#"
+            [instruction]
+            ask = "You are a helpful AI assistant."
+            think = "Think step by step."
+            reason = "Provide structured reasoning."
+            plan = "Create actionable plans."
+            reflect = "Analyze execution patterns."
+        "#;
+
+        let config: ApXmConfig = toml::from_str(toml).unwrap();
+        assert_eq!(
+            config.instruction.ask.as_deref(),
+            Some("You are a helpful AI assistant.")
+        );
+        assert_eq!(
+            config.instruction.think.as_deref(),
+            Some("Think step by step.")
+        );
+        assert_eq!(
+            config.instruction.reason.as_deref(),
+            Some("Provide structured reasoning.")
+        );
+        assert_eq!(
+            config.instruction.plan.as_deref(),
+            Some("Create actionable plans.")
+        );
+        assert_eq!(
+            config.instruction.reflect.as_deref(),
+            Some("Analyze execution patterns.")
+        );
+    }
+
+    #[test]
+    fn instruction_config_defaults_to_none() {
+        let toml = r#"
+            [chat]
+            providers = ["openai"]
+        "#;
+
+        let config: ApXmConfig = toml::from_str(toml).unwrap();
+        assert!(config.instruction.ask.is_none());
+        assert!(config.instruction.think.is_none());
+        assert!(config.instruction.reason.is_none());
+        assert!(config.instruction.plan.is_none());
+        assert!(config.instruction.reflect.is_none());
     }
 
     #[test]
