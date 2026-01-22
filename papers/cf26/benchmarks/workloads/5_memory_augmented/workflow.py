@@ -9,6 +9,12 @@ for 3-tier memory: STM (short-term), LTM (long-term), and Episodic.
 from typing import TypedDict, Dict, Any, List
 from langgraph.graph import StateGraph, START, END
 
+# Import LLM instrumentation for real LLM calls
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from llm_instrumentation import get_llm, HAS_OLLAMA
+
 # Try to import checkpoint support
 try:
     from langgraph.checkpoint.memory import MemorySaver
@@ -17,13 +23,18 @@ except ImportError:
     HAS_CHECKPOINT = False
 
 
+def get_llm_instance():
+    """Get the configured LLM instance."""
+    return get_llm()
+
+
 class MemoryState(TypedDict):
     """State for memory-augmented workflow."""
     query: str
     # Simulated memory tiers (embedded in state)
     stm: Dict[str, Any]  # Short-term memory
     ltm: Dict[str, Any]  # Long-term memory
-    episodic: List[Dict[str, Any]]  # Episodic memory (audit log)
+    episodic: List[str]  # Episodic memory (audit trail of answers)
     # Working values
     cached: str
     answer: str
@@ -43,28 +54,44 @@ def store_stm(state: MemoryState) -> dict:
 
 
 def reason(state: MemoryState) -> dict:
-    """Reason with context."""
+    """Reason with context using LLM."""
     cached = state["cached"]
     query = state["query"]
-    # Simulated LLM call
-    answer = f"Given '{cached}', the answer to '{query}' is..."
+    
+    # Real LLM call matching the A-PXM workflow.ais:
+    # ask("Use the retrieved memory to answer the query.", cached, query) -> answer
+    prompt = f"""Use the retrieved memory to answer the query.
+
+Retrieved memory: {cached}
+
+Query: {query}
+
+Answer:"""
+    
+    llm = get_llm_instance()
+    response = llm.invoke(prompt)
+    answer = response.content if hasattr(response, 'content') else str(response)
+    
     return {"answer": answer}
 
 
 def record_episodic(state: MemoryState) -> dict:
-    """Record to episodic memory for audit trail."""
+    """Record to episodic memory for audit trail.
+    
+    Matches workflow.ais: umem(answer, "episodic")
+    """
     episodic = state["episodic"].copy()
-    episodic.append({
-        "event": "query_answered",
-        "data": state["answer"],
-    })
+    episodic.append(state["answer"])
     return {"episodic": episodic}
 
 
 def persist_ltm(state: MemoryState) -> dict:
-    """Persist to long-term memory."""
+    """Persist to long-term memory.
+    
+    Matches workflow.ais: umem(answer, "ltm")
+    """
     ltm = state["ltm"].copy()
-    ltm["last_answer"] = state["answer"]
+    ltm["answer"] = state["answer"]
     return {"ltm": ltm}
 
 
@@ -125,7 +152,12 @@ def run(query: str = "What is quantum computing?") -> dict:
 
 if __name__ == "__main__":
     result = run("What is quantum computing?")
-    print(f"Answer: {result['answer']}")
+    # Matches workflow.ais output:
+    # print("Memory-Augmented Answer")
+    # print(answer)
+    print("Memory-Augmented Answer")
+    print(result['answer'])
+    # Debug info (not in workflow.ais)
     print(f"Episodic log: {result['episodic']}")
     print(f"STM: {result['stm']}")
     print(f"LTM: {result['ltm']}")
