@@ -82,6 +82,11 @@ name = "ollama"
 provider = "ollama"
 model = "gpt-oss:20b-cloud"
 endpoint = "http://localhost:11434"
+
+[llm_backends.options]
+# Context window size (default is 8192 for most models)
+# Increase this if your model supports larger context and you have enough GPU memory
+num_ctx = "32768"
 ```
 
 OpenAI example:
@@ -112,6 +117,22 @@ model = "your-model"
 endpoint = "http://localhost:8000/v1"
 api_key = "env:VLLM_API_KEY"
 ```
+
+### 2. Configure Benchmark Settings (Optional)
+
+You can customize benchmark execution settings in `~/.apxm/config.toml`:
+
+```toml
+[benchmarks]
+timeout_seconds = 300.0   # 5 minutes (default: 120.0)
+iterations = 10           # number of benchmark iterations (default: 10)
+warmup = 3                # warmup iterations before measurement (default: 3)
+```
+
+These can also be overridden via environment variables:
+- `APXM_BENCH_TIMEOUT` - timeout in seconds
+- `APXM_BENCH_ITERATIONS` - number of iterations
+- `APXM_BENCH_WARMUP` - number of warmup iterations
 
 If using Ollama, install and start it:
 

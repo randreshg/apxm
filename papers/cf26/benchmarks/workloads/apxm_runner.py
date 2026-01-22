@@ -57,6 +57,35 @@ def _keep_diagnostics() -> bool:
     return os.environ.get("APXM_BENCH_KEEP_DIAGNOSTICS", "0") == "1"
 
 
+def _get_benchmark_settings():
+    """Get benchmark settings from config file and environment.
+    
+    Imports lazily to avoid circular dependency.
+    """
+    try:
+        from llm_instrumentation import get_benchmark_settings
+        return get_benchmark_settings()
+    except ImportError:
+        return None
+
+
+def _get_timeout(default: float = 120.0) -> float:
+    """Get timeout from config file or APXM_BENCH_TIMEOUT env var."""
+    # First try config file
+    settings = _get_benchmark_settings()
+    if settings is not None:
+        return settings.timeout_seconds
+    
+    # Fall back to env var only
+    timeout_str = os.environ.get("APXM_BENCH_TIMEOUT")
+    if timeout_str:
+        try:
+            return float(timeout_str)
+        except ValueError:
+            pass
+    return default
+
+
 def _run_compile_diagnostics(workflow_path: Path, opt_level: int) -> Dict[str, Any]:
     cli_path = find_apxm_cli(require_metrics=False)
     if cli_path is None:
@@ -126,6 +155,11 @@ class APXMConfig:
     conda_prefix: Optional[str] = None
 
     def __post_init__(self):
+        # Override timeout from environment variable if set
+        env_timeout = _get_timeout(self.timeout_seconds)
+        if env_timeout != self.timeout_seconds:
+            self.timeout_seconds = env_timeout
+        
         # Auto-detect CONDA_PREFIX if not provided using shared utility
         if self.conda_prefix is None:
             prefix = get_conda_prefix()
@@ -806,7 +840,14 @@ WORKLOADS: Dict[int, WorkloadConfig] = {
         name="memory_augmented",
         directory="5_memory_augmented",
         description="3-tier memory system (STM/LTM/Episodic)",
-        initial_state={"query": "What is machine learning?", "cached": "", "answer": ""},
+        initial_state={
+            "query": "What is machine learning?",
+            "stm": {},
+            "ltm": {"domain_knowledge": "Machine learning fundamentals"},
+            "episodic": [],
+            "cached": "",
+            "answer": "",
+        },
         entry_args=["What is machine learning?"],
     ),
     6: WorkloadConfig(
@@ -1239,6 +1280,12 @@ def _run_dataset_apxm(workload: WorkloadConfig, iterations: int, warmup: int) ->
                 "answer": answer,
                 "label": label,
                 "time": result.execution_time_ms / 1000.0,  # Convert to seconds
+                # LLM metrics
+                "llm_latency_ms": result.llm_total_latency_ms,
+                "llm_requests": result.llm_requests,
+                "input_tokens": result.llm_total_input_tokens,
+                "output_tokens": result.llm_total_output_tokens,
+                "compile_ms": result.compile_time_ms,
             }
             latencies.append(result.execution_time_ms)
         else:
@@ -1301,6 +1348,7 @@ def _run_dataset_langgraph(workload: WorkloadConfig, iterations: int, warmup: in
         return {"error": "No 'graph' found in workflow.py"}
     
     from langgraph_bench import run_graph
+    from llm_instrumentation import reset_metrics, consume_metrics
     
     has_ollama = getattr(module, "HAS_OLLAMA", False)
     
@@ -1328,11 +1376,18 @@ def _run_dataset_langgraph(workload: WorkloadConfig, iterations: int, warmup: in
             # Try to infer from workload config
             initial_state = {"question": question, **initial_state}
         
-        # Run graph
+        # Run graph with LLM instrumentation
         try:
+            reset_metrics()
             start_time = time.perf_counter()
             output = module.graph.invoke(initial_state)
             elapsed_ms = (time.perf_counter() - start_time) * 1000
+            
+            # Collect LLM metrics
+            llm_calls = consume_metrics()
+            llm_latency_ms = sum(c.get("latency_ms", 0) for c in llm_calls) if llm_calls else None
+            input_tokens = sum(c.get("input_tokens", 0) or 0 for c in llm_calls) if llm_calls else 0
+            output_tokens = sum(c.get("output_tokens", 0) or 0 for c in llm_calls) if llm_calls else 0
             
             # Extract answer from output
             # Try common field names
@@ -1353,6 +1408,11 @@ def _run_dataset_langgraph(workload: WorkloadConfig, iterations: int, warmup: in
                 "answer": answer,
                 "label": label,
                 "time": elapsed_ms / 1000.0,  # Convert to seconds
+                # LLM metrics
+                "llm_latency_ms": llm_latency_ms,
+                "llm_requests": len(llm_calls) if llm_calls else 0,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
             }
             latencies.append(elapsed_ms)
         except Exception as e:

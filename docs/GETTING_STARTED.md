@@ -130,6 +130,10 @@ name = "ollama"
 provider = "ollama"
 model = "gpt-oss:20b-cloud"
 endpoint = "http://localhost:11434"
+
+# Optional: Configure context window size (default is 8192)
+[llm_backends.options]
+num_ctx = "32768"  # Increase if model supports larger context
 ```
 
 ### Start Ollama

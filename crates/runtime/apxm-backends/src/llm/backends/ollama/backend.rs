@@ -12,11 +12,40 @@ use serde_json::json;
 const DEFAULT_BASE_URL: &str = "http://localhost:11434";
 const DEFAULT_MODEL: &str = "gpt-oss:120b-cloud";
 
+/// Known Ollama options that should be passed as integers
+const INT_OPTIONS: &[&str] = &[
+    "num_ctx",
+    "num_gpu",
+    "num_thread",
+    "num_keep",
+    "num_predict",
+    "num_batch",
+    "main_gpu",
+    "seed",
+    "mirostat",
+];
+
+/// Known Ollama options that should be passed as floats
+const FLOAT_OPTIONS: &[&str] = &[
+    "temperature",
+    "top_p",
+    "top_k",
+    "tfs_z",
+    "typical_p",
+    "repeat_penalty",
+    "presence_penalty",
+    "frequency_penalty",
+    "mirostat_tau",
+    "mirostat_eta",
+];
+
 /// Ollama LLM backend (local models).
 pub struct OllamaBackend {
     model: String,
     base_url: String,
     client: reqwest::Client,
+    /// Ollama runtime options (num_ctx, num_gpu, etc.)
+    ollama_options: serde_json::Map<String, serde_json::Value>,
 }
 
 impl OllamaBackend {
@@ -36,10 +65,55 @@ impl OllamaBackend {
             .unwrap_or(DEFAULT_BASE_URL)
             .to_string();
 
+        // Parse all Ollama options from config
+        // These will be passed through to the Ollama API
+        let mut ollama_options = serde_json::Map::new();
+        
+        if let Some(config_obj) = config.as_ref().and_then(|c| c.as_object()) {
+            for (key, value) in config_obj {
+                // Skip non-option fields
+                if key == "model" || key == "base_url" {
+                    continue;
+                }
+                
+                // Convert string values to appropriate types for Ollama
+                let converted_value = if let Some(s) = value.as_str() {
+                    if INT_OPTIONS.contains(&key.as_str()) {
+                        // Parse as integer
+                        s.parse::<i64>()
+                            .map(serde_json::Value::from)
+                            .unwrap_or_else(|_| value.clone())
+                    } else if FLOAT_OPTIONS.contains(&key.as_str()) {
+                        // Parse as float
+                        s.parse::<f64>()
+                            .map(serde_json::Value::from)
+                            .unwrap_or_else(|_| value.clone())
+                    } else if s == "true" || s == "false" {
+                        // Parse as bool
+                        serde_json::Value::Bool(s == "true")
+                    } else {
+                        value.clone()
+                    }
+                } else {
+                    value.clone()
+                };
+                
+                ollama_options.insert(key.clone(), converted_value);
+            }
+        }
+
+        tracing::debug!(
+            model = %model,
+            base_url = %base_url,
+            ollama_options = ?ollama_options,
+            "Creating Ollama backend"
+        );
+
         Ok(OllamaBackend {
             model,
             base_url,
             client: reqwest::Client::new(),
+            ollama_options,
         })
     }
 
@@ -51,9 +125,11 @@ impl OllamaBackend {
             request.prompt.clone()
         };
 
-        let mut options = json!({
-            "temperature": request.temperature,
-        });
+        // Start with configured Ollama options
+        let mut options = serde_json::Value::Object(self.ollama_options.clone());
+
+        // Override with request-specific options
+        options["temperature"] = json!(request.temperature);
 
         if let Some(max_tokens) = request.max_tokens {
             options["num_predict"] = json!(max_tokens);
@@ -63,12 +139,19 @@ impl OllamaBackend {
             options["top_p"] = json!(top_p);
         }
 
-        json!({
+        let body = json!({
             "model": self.model,
             "prompt": prompt,
             "stream": false,
             "options": options
-        })
+        });
+
+        tracing::debug!(
+            options = %options,
+            "Building Ollama request"
+        );
+
+        body
     }
 
     /// Parse Ollama API response.

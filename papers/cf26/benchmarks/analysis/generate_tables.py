@@ -52,17 +52,204 @@ def format_ms(val: float, precision: int = 1) -> str:
     return f"{val:.{precision}f}ms"
 
 
-def extract_workload_metrics(workload_data: dict) -> dict:
-    """Extract key metrics from a workload result."""
+def extract_workload_metrics(workload_data: dict) -> list:
+    """Extract key metrics from a workload result.
+    
+    Returns a list of metric dicts (usually 1, but scalability returns multiple for each N).
+    """
     results = workload_data.get("results", {})
     apxm = results.get("apxm", {})
     lg = results.get("langgraph", {})
+    workload_type = workload_data.get("config", {}).get("workload_type", "standard")
 
-    metrics = {
+    base_metrics = {
         "name": workload_data.get("meta", {}).get("workload", "unknown"),
         "description": workload_data.get("meta", {}).get("description", ""),
+        "workload_type": workload_type,
     }
 
+    # Handle scalability workloads - expand into multiple rows
+    if workload_type == "scalability":
+        apxm_series = apxm.get("series", [])
+        lg_series = lg.get("series", [])
+        
+        # Build lookup by N
+        apxm_by_n = {s.get("n"): s for s in apxm_series}
+        lg_by_n = {s.get("n"): s for s in lg_series}
+        
+        # Get all N values
+        all_n = sorted(set(apxm_by_n.keys()) | set(lg_by_n.keys()))
+        
+        if not all_n:
+            # No data, return single row with empty metrics
+            return [base_metrics]
+        
+        rows = []
+        for n in all_n:
+            metrics = base_metrics.copy()
+            metrics["name"] = f"{base_metrics['name']}_n{n}"
+            metrics["description"] = f"N={n} parallelism"
+            metrics["scalability_n"] = n
+            
+            apxm_data = apxm_by_n.get(n, {})
+            lg_data = lg_by_n.get(n, {})
+            
+            if apxm_data.get("success", False) or apxm_data.get("mean_ms"):
+                metrics["apxm_success"] = True
+                metrics["apxm_mean_ms"] = apxm_data.get("mean_ms", 0)
+                metrics["apxm_std_ms"] = apxm_data.get("std_ms", 0)
+                metrics["apxm_p50_ms"] = apxm_data.get("p50_ms", 0)
+                metrics["apxm_p95_ms"] = apxm_data.get("p95_ms", 0)
+                
+                # Extract nested metrics (compile, llm, tokens)
+                apxm_metrics = apxm_data.get("metrics", {})
+                compile_ms = apxm_metrics.get("compile_ms", {})
+                metrics["apxm_compile_ms"] = compile_ms.get("mean_ms", 0) if isinstance(compile_ms, dict) else 0
+                
+                llm_total_ms = apxm_metrics.get("llm_total_ms", {})
+                metrics["apxm_llm_ms"] = llm_total_ms.get("mean_ms", 0) if isinstance(llm_total_ms, dict) else 0
+                
+                input_tokens = apxm_metrics.get("llm_input_tokens", {})
+                metrics["apxm_input_tokens"] = input_tokens.get("mean_ms", 0) if isinstance(input_tokens, dict) else 0
+                
+                output_tokens = apxm_metrics.get("llm_output_tokens", {})
+                metrics["apxm_output_tokens"] = output_tokens.get("mean_ms", 0) if isinstance(output_tokens, dict) else 0
+            else:
+                metrics["apxm_success"] = False
+                metrics["apxm_error"] = apxm_data.get("error", "No data")
+            
+            if lg_data.get("mean_ms"):
+                metrics["lg_success"] = True
+                metrics["lg_mean_ms"] = lg_data.get("mean_ms", 0)
+                metrics["lg_std_ms"] = lg_data.get("std_ms", 0)
+                metrics["lg_p50_ms"] = lg_data.get("p50_ms", 0)
+                metrics["lg_p95_ms"] = lg_data.get("p95_ms", 0)
+                
+                # Calculate speedup
+                if metrics.get("apxm_mean_ms") and metrics["apxm_mean_ms"] > 0:
+                    metrics["speedup"] = metrics["lg_mean_ms"] / metrics["apxm_mean_ms"]
+            else:
+                metrics["lg_success"] = False
+                metrics["lg_error"] = lg_data.get("error", "No data")
+            
+            rows.append(metrics)
+        
+        return rows
+
+    # Handle dataset workloads (hotpotqa, parallelqa, etc.)
+    if workload_type == "dataset":
+        metrics = base_metrics.copy()
+        
+        def _percentile(values: list, pct: float) -> float:
+            if not values:
+                return 0.0
+            ordered = sorted(values)
+            idx = int(len(ordered) * pct / 100.0)
+            idx = min(idx, len(ordered) - 1)
+            return ordered[idx]
+        
+        def _safe_sum(values: list) -> float:
+            return sum(v for v in values if v is not None)
+        
+        def _safe_mean(values: list) -> float:
+            valid = [v for v in values if v is not None]
+            return sum(valid) / len(valid) if valid else 0.0
+        
+        # A-PXM dataset metrics
+        if apxm.get("success"):
+            apxm_metrics = apxm.get("metrics", {})
+            metrics["apxm_success"] = True
+            metrics["apxm_num_examples"] = apxm.get("num_examples", 0)
+            metrics["apxm_num_successful"] = apxm.get("num_successful", 0)
+            metrics["apxm_accuracy"] = apxm_metrics.get("accuracy", 0)
+            metrics["apxm_f1"] = apxm_metrics.get("f1_mean", apxm_metrics.get("f1", 0))
+            metrics["apxm_latency_mean"] = apxm_metrics.get("latency_mean", 0) * 1000  # convert to ms
+            metrics["apxm_latency_std"] = apxm_metrics.get("latency_std", 0) * 1000
+            # Use latency for comparison (in ms)
+            metrics["apxm_mean_ms"] = metrics["apxm_latency_mean"]
+            metrics["apxm_std_ms"] = metrics["apxm_latency_std"]
+            
+            # Extract per-question results for p50/p95 and LLM metrics
+            apxm_results = apxm.get("results", {})
+            if isinstance(apxm_results, dict):
+                apxm_times_ms = [v.get("time", 0) * 1000 for v in apxm_results.values() 
+                                 if isinstance(v, dict) and v.get("time")]
+                if apxm_times_ms:
+                    metrics["apxm_p50_ms"] = _percentile(apxm_times_ms, 50)
+                    metrics["apxm_p95_ms"] = _percentile(apxm_times_ms, 95)
+                
+                # Aggregate LLM metrics from per-question results
+                llm_latencies = [v.get("llm_latency_ms") for v in apxm_results.values() 
+                                 if isinstance(v, dict) and v.get("llm_latency_ms") is not None]
+                input_tokens = [v.get("input_tokens") for v in apxm_results.values() 
+                                if isinstance(v, dict) and v.get("input_tokens") is not None]
+                output_tokens = [v.get("output_tokens") for v in apxm_results.values() 
+                                 if isinstance(v, dict) and v.get("output_tokens") is not None]
+                compile_times = [v.get("compile_ms") for v in apxm_results.values() 
+                                 if isinstance(v, dict) and v.get("compile_ms") is not None]
+                
+                if llm_latencies:
+                    metrics["apxm_llm_ms"] = _safe_mean(llm_latencies)
+                if input_tokens:
+                    metrics["apxm_input_tokens"] = _safe_mean(input_tokens)
+                if output_tokens:
+                    metrics["apxm_output_tokens"] = _safe_mean(output_tokens)
+                if compile_times:
+                    metrics["apxm_compile_ms"] = _safe_mean(compile_times)
+        else:
+            metrics["apxm_success"] = False
+            metrics["apxm_error"] = apxm.get("error", "Unknown error")
+
+        # LangGraph dataset metrics
+        if lg.get("success"):
+            lg_metrics = lg.get("metrics", {})
+            metrics["lg_success"] = True
+            metrics["lg_num_examples"] = lg.get("num_examples", 0)
+            metrics["lg_num_successful"] = lg.get("num_successful", 0)
+            metrics["lg_accuracy"] = lg_metrics.get("accuracy", 0)
+            metrics["lg_f1"] = lg_metrics.get("f1_mean", lg_metrics.get("f1", 0))
+            metrics["lg_latency_mean"] = lg_metrics.get("latency_mean", 0) * 1000  # convert to ms
+            metrics["lg_latency_std"] = lg_metrics.get("latency_std", 0) * 1000
+            # Use latency for comparison (in ms)
+            metrics["lg_mean_ms"] = metrics["lg_latency_mean"]
+            metrics["lg_std_ms"] = metrics["lg_latency_std"]
+            
+            # Extract per-question results for p50/p95 and LLM metrics
+            lg_results = lg.get("results", {})
+            if isinstance(lg_results, dict):
+                lg_times_ms = [v.get("time", 0) * 1000 for v in lg_results.values() 
+                               if isinstance(v, dict) and v.get("time")]
+                if lg_times_ms:
+                    metrics["lg_p50_ms"] = _percentile(lg_times_ms, 50)
+                    metrics["lg_p95_ms"] = _percentile(lg_times_ms, 95)
+                
+                # Aggregate LLM metrics from per-question results
+                llm_latencies = [v.get("llm_latency_ms") for v in lg_results.values() 
+                                 if isinstance(v, dict) and v.get("llm_latency_ms") is not None]
+                input_tokens = [v.get("input_tokens") for v in lg_results.values() 
+                                if isinstance(v, dict) and v.get("input_tokens") is not None]
+                output_tokens = [v.get("output_tokens") for v in lg_results.values() 
+                                 if isinstance(v, dict) and v.get("output_tokens") is not None]
+                
+                if llm_latencies:
+                    metrics["lg_llm_ms"] = _safe_mean(llm_latencies)
+                if input_tokens:
+                    metrics["lg_input_tokens"] = _safe_mean(input_tokens)
+                if output_tokens:
+                    metrics["lg_output_tokens"] = _safe_mean(output_tokens)
+
+            # Calculate speedup based on latency
+            if metrics.get("apxm_mean_ms") and metrics.get("lg_mean_ms") and metrics["apxm_mean_ms"] > 0:
+                metrics["speedup"] = metrics["lg_mean_ms"] / metrics["apxm_mean_ms"]
+        else:
+            metrics["lg_success"] = False
+            metrics["lg_error"] = lg.get("error", "Not available")
+
+        return [metrics]
+
+    # Handle standard workloads
+    metrics = base_metrics.copy()
+    
     # A-PXM metrics
     if apxm.get("success"):
         metrics["apxm_mean_ms"] = apxm.get("mean_ms", 0)
@@ -90,7 +277,7 @@ def extract_workload_metrics(workload_data: dict) -> dict:
         metrics["apxm_error_type"] = apxm.get("error_type", "unknown")
         metrics["apxm_time_to_error_ms"] = apxm.get("time_to_error_ms", 0)
     elif apxm.get("series"):
-        # Scalability workload
+        # Scalability workload (shouldn't reach here, but handle gracefully)
         metrics["apxm_success"] = True
         metrics["apxm_series"] = apxm.get("series", [])
     else:
@@ -106,13 +293,22 @@ def extract_workload_metrics(workload_data: dict) -> dict:
         metrics["lg_success"] = True
 
         # Calculate speedup
-        if metrics.get("apxm_mean_ms") and metrics.get("lg_mean_ms"):
+        if metrics.get("apxm_mean_ms") and metrics.get("lg_mean_ms") and metrics["apxm_mean_ms"] > 0:
             metrics["speedup"] = metrics["lg_mean_ms"] / metrics["apxm_mean_ms"]
+    elif lg.get("error_caught"):
+        # Error detection workload for langgraph
+        metrics["lg_success"] = True
+        metrics["lg_error_type"] = lg.get("error_type", "unknown")
+        metrics["lg_time_to_error_ms"] = lg.get("time_to_error_ms", 0)
+    elif lg.get("series"):
+        # Scalability workload for langgraph (shouldn't reach here)
+        metrics["lg_success"] = True
+        metrics["lg_series"] = lg.get("series", [])
     else:
         metrics["lg_success"] = False
         metrics["lg_error"] = lg.get("error", "Not available")
 
-    return metrics
+    return [metrics]
 
 
 def generate_summary_markdown(workloads: list, meta: dict) -> str:
@@ -208,30 +404,40 @@ def generate_summary_csv(workloads: list, meta: dict) -> str:
     writer = csv.writer(output)
 
     writer.writerow([
-        "workload", "description",
+        "workload", "description", "workload_type",
         "apxm_mean_ms", "apxm_std_ms", "apxm_p50_ms", "apxm_p95_ms",
         "apxm_compile_ms", "apxm_llm_ms",
         "apxm_input_tokens", "apxm_output_tokens",
+        "apxm_accuracy", "apxm_f1",
         "lg_mean_ms", "lg_std_ms", "lg_p50_ms", "lg_p95_ms",
+        "lg_accuracy", "lg_f1",
         "speedup"
     ])
 
     for w in workloads:
+        # Handle both standard and dataset workloads
+        workload_type = w.get("workload_type", "standard")
+        
         writer.writerow([
             w.get("name", ""),
             w.get("description", ""),
-            w.get("apxm_mean_ms", ""),
-            w.get("apxm_std_ms", ""),
-            w.get("apxm_p50_ms", ""),
-            w.get("apxm_p95_ms", ""),
-            w.get("apxm_compile_ms", ""),
-            w.get("apxm_llm_ms", ""),
-            w.get("apxm_input_tokens", ""),
-            w.get("apxm_output_tokens", ""),
+            workload_type,
+            w.get("apxm_mean_ms", "") if w.get("apxm_success") else "",
+            w.get("apxm_std_ms", "") if w.get("apxm_success") else "",
+            w.get("apxm_p50_ms", "") if w.get("apxm_success") else "",
+            w.get("apxm_p95_ms", "") if w.get("apxm_success") else "",
+            w.get("apxm_compile_ms", "") if w.get("apxm_success") else "",
+            w.get("apxm_llm_ms", "") if w.get("apxm_success") else "",
+            w.get("apxm_input_tokens", "") if w.get("apxm_success") else "",
+            w.get("apxm_output_tokens", "") if w.get("apxm_success") else "",
+            w.get("apxm_accuracy", "") if w.get("apxm_success") and workload_type == "dataset" else "",
+            w.get("apxm_f1", "") if w.get("apxm_success") and workload_type == "dataset" else "",
             w.get("lg_mean_ms", "") if w.get("lg_success") else "",
             w.get("lg_std_ms", "") if w.get("lg_success") else "",
             w.get("lg_p50_ms", "") if w.get("lg_success") else "",
             w.get("lg_p95_ms", "") if w.get("lg_success") else "",
+            w.get("lg_accuracy", "") if w.get("lg_success") and workload_type == "dataset" else "",
+            w.get("lg_f1", "") if w.get("lg_success") and workload_type == "dataset" else "",
             f"{w['speedup']:.4f}" if w.get("speedup") else "",
         ])
 
@@ -466,8 +672,8 @@ def main():
 
     workloads = []
     for name, wdata in workloads_data.items():
-        metrics = extract_workload_metrics(wdata)
-        workloads.append(metrics)
+        metrics_list = extract_workload_metrics(wdata)
+        workloads.extend(metrics_list)  # extend since extract_workload_metrics returns a list
 
     workloads.sort(key=lambda x: x.get("name", ""))
 

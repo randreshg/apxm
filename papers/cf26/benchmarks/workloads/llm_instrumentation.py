@@ -164,6 +164,72 @@ def get_llm_settings() -> LLMSettings:
     )
 
 
+@dataclass
+class BenchmarkSettings:
+    """Benchmark-specific settings from ~/.apxm/config.toml [benchmarks] section."""
+    timeout_seconds: float = 120.0
+    iterations: int = 10
+    warmup: int = 3
+
+
+def get_benchmark_settings() -> BenchmarkSettings:
+    """Load benchmark settings from ~/.apxm/config.toml [benchmarks] section.
+    
+    Example config:
+        [benchmarks]
+        timeout_seconds = 300.0
+        iterations = 10
+        warmup = 3
+    
+    Environment variables (APXM_BENCH_TIMEOUT, etc.) take precedence.
+    """
+    settings = BenchmarkSettings()
+    
+    apxm_config = _load_apxm_config()
+    if apxm_config:
+        bench_cfg = apxm_config.get("benchmarks", {})
+        if isinstance(bench_cfg, dict):
+            if "timeout_seconds" in bench_cfg:
+                try:
+                    settings.timeout_seconds = float(bench_cfg["timeout_seconds"])
+                except (TypeError, ValueError):
+                    pass
+            if "iterations" in bench_cfg:
+                try:
+                    settings.iterations = int(bench_cfg["iterations"])
+                except (TypeError, ValueError):
+                    pass
+            if "warmup" in bench_cfg:
+                try:
+                    settings.warmup = int(bench_cfg["warmup"])
+                except (TypeError, ValueError):
+                    pass
+    
+    # Environment variables take precedence
+    timeout_env = os.environ.get("APXM_BENCH_TIMEOUT")
+    if timeout_env:
+        try:
+            settings.timeout_seconds = float(timeout_env)
+        except ValueError:
+            pass
+    
+    iterations_env = os.environ.get("APXM_BENCH_ITERATIONS")
+    if iterations_env:
+        try:
+            settings.iterations = int(iterations_env)
+        except ValueError:
+            pass
+    
+    warmup_env = os.environ.get("APXM_BENCH_WARMUP")
+    if warmup_env:
+        try:
+            settings.warmup = int(warmup_env)
+        except ValueError:
+            pass
+    
+    return settings
+
+
 def _percentile(values: List[float], pct: float) -> Optional[float]:
     if not values:
         return None
