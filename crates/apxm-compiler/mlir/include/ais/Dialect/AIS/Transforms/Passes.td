@@ -39,6 +39,31 @@ def NormalizeAgentGraph : Pass<"normalize", "mlir::ModuleOp"> {
   let constructor = "mlir::ais::createNormalizeAgentGraphPass()";
 }
 
+def BuildPrompt : Pass<"build-prompt", "mlir::ModuleOp"> {
+  let summary = "Build LLM operation prompt templates";
+  let description = [{
+    Processes LLM operations and generates placeholder templates:
+    1. Empty template_str -> "{0}" (context[0] becomes prompt)
+    2. Optionally embed instruction prompts from config
+
+    Works with InstructionConfig system - does NOT replace runtime mapping,
+    just ensures template_str is never empty when context exists.
+
+    This pass enables proper prompt construction for operations like:
+      ask(user_input) -> ask("{0}", [user_input])
+
+    Without this pass, empty template_str causes the runtime to produce
+    empty prompts, resulting in empty or broken LLM responses.
+  }];
+  let constructor = "mlir::ais::createBuildPromptPass()";
+  let options = [
+    Option<"generatePlaceholders", "generate-placeholders", "bool", "true",
+           "Generate {0} placeholder when template_str is empty">,
+    Option<"embedInstructions", "embed-instructions", "bool", "false",
+           "Embed instruction prompts into artifact (bypasses runtime config)">
+  ];
+}
+
 def CapabilityScheduling : Pass<"scheduling", "mlir::ModuleOp"> {
   let summary = "Annotate operations with scheduling metadata";
   let description = [{

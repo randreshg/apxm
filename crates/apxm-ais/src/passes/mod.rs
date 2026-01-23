@@ -172,6 +172,43 @@ can rely on, similar to MLIR's canonicalizer but domain-specific."#,
     "mlir::ais::createNormalizeAgentGraphPass()",
 );
 
+/// BuildPrompt pass - generates placeholder templates for empty template_str.
+pub const BUILD_PROMPT: PassSpec = PassSpec::new(
+    "build-prompt",
+    "BuildPrompt",
+    "Build LLM operation prompt templates",
+    r#"Processes LLM operations and generates placeholder templates:
+1. Empty template_str -> "{0}" (context[0] becomes prompt)
+2. Optionally embed instruction prompts from config
+
+Works with InstructionConfig system - does NOT replace runtime mapping,
+just ensures template_str is never empty when context exists.
+
+This pass enables proper prompt construction for operations like:
+  ask(user_input) -> ask("{0}", [user_input])
+
+Without this pass, empty template_str causes the runtime to produce
+empty prompts, resulting in empty or broken LLM responses."#,
+    PassCategory::Transform,
+    "mlir::ais::createBuildPromptPass()",
+)
+.with_options(&[
+    PassOption::new(
+        "generate-placeholders",
+        "generatePlaceholders",
+        "bool",
+        "true",
+        "Generate {0} placeholder when template_str is empty",
+    ),
+    PassOption::new(
+        "embed-instructions",
+        "embedInstructions",
+        "bool",
+        "false",
+        "Embed instruction prompts into artifact (bypasses runtime config)",
+    ),
+]);
+
 /// Scheduling pass - annotates operations with scheduling metadata.
 pub const SCHEDULING: PassSpec = PassSpec::new(
     "scheduling",
@@ -297,6 +334,7 @@ pub const SYMBOL_DCE: PassSpec = PassSpec::new(
 /// All AIS-specific passes (not built-in MLIR passes).
 pub const AIS_PASSES: &[&PassSpec] = &[
     &NORMALIZE,
+    &BUILD_PROMPT,
     &SCHEDULING,
     &FUSE_ASK_OPS,
     &UNCONSUMED_VALUE_WARNING,
@@ -306,6 +344,7 @@ pub const AIS_PASSES: &[&PassSpec] = &[
 pub const ALL_PASSES: &[&PassSpec] = &[
     // AIS-specific
     &NORMALIZE,
+    &BUILD_PROMPT,
     &SCHEDULING,
     &FUSE_ASK_OPS,
     &UNCONSUMED_VALUE_WARNING,
@@ -350,6 +389,7 @@ mod tests {
     #[test]
     fn test_find_pass_by_name() {
         assert!(find_pass_by_name("normalize").is_some());
+        assert!(find_pass_by_name("build-prompt").is_some());
         assert!(find_pass_by_name("fuse-ask-ops").is_some());
         assert!(find_pass_by_name("canonicalizer").is_some());
         assert!(find_pass_by_name("nonexistent").is_none());
@@ -377,5 +417,11 @@ mod tests {
     fn test_scheduling_has_options() {
         assert!(!SCHEDULING.options.is_empty());
         assert_eq!(SCHEDULING.options.len(), 3);
+    }
+
+    #[test]
+    fn test_build_prompt_has_options() {
+        assert!(!BUILD_PROMPT.options.is_empty());
+        assert_eq!(BUILD_PROMPT.options.len(), 2);
     }
 }

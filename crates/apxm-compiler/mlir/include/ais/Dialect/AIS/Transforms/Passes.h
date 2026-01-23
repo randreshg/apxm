@@ -9,9 +9,10 @@
  *
  * Pass list (in canonical order):
  *   1. normalize                 – canonicalise the graph
- *   2. scheduling                – annotate with tier/cost/parallel-safe flags
- *   3. fuse-ask-ops              – batch ask LLM calls (highest ROI)
- *   4. unconsumed-value-warning  – warn about unused results (DCE)
+ *   2. build-prompt              – generate {0} placeholder for empty templates
+ *   3. scheduling                – annotate with tier/cost/parallel-safe flags
+ *   4. fuse-ask-ops              – batch ask LLM calls (highest ROI)
+ *   5. unconsumed-value-warning  – warn about unused results (DCE)
  */
 
 #ifndef APXM_AIS_PASSES_H
@@ -36,6 +37,9 @@ namespace mlir::ais {
 
 /// Create NormalizeAgentGraph pass - canonicalize AIS graph structure
 std::unique_ptr<Pass> createNormalizeAgentGraphPass();
+
+/// Create BuildPrompt pass - generate {0} placeholder for empty template_str
+std::unique_ptr<Pass> createBuildPromptPass();
 
 /// Create CapabilityScheduling pass - annotate with scheduling metadata
 std::unique_ptr<Pass> createCapabilitySchedulingPass();

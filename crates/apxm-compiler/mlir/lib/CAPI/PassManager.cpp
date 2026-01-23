@@ -117,7 +117,7 @@ bool apxm_pass_manager_has_pass(ApxmPassManager* pm, const char* pass_name) {
 
   // Simple implementation - in real system would use pass registry
   static const char* known_passes[] = {
-    "normalize", "fuse-ask-ops", "scheduling",
+    "normalize", "build-prompt", "fuse-ask-ops", "scheduling",
     "canonicalizer", "cse", "symbol-dce", "inline",
     "unconsumed-value-warning"
   };
@@ -148,6 +148,10 @@ void apxm_pass_manager_add_unconsumed_value_warning(ApxmPassManager* pm) {
 // Transform Passes
 void apxm_pass_manager_add_normalize(ApxmPassManager* pm) {
   if (pm) pm->pass_manager->addPass(mlir::ais::createNormalizeAgentGraphPass());
+}
+
+void apxm_pass_manager_add_build_prompt(ApxmPassManager* pm) {
+  if (pm) pm->pass_manager->addPass(mlir::ais::createBuildPromptPass());
 }
 
 void apxm_pass_manager_add_fuse_ask_ops(ApxmPassManager* pm) {

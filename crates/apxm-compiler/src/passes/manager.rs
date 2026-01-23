@@ -47,6 +47,10 @@ impl<'ctx> PassManager<'ctx> {
         self.add_pass("normalize")
     }
 
+    pub fn build_prompt(&mut self) -> Result<&mut Self> {
+        self.add_pass("build-prompt")
+    }
+
     pub fn scheduling(&mut self) -> Result<&mut Self> {
         self.add_pass("scheduling")
     }
