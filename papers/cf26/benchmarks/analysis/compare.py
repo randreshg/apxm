@@ -65,11 +65,15 @@ def analyze_parallel_research(data: dict) -> dict:
     # Extract A-PXM metrics
     if "mean_ms" in apxm:
         compile_time_ms = get_nested(apxm, ["metrics", "compile_ms", "mean_ms"])
+        # Fair comparison: LangGraph's mean_ms is in-process invoke wall time.
+        # A-PXM's mean_ms is subprocess wall time; prefer internal runtime_ms when available.
+        apxm_runtime_mean = get_nested(apxm, ["metrics", "runtime_ms", "mean_ms"])
+        apxm_mean_for_compare = apxm_runtime_mean if apxm_runtime_mean is not None else apxm.get("mean_ms", 0)
         result["apxm"] = {
             "compile_time_ms": compile_time_ms or 0,
-            "mean_ms": apxm.get("mean_ms", 0),
+            "mean_ms": apxm_mean_for_compare,
             "std_ms": apxm.get("std_ms", 0),
-            "p50_ms": apxm.get("p50_ms", apxm.get("mean_ms", 0)),
+            "p50_ms": apxm.get("p50_ms", apxm_mean_for_compare),
             "p95_ms": apxm.get("p95_ms", 0),
         }
     elif "note" in apxm:
@@ -112,11 +116,13 @@ def analyze_chain_fusion(data: dict) -> dict:
 
     # A-PXM: Fused into 1 call
     if "mean_ms" in apxm:
+        apxm_runtime_mean = get_nested(apxm, ["metrics", "runtime_ms", "mean_ms"])
+        apxm_mean_for_compare = apxm_runtime_mean if apxm_runtime_mean is not None else apxm.get("mean_ms", 0)
         result["apxm"] = {
             "llm_calls": 1,  # Fused
-            "mean_ms": apxm.get("mean_ms", 0),
-            "p50_ms": apxm.get("p50_ms", 0),
-            "p95_ms": apxm.get("p95_ms", 0),
+            "mean_ms": apxm_mean_for_compare,
+            "p50_ms": apxm.get("p50_ms", apxm_mean_for_compare),
+            "p95_ms": apxm.get("p95_ms", apxm_mean_for_compare),
             "fusion_enabled": True,
         }
     elif "note" in apxm:

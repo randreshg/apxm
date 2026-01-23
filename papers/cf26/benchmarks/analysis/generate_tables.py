@@ -252,10 +252,14 @@ def extract_workload_metrics(workload_data: dict) -> list:
     
     # A-PXM metrics
     if apxm.get("success"):
-        metrics["apxm_mean_ms"] = apxm.get("mean_ms", 0)
+        # Fair comparison: LangGraph mean_ms is in-process invoke wall time.
+        # A-PXM mean_ms is subprocess wall time; prefer internal runtime_ms when available.
+        apxm_runtime_mean = get_nested(apxm, "metrics", "runtime_ms", "mean_ms", default=None)
+        apxm_mean_for_compare = apxm_runtime_mean if apxm_runtime_mean is not None else apxm.get("mean_ms", 0)
+        metrics["apxm_mean_ms"] = apxm_mean_for_compare
         metrics["apxm_std_ms"] = apxm.get("std_ms", 0)
-        metrics["apxm_p50_ms"] = apxm.get("p50_ms", 0)
-        metrics["apxm_p95_ms"] = apxm.get("p95_ms", 0)
+        metrics["apxm_p50_ms"] = apxm.get("p50_ms", apxm_mean_for_compare)
+        metrics["apxm_p95_ms"] = apxm.get("p95_ms", apxm_mean_for_compare)
 
         # LLM metrics from nested structure
         llm_metrics = get_nested(apxm, "metrics", "llm_total_ms", default={})

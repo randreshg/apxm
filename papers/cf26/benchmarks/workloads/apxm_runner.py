@@ -1275,11 +1275,14 @@ def _run_dataset_apxm(workload: WorkloadConfig, iterations: int, warmup: int) ->
             if lines:
                 answer = lines[-1]
 
+            # For fairness vs LangGraph (in-process invoke timing), prefer A-PXM runtime_ms
+            # when available. execution_time_ms includes subprocess + compile overhead.
+            time_s = (result.runtime_ms / 1000.0) if result.runtime_ms is not None else (result.execution_time_ms / 1000.0)
             results[example_id] = {
                 "question": question,
                 "answer": answer,
                 "label": label,
-                "time": result.execution_time_ms / 1000.0,  # Convert to seconds
+                "time": time_s,  # seconds
                 # LLM metrics
                 "llm_latency_ms": result.llm_total_latency_ms,
                 "llm_requests": result.llm_requests,

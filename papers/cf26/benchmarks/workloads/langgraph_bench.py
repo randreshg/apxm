@@ -11,6 +11,8 @@ import io
 import math
 import statistics
 import time
+import uuid
+import os
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -77,15 +79,25 @@ def run_graph(
     """Run a LangGraph graph with instrumentation."""
     settings = get_llm_settings()
 
-    # Prepare config for checkpointer-based graphs
-    # Some graphs (like memory_augmented) require thread_id for checkpointer
-    config = {"configurable": {"thread_id": "benchmark-run"}}
+    # Prepare base config for checkpointer-based graphs.
+    # IMPORTANT: use a unique thread_id per invocation so state doesn't leak across iterations.
+    # (e.g., MemorySaver checkpointer would otherwise reuse prior state and skew timings.)
+    max_conc_env = None
+    try:
+        max_conc_env = int(os.environ.get("APXM_BENCH_MAX_CONCURRENCY", "0"))
+    except Exception:
+        max_conc_env = 0
+    base_config: Dict[str, Any] = {"configurable": {}}
+    if max_conc_env and max_conc_env > 0:
+        base_config["max_concurrency"] = max_conc_env
 
     # Warmup runs
     for _ in range(warmup):
         reset_metrics()
         try:
-            graph.invoke(initial_state.copy(), config)
+            cfg = dict(base_config)
+            cfg["configurable"] = {"thread_id": f"warmup-{uuid.uuid4()}"}
+            graph.invoke(initial_state.copy(), cfg)
         except Exception:
             pass
         consume_metrics()
@@ -111,7 +123,9 @@ def run_graph(
 
         try:
             with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
-                result = graph.invoke(initial_state.copy(), config)
+                cfg = dict(base_config)
+                cfg["configurable"] = {"thread_id": f"iter-{i}-{uuid.uuid4()}"}
+                result = graph.invoke(initial_state.copy(), cfg)
         except Exception as exc:  # pragma: no cover - runtime errors are reported
             success = False
             error = str(exc)

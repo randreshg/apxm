@@ -131,7 +131,20 @@ def main():
                         print(f"  LangGraph: {lg_result['note']}")
 
                 if apxm_result and "error" not in apxm_result:
-                    if "mean_ms" in apxm_result:
+                    # For fairness: LangGraph mean_ms is in-process invoke time.
+                    # A-PXM mean_ms is subprocess wall time; prefer internal runtime_ms when available.
+                    apxm_runtime_mean = (
+                        apxm_result.get("metrics", {})
+                        .get("runtime_ms", {})
+                        .get("mean_ms")
+                        if isinstance(apxm_result.get("metrics"), dict)
+                        and isinstance(apxm_result.get("metrics", {}).get("runtime_ms"), dict)
+                        else None
+                    )
+                    if apxm_runtime_mean is not None:
+                        print(f"  A-PXM (runtime): {apxm_runtime_mean:.2f} ms")
+                        print(f"  A-PXM (wall):    {apxm_result.get('mean_ms', apxm_runtime_mean):.2f} ms")
+                    elif "mean_ms" in apxm_result:
                         print(f"  A-PXM: {apxm_result['mean_ms']:.2f} ms")
                     elif apxm_result.get("success"):
                         print(f"  A-PXM: {apxm_result.get('mean_ms', 'N/A')} ms")

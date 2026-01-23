@@ -32,6 +32,15 @@ This benchmark suite measures the developer experience and performance differenc
 
 Each workload is implemented in both DSLs to enable fair comparison.
 
+### Timing Fairness (What we compare)
+
+- **LangGraph**: `mean_ms` is measured as in-process `graph.invoke(...)` wall time (warmups excluded).
+- **A-PXM**: `mean_ms` is subprocess wall time for `apxm execute ...` (includes process + compile + runtime).
+  For apples-to-apples comparison against LangGraph invoke time, prefer **A-PXM internal runtime**:
+  `metrics.runtime_ms.mean_ms` (requires `--emit-metrics`, enabled by default).
+
+The analysis scripts and the `workloads/runner.py` summary prefer **A-PXM runtime_ms** when available.
+
 ## Directory Structure
 
 ```
