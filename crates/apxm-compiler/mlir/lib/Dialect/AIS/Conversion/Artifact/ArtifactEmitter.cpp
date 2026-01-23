@@ -614,6 +614,16 @@ LogicalResult emitNode(Operation *op, DagBuildState &state, ArtifactDag &dag) {
     state.producerNodeIds.insert({result, node.id});
   }
 
+  // Special handling for Return operations: create synthetic output token
+  // ReturnOp is a terminator so it has no SSA results, but we need output_tokens
+  // for the runtime to collect results from exit nodes
+  if (node.opType == OperationKind::ReturnOp && node.outputTokens.empty() &&
+      !node.inputTokens.empty()) {
+    // Create a synthetic output token ID for the return value
+    uint64_t syntheticTokenId = state.nextTokenId++;
+    node.outputTokens.push_back(syntheticTokenId);
+  }
+
   dag.nodes.push_back(std::move(node));
   return success();
 }

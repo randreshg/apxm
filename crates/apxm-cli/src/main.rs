@@ -429,6 +429,21 @@ async fn execute_command(
         println!("Wrote metrics to {}", metrics_path.display());
     }
 
+    // Print workflow outputs
+    if result.execution.results.is_empty() {
+        eprintln!("Warning: No output values");
+    } else {
+        for (key, value) in &result.execution.results {
+            if result.execution.results.len() == 1 {
+                // Single result: print just the value
+                println!("{}", value);
+            } else {
+                // Multiple results: print key=value pairs
+                println!("{}={}", key, value);
+            }
+        }
+    }
+
     Ok(())
 }
 
