@@ -18,9 +18,11 @@ agent ParallelQA {
         merge(sub_answer1, sub_answer2) -> combined_answers
         
         // Step 4: Synthesize final answer
-        ask("Given the original question: " + question + 
-            "\nAnd the sub-answers: " + combined_answers + 
-            "\nProvide the final answer. Be concise.") -> answer
+        ask("Given the original question: " + question +
+            "\nAnd the sub-answers: " + combined_answers +
+            "\n\nIMPORTANT: Your response MUST be ONLY the final answer. " +
+            "Do NOT include reasoning or explanation. " +
+            "For numeric answers, provide just the number.") -> answer
         
         print("Question: " + question)
         print("Answer: " + answer)

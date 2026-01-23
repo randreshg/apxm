@@ -13,9 +13,12 @@ agent HotpotQA {
             "Provide a brief summary of what facts we need to find.") -> info_needed
         
         // Step 3: Reason about the gathered information to answer
-        ask("Given the question: " + question + 
-            "\nAnd the information needed: " + info_needed + 
-            "\nProvide a concise answer. The answer should be short (a few words or yes/no).") -> answer
+        ask("Given the question: " + question +
+            "\nAnd the information needed: " + info_needed +
+            "\n\nIMPORTANT: Your response MUST be ONLY the answer itself. " +
+            "Do NOT include any reasoning, explanation, or preamble. " +
+            "For yes/no questions, respond with exactly 'yes' or 'no'. " +
+            "For entity questions, respond with just the entity name.") -> answer
         
         print("Question: " + question)
         print("Answer: " + answer)

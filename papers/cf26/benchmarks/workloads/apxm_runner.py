@@ -86,6 +86,38 @@ def _get_timeout(default: float = 120.0) -> float:
     return default
 
 
+def calculate_framework_overhead(result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calculate framework-specific overhead excluding LLM time.
+
+    This helps isolate framework costs from LLM inference time,
+    enabling fair comparison for workloads where LLM time dominates.
+
+    Args:
+        result: Dictionary with timing metrics (time in seconds, llm_latency_ms, compile_ms)
+
+    Returns:
+        Dictionary with:
+            - framework_overhead_ms: Total time minus LLM time
+            - compile_ms: Compilation time (if available)
+            - llm_percentage: Percentage of total time spent in LLM calls
+            - is_llm_bound: True if LLM time > 90% of total time
+    """
+    llm_time_ms = result.get("llm_latency_ms", 0) or 0
+    total_time_ms = result.get("time", 0) * 1000  # Convert seconds to ms
+    compile_time_ms = result.get("compile_ms", 0) or 0
+
+    framework_overhead_ms = max(0, total_time_ms - llm_time_ms)
+    llm_percentage = (llm_time_ms / total_time_ms * 100) if total_time_ms > 0 else 0
+
+    return {
+        "framework_overhead_ms": framework_overhead_ms,
+        "compile_ms": compile_time_ms,
+        "llm_percentage": llm_percentage,
+        "is_llm_bound": llm_percentage > 90,
+    }
+
+
 def _run_compile_diagnostics(workflow_path: Path, opt_level: int) -> Dict[str, Any]:
     cli_path = find_apxm_cli(require_metrics=False)
     if cli_path is None:
@@ -1272,13 +1304,20 @@ def _run_dataset_apxm(workload: WorkloadConfig, iterations: int, warmup: int) ->
             lines = [l.strip() for l in answer.split("\n") if l.strip()]
             # Filter out log lines (Wrote metrics, Executing workflow, etc.)
             lines = [l for l in lines if not l.startswith("Wrote ") and not l.startswith("┏") and not l.startswith("┃") and not l.startswith("┗")]
+
             if lines:
-                answer = lines[-1]
+                # Look for "Answer: X" pattern from print statements
+                for line in reversed(lines):
+                    if line.startswith("Answer: "):
+                        answer = line[len("Answer: "):].strip()
+                        break
+                else:
+                    answer = lines[-1]
 
             # For fairness vs LangGraph (in-process invoke timing), prefer A-PXM runtime_ms
             # when available. execution_time_ms includes subprocess + compile overhead.
             time_s = (result.runtime_ms / 1000.0) if result.runtime_ms is not None else (result.execution_time_ms / 1000.0)
-            results[example_id] = {
+            example_result = {
                 "question": question,
                 "answer": answer,
                 "label": label,
@@ -1290,6 +1329,10 @@ def _run_dataset_apxm(workload: WorkloadConfig, iterations: int, warmup: int) ->
                 "output_tokens": result.llm_total_output_tokens,
                 "compile_ms": result.compile_time_ms,
             }
+            # Add framework overhead metrics
+            overhead = calculate_framework_overhead(example_result)
+            example_result.update(overhead)
+            results[example_id] = example_result
             latencies.append(result.execution_time_ms)
         else:
             errors.append(f"Example {example_id}: {result.error}")
@@ -1406,7 +1449,7 @@ def _run_dataset_langgraph(workload: WorkloadConfig, iterations: int, warmup: in
             elif isinstance(output, str):
                 answer = output
             
-            results[example_id] = {
+            example_result = {
                 "question": question,
                 "answer": answer,
                 "label": label,
@@ -1417,6 +1460,10 @@ def _run_dataset_langgraph(workload: WorkloadConfig, iterations: int, warmup: in
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
             }
+            # Add framework overhead metrics
+            overhead = calculate_framework_overhead(example_result)
+            example_result.update(overhead)
+            results[example_id] = example_result
             latencies.append(elapsed_ms)
         except Exception as e:
             errors.append(f"Example {example_id}: {str(e)}")

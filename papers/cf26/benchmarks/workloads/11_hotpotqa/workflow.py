@@ -80,7 +80,10 @@ def synthesize_answer(state: HotpotQAState) -> dict:
             + question
             + "\nAnd the information needed: "
             + info_needed
-            + "\nProvide a concise answer. The answer should be short (a few words or yes/no)."
+            + "\n\nIMPORTANT: Your response MUST be ONLY the answer itself. "
+            + "Do NOT include any reasoning, explanation, or preamble. "
+            + "For yes/no questions, respond with exactly 'yes' or 'no'. "
+            + "For entity questions, respond with just the entity name."
         )
     )
     response = llm.invoke(messages)

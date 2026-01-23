@@ -97,7 +97,9 @@ def synthesize_answer(state: ParallelQAState) -> dict:
             + question
             + "\nAnd the sub-answers: "
             + combined
-            + "\nProvide the final answer. Be concise."
+            + "\n\nIMPORTANT: Your response MUST be ONLY the final answer. "
+            + "Do NOT include reasoning or explanation. "
+            + "For numeric answers, provide just the number."
         )
     )
     response = llm.invoke(messages)

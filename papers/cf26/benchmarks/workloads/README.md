@@ -55,8 +55,11 @@ workloads/
 ├── 8_planning/              # Native plan(operation)
 ├── 9_conditional_routing/   # Dataflow-based routing
 ├── 10_multi_agent/          # Multi-agent collaboration
+├── 11_hotpotqa/             # HotpotQA multi-hop QA (dataset-driven)
+├── 12_parallelqa/           # ParallelQA parallel sub-questions (dataset-driven)
 ├── apxm_runner.py           # Consolidated benchmark runner (WorkloadConfig registry)
 ├── runner.py                # Master benchmark runner (thin wrapper)
+├── dataset_eval.py          # Dataset evaluation utilities (F1, accuracy)
 └── README.md                # This file
 ```
 
@@ -74,6 +77,58 @@ These contain intentionally broken code and include an `expect_error` marker fil
 When running `apxm workloads check`, these workloads:
 - **Pass** if compilation fails (expected behavior)
 - **Fail** if compilation succeeds (indicates a bug in the verifier)
+
+## Testing Infrastructure
+
+### Hardware Configuration
+
+| Component | Details |
+|-----------|---------|
+| **GPU** | 4x NVIDIA A100-SXM4-40GB (40GB VRAM each) |
+| **Driver** | NVIDIA 560.35.03 |
+| **CPU** | AMD EPYC 75F3 32-Core Processor |
+| **RAM** | 755 GB |
+| **OS** | Ubuntu 24.04.3 LTS (Kernel 6.1.0-25-amd64) |
+| **Ollama Version** | 0.14.2 |
+| **Model** | `gpt-oss:120b` (65GB, loaded across GPUs) |
+| **Context Window** | 131,072 tokens (`num_ctx` in config) |
+
+### Comparison Methodology
+
+Both frameworks are tested under identical conditions to ensure fair comparison:
+
+1. **Same LLM Backend**: Both A-PXM and LangGraph use the same Ollama endpoint with identical model (`gpt-oss:120b`)
+2. **Same Context Window**: 131,072 tokens (`num_ctx`)
+3. **Same System Prompts**: Loaded from shared `[instruction]` config section in `~/.apxm/config.toml`
+4. **Same Hardware**: All benchmarks run on the same machine
+
+**Measurement Approach**:
+- **LangGraph**: In-process `graph.invoke()` wall time (excludes Python interpreter startup)
+- **A-PXM**: Internal `runtime_ms` from metrics (excludes subprocess spawn + compilation overhead)
+  - For subprocess wall time, use `execution_time_ms` instead
+- **LLM Metrics**: Captured via shared instrumentation module (`llm_instrumentation.py`)
+
+### Workload Interpretation Guide
+
+| Workload | Fair Comparison? | What to Report | Why |
+|----------|------------------|----------------|-----|
+| chain_fusion | Yes | Speedup (1.3x) | Fusion reduces LLM calls |
+| hotpotqa | Yes | Speedup (7x) + accuracy | Multi-hop QA with fusion opportunity |
+| parallelqa | Yes | Speedup + accuracy | Parallel sub-questions |
+| conditional_routing | Yes | Speedup (5x) | Dataflow-based parallelism |
+| multi_agent | Yes | Speedup (10x) | Native agent operations |
+| planning | **No (LLM-bound)** | Code simplicity, native operations | LLM inference > 90% of runtime |
+| scalability_n* | **No (LLM-bound)** | Automatic parallelization | Both hit same LLM API limits |
+
+### Assumptions and Limitations
+
+1. **LLM Inference Time Variability**: Inference times vary by 10-50% between runs. Both frameworks are bounded by the same LLM API rate limits.
+
+2. **Fusion Quality Trade-off**: FuseAskOps combines sequential `ask()` calls into batched prompts. This changes prompt structure and may affect response quality. The paper documents this trade-off (Section 5, line 77).
+
+3. **LLM-Bound Workloads**: For planning and scalability workloads, LLM time exceeds 90% of total runtime. Speedup differences in these cases reflect subprocess/compilation overhead, not parallelism inefficiency.
+
+4. **Framework Overhead Metrics**: The `framework_overhead_ms` metric isolates framework-specific costs by subtracting LLM latency from total time. Use this for apples-to-apples comparison.
 
 ## Prerequisites
 
@@ -163,7 +218,9 @@ cd papers/cf26/benchmarks
 pip install -r requirements.txt
 ```
 
-### 3. Build A-PXM Compiler (optional, for DSL compilation)
+### 3. Build A-PXM Compiler (REQUIRED for dataset workloads)
+
+The A-PXM CLI must be built with the `driver` feature for dataset workloads (11_hotpotqa, 12_parallelqa) to run:
 
 ```bash
 cd /path/to/apxm
@@ -176,6 +233,12 @@ conda activate apxm
 eval "$(cargo run -p apxm-cli -- activate)"
 cargo build -p apxm-cli --features driver --release
 ```
+
+**IMPORTANT**: If you see the error:
+```
+Error: Command requires the `driver` feature. Re-run with: cargo run -p apxm-cli --features driver -- <command>
+```
+This means the CLI was not built with the driver feature. Run the build command above to fix it.
 
 ## Running Benchmarks
 
@@ -320,6 +383,36 @@ apxm workloads run 1 --json
 |--------|-------|-----------|
 | Agents | Native definitions | Function nodes |
 | Messaging | communicate op | Shared state |
+
+### 11. HotpotQA (Dataset-Driven)
+**Measures**: Multi-hop question answering accuracy and latency
+
+| Aspect | A-PXM | LangGraph |
+|--------|-------|-----------|
+| Dataset | HotpotQA (50 samples) | Same |
+| Workflow | 3 sequential asks (fusible) | 3 sequential nodes |
+| Metrics | Accuracy, F1, latency | Same |
+| Fusion | FuseAskOps reduces to 1 call | N/A (3 calls) |
+
+**Evaluation Metrics**:
+- Exact match accuracy (normalized string comparison)
+- F1 score (token-level overlap)
+- Framework overhead (total time - LLM time)
+
+### 12. ParallelQA (Dataset-Driven)
+**Measures**: Parallel sub-question answering accuracy and latency
+
+| Aspect | A-PXM | LangGraph |
+|--------|-------|-----------|
+| Dataset | ParallelQA (50 samples) | Same |
+| Workflow | Decompose → parallel sub-answers → merge | Same flow |
+| Metrics | Accuracy, F1, latency | Same |
+| Parallelism | Automatic from dataflow | Explicit Send API |
+
+**Evaluation Metrics**:
+- Exact match accuracy (10% tolerance for numeric answers)
+- F1 score
+- LLM-bound percentage (expect >90%)
 
 ## AIS Operations Reference
 
