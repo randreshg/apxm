@@ -48,7 +48,7 @@ def explain_qubits(state: ChainState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Using: {context}, explain qubits in 2 sentences"))
+    messages.append(HumanMessage(content="Using: " + context + ", explain qubits in 2 sentences"))
     response = llm.invoke(messages)
     return {"step2": response.content}
 
@@ -62,7 +62,9 @@ def explain_superposition(state: ChainState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Using: {context}, explain superposition in 2 sentences"))
+    messages.append(
+        HumanMessage(content="Using: " + context + ", explain superposition in 2 sentences")
+    )
     response = llm.invoke(messages)
     return {"step3": response.content}
 
@@ -76,7 +78,9 @@ def explain_entanglement(state: ChainState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Using: {context}, explain entanglement in 2 sentences"))
+    messages.append(
+        HumanMessage(content="Using: " + context + ", explain entanglement in 2 sentences")
+    )
     response = llm.invoke(messages)
     return {"step4": response.content}
 
@@ -90,7 +94,9 @@ def summarize(state: ChainState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Summarize all concepts above in 2 sentences: {context}"))
+    messages.append(
+        HumanMessage(content="Summarize all concepts above in 2 sentences: " + context)
+    )
     response = llm.invoke(messages)
     return {"summary": response.content}
 

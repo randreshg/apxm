@@ -42,14 +42,14 @@ class MemoryState(TypedDict):
     answer: str
 
 
-def recall_ltm(state: MemoryState) -> dict:
-    """Recall from long-term memory."""
+def qmem_ltm(state: MemoryState) -> dict:
+    """Query long-term memory (qmem)."""
     cached = state["ltm"].get("domain_knowledge", "No cached knowledge")
     return {"cached": cached}
 
 
-def store_stm(state: MemoryState) -> dict:
-    """Store in short-term memory."""
+def umem_stm(state: MemoryState) -> dict:
+    """Update short-term memory (umem)."""
     stm = state["stm"].copy()
     stm["current_query"] = state["query"]
     return {"stm": stm}
@@ -60,29 +60,30 @@ def reason(state: MemoryState) -> dict:
     cached = state["cached"]
     query = state["query"]
 
-    user_prompt = f"Use the retrieved memory to answer the query. {cached} {query}"
-
     llm = get_llm_instance()
     messages = []
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=user_prompt))
+    # Mirror AIS-style `ask(prompt, cached, query)` by passing context separately.
+    messages.append(HumanMessage(content="Use the retrieved memory to answer the query."))
+    messages.append(HumanMessage(content=cached or ""))
+    messages.append(HumanMessage(content=query or ""))
     response = llm.invoke(messages)
     answer = response.content if hasattr(response, 'content') else str(response)
 
     return {"answer": answer}
 
 
-def record_episodic(state: MemoryState) -> dict:
-    """Record to episodic memory for audit trail."""
+def umem_episodic(state: MemoryState) -> dict:
+    """Update episodic memory (umem) for audit trail."""
     episodic = state["episodic"].copy()
     episodic.append(state["answer"])
     return {"episodic": episodic}
 
 
-def persist_ltm(state: MemoryState) -> dict:
-    """Persist to long-term memory."""
+def umem_ltm(state: MemoryState) -> dict:
+    """Update long-term memory (umem)."""
     ltm = state["ltm"].copy()
     ltm["answer"] = state["answer"]
     return {"ltm": ltm}
@@ -99,19 +100,19 @@ def build_graph() -> StateGraph:
     builder = StateGraph(MemoryState)
 
     # Add nodes
-    builder.add_node("recall_ltm", recall_ltm)
-    builder.add_node("store_stm", store_stm)
+    builder.add_node("qmem_ltm", qmem_ltm)
+    builder.add_node("umem_stm", umem_stm)
     builder.add_node("reason", reason)
-    builder.add_node("record_episodic", record_episodic)
-    builder.add_node("persist_ltm", persist_ltm)
+    builder.add_node("umem_episodic", umem_episodic)
+    builder.add_node("umem_ltm", umem_ltm)
 
     # Sequential flow
-    builder.add_edge(START, "recall_ltm")
-    builder.add_edge("recall_ltm", "store_stm")
-    builder.add_edge("store_stm", "reason")
-    builder.add_edge("reason", "record_episodic")
-    builder.add_edge("record_episodic", "persist_ltm")
-    builder.add_edge("persist_ltm", END)
+    builder.add_edge(START, "qmem_ltm")
+    builder.add_edge("qmem_ltm", "umem_stm")
+    builder.add_edge("umem_stm", "reason")
+    builder.add_edge("reason", "umem_episodic")
+    builder.add_edge("umem_episodic", "umem_ltm")
+    builder.add_edge("umem_ltm", END)
 
     # Optionally add checkpointing for persistence
     if HAS_CHECKPOINT:

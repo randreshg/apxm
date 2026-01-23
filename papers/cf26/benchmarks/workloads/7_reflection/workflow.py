@@ -34,7 +34,7 @@ def initial_attempt(state: ReflectionState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Solve this task: {task}"))
+    messages.append(HumanMessage(content="Solve this task: " + task))
     response = llm.invoke(messages)
     return {"initial_answer": response.content}
 
@@ -68,7 +68,11 @@ def improve(state: ReflectionState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Given this feedback: {reflection}, improve the answer to: {task}"))
+    messages.append(
+        HumanMessage(
+            content="Given this feedback: " + reflection + ", improve the answer to: " + task
+        )
+    )
     response = llm.invoke(messages)
     return {"improved_answer": response.content}
 

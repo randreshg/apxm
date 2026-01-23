@@ -32,7 +32,7 @@ def mock_search(query: str) -> str:
 def invoke_tool(state: ToolState) -> dict:
     """Execute the tool (search)."""
     # Simulate tool invocation
-    search_results = mock_search(state["query"])
+    search_results = mock_search("quantum computing")
     return {"search_results": search_results}
 
 
@@ -46,7 +46,9 @@ def synthesize_answer(state: ToolState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Given search results: {results}, answer this query: {query}"))
+    messages.append(
+        HumanMessage(content="Given search results: " + results + ", answer this query: " + query)
+    )
     response = llm.invoke(messages)
     return {"answer": response.content}
 

@@ -8,6 +8,7 @@ and communicate operations for inter-agent messaging.
 
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
+from langgraph.constants import Send
 from langchain_core.messages import SystemMessage, HumanMessage
 from llm_instrumentation import get_llm, HAS_OLLAMA
 from prompt_config import get_system_prompt_or_none
@@ -39,7 +40,7 @@ def researcher_agent(state: MultiAgentState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Conduct deep research on: {topic}"))
+    messages.append(HumanMessage(content="Conduct deep research on: " + topic))
     response = llm.invoke(messages)
     return {"research_result": response.content}
 
@@ -53,7 +54,7 @@ def critic_prepare(state: MultiAgentState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Prepare initial critique questions for: {topic}"))
+    messages.append(HumanMessage(content="Prepare initial critique questions for: " + topic))
     response = llm.invoke(messages)
     return {"critique_prep": response.content}
 
@@ -71,7 +72,7 @@ def critic_agent(state: MultiAgentState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Critically analyze and identify weaknesses: {research}"))
+    messages.append(HumanMessage(content="Critically analyze and identify weaknesses: " + research))
     response = llm.invoke(messages)
     return {"critique_result": response.content}
 
@@ -87,9 +88,26 @@ def coordinator_synthesize(state: MultiAgentState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Synthesize into final report. Research: {research} | Prepared questions: {critique_prep} | Critique: {critique}"))
+    messages.append(
+        HumanMessage(
+            content="Synthesize into final report. Research: "
+            + research
+            + " | Prepared questions: "
+            + critique_prep
+            + " | Critique: "
+            + critique
+        )
+    )
     response = llm.invoke(messages)
     return {"final_report": response.content}
+
+
+def fan_out_agents(state: MultiAgentState) -> list[Send]:
+    """Fan out to researcher and critic preparation in parallel."""
+    return [
+        Send("researcher", state),
+        Send("critic_prepare", state),
+    ]
 
 
 def build_graph() -> StateGraph:
@@ -99,7 +117,7 @@ def build_graph() -> StateGraph:
     - Manual subgraph composition
     - Shared state dict (no native message passing)
     - No automatic agent lifecycle management
-    - Sequential execution (parallel requires Send API)
+    - Parallel execution requires explicit Send API
 
     """
     builder = StateGraph(MultiAgentState)
@@ -110,9 +128,10 @@ def build_graph() -> StateGraph:
     builder.add_node("critic", critic_agent)
     builder.add_node("synthesize", coordinator_synthesize)
 
-    builder.add_edge(START, "researcher")
-    builder.add_edge("researcher", "critic_prepare")
-    builder.add_edge("critic_prepare", "critic")
+    # Parallelize researcher + critic_prepare to match AIS workflow
+    builder.add_conditional_edges(START, fan_out_agents)
+    builder.add_edge("researcher", "critic")
+    builder.add_edge("critic_prepare", "synthesize")
     builder.add_edge("critic", "synthesize")
     builder.add_edge("synthesize", END)
 

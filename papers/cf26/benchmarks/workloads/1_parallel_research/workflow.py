@@ -37,7 +37,7 @@ def research_background(state: ResearchState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Explain in 2 sentences the domain background of {topic}"))
+    messages.append(HumanMessage(content="Explain in 2 sentences the domain background of " + topic))
     response = llm.invoke(messages)
     return {"background": response.content}
 
@@ -51,7 +51,7 @@ def research_advances(state: ResearchState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Give me 2 recent advances in {topic}"))
+    messages.append(HumanMessage(content="Give me 2 recent advances in " + topic))
     response = llm.invoke(messages)
     return {"advances": response.content}
 
@@ -65,7 +65,9 @@ def research_impact(state: ResearchState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Explain in 1 sentence what is the societal impact of {topic}"))
+    messages.append(
+        HumanMessage(content="Explain in 1 sentence what is the societal impact of " + topic)
+    )
     response = llm.invoke(messages)
     return {"impact": response.content}
 
@@ -89,7 +91,7 @@ def synthesize(state: ResearchState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Synthesize into a 3 sentences report: {combined}"))
+    messages.append(HumanMessage(content="Synthesize into a 3 sentences report: " + combined))
     response = llm.invoke(messages)
     return {"report": response.content}
 

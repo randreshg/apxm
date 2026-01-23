@@ -5,8 +5,9 @@ Demonstrates multi-step task decomposition and execution.
 Compare with workflow.ais which has native PLAN operation.
 """
 
-from typing import TypedDict, List
+from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, START, END
+from langgraph.constants import Send
 from langchain_core.messages import SystemMessage, HumanMessage
 from llm_instrumentation import get_llm, HAS_OLLAMA
 from prompt_config import get_system_prompt_or_none
@@ -15,8 +16,11 @@ from prompt_config import get_system_prompt_or_none
 class PlanningState(TypedDict):
     """State for planning workflow."""
     goal: str
-    steps: List[str]
-    step_results: List[str]
+    plan_result: str
+    step1: str
+    step2: str
+    step3: str
+    combined: str
     final_result: str
 
 
@@ -41,55 +45,73 @@ def create_plan(state: PlanningState) -> dict:
         messages.append(SystemMessage(content=system_prompt))
     messages.append(HumanMessage(content=goal))
     response = llm.invoke(messages)
-    # Parse steps from response
-    lines = response.content.strip().split('\n')
-    steps = [line.strip() for line in lines if line.strip()][:3]
-
-    return {"steps": steps}
+    return {"plan_result": response.content}
 
 
-STEP_PROMPTS = [
-    "Execute step 1 - create detailed design:",
-    "Execute step 2 - implement core features:",
-    "Execute step 3 - testing and refinement:",
-]
+def _run_step(llm, system_prompt: Optional[str], prompt: str, context: str) -> str:
+    messages = []
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    # Mirror AIS-style `ask(prompt, plan_result)` by passing context separately.
+    messages.append(HumanMessage(content=prompt))
+    messages.append(HumanMessage(content=context))
+    response = llm.invoke(messages)
+    return response.content
 
 
-def execute_steps(state: PlanningState) -> dict:
-    """Execute each step and collect results.
-
-    Note: LangGraph cannot automatically parallelize steps.
-    This runs sequentially unless using Send API.
-    """
+def execute_step1(state: PlanningState) -> dict:
+    """Execute step 1."""
     llm = get_llm_instance()
-    steps = state["steps"]
-    plan_context = "\n".join(steps) if steps else ""
-    results = []
-
+    plan_result = state["plan_result"]
     system_prompt = get_system_prompt_or_none("ask")
-    for i in range(min(3, len(STEP_PROMPTS))):
-        messages = []
-        if system_prompt:
-            messages.append(SystemMessage(content=system_prompt))
-        prompt = f"{STEP_PROMPTS[i]} {plan_context}"
-        messages.append(HumanMessage(content=prompt))
-        response = llm.invoke(messages)
-        results.append(response.content)
+    prompt = "Execute step 1 - create detailed design:"
+    return {"step1": _run_step(llm, system_prompt, prompt, plan_result)}
 
-    return {"step_results": results}
+
+def execute_step2(state: PlanningState) -> dict:
+    """Execute step 2."""
+    llm = get_llm_instance()
+    plan_result = state["plan_result"]
+    system_prompt = get_system_prompt_or_none("ask")
+    prompt = "Execute step 2 - implement core features:"
+    return {"step2": _run_step(llm, system_prompt, prompt, plan_result)}
+
+
+def execute_step3(state: PlanningState) -> dict:
+    """Execute step 3."""
+    llm = get_llm_instance()
+    plan_result = state["plan_result"]
+    system_prompt = get_system_prompt_or_none("ask")
+    prompt = "Execute step 3 - testing and refinement:"
+    return {"step3": _run_step(llm, system_prompt, prompt, plan_result)}
+
+
+def fan_out_steps(state: PlanningState) -> list[Send]:
+    """Fan out step execution in parallel."""
+    return [
+        Send("step1", state),
+        Send("step2", state),
+        Send("step3", state),
+    ]
+
+
+def merge_results(state: PlanningState) -> dict:
+    """Merge step results."""
+    combined = "\n".join([state["step1"], state["step2"], state["step3"]])
+    return {"combined": combined}
 
 
 def synthesize(state: PlanningState) -> dict:
     """Synthesize final result from step results."""
     llm = get_llm_instance()
-    results = state["step_results"]
-
-    combined = " ".join(results)
+    combined = state["combined"]
     messages = []
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Synthesize these step results into a final deliverable: {combined}"))
+    # Mirror AIS-style `ask(prompt, combined)` by passing context separately.
+    messages.append(HumanMessage(content="Synthesize these step results into a final deliverable:"))
+    messages.append(HumanMessage(content=combined))
     response = llm.invoke(messages)
     return {"final_result": response.content}
 
@@ -99,20 +121,26 @@ def build_graph() -> StateGraph:
 
     Note: LangGraph requires:
     - Custom prompts for planning (no native PLAN)
-    - Sequential step execution (manual Send API for parallel)
+    - Manual Send API for parallel step execution
     - Manual result aggregation
     """
     builder = StateGraph(PlanningState)
 
     # Add nodes
     builder.add_node("plan", create_plan)
-    builder.add_node("execute", execute_steps)
+    builder.add_node("step1", execute_step1)
+    builder.add_node("step2", execute_step2)
+    builder.add_node("step3", execute_step3)
+    builder.add_node("merge", merge_results)
     builder.add_node("synthesize", synthesize)
 
-    # Sequential flow
+    # Plan -> parallel steps -> merge -> synthesize
     builder.add_edge(START, "plan")
-    builder.add_edge("plan", "execute")
-    builder.add_edge("execute", "synthesize")
+    builder.add_conditional_edges("plan", fan_out_steps)
+    builder.add_edge("step1", "merge")
+    builder.add_edge("step2", "merge")
+    builder.add_edge("step3", "merge")
+    builder.add_edge("merge", "synthesize")
     builder.add_edge("synthesize", END)
 
     return builder.compile()
@@ -126,8 +154,11 @@ def run(goal: str = "Build a simple web application") -> dict:
     """Execute the planning workflow."""
     initial_state = {
         "goal": goal,
-        "steps": [],
-        "step_results": [],
+        "plan_result": "",
+        "step1": "",
+        "step2": "",
+        "step3": "",
+        "combined": "",
         "final_result": "",
     }
     return graph.invoke(initial_state)
@@ -136,7 +167,10 @@ def run(goal: str = "Build a simple web application") -> dict:
 if __name__ == "__main__":
     result = run()
     print(f"Goal: {result['goal']}")
-    print(f"\nSteps:")
-    for i, step in enumerate(result['steps'], 1):
-        print(f"  {i}. {step}")
+    print("\nPlan:")
+    print(result["plan_result"][:200] + "...")
+    print("\nStep Results:")
+    print(f"  1. {result['step1'][:200]}...")
+    print(f"  2. {result['step2'][:200]}...")
+    print(f"  3. {result['step3'][:200]}...")
     print(f"\nFinal: {result['final_result'][:200]}...")

@@ -35,7 +35,7 @@ def first_step(state: BrokenState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content="Do something simple: say 'Hello World'"))
+    messages.append(HumanMessage(content="Do something useful"))
     response = llm.invoke(messages)
     return {"result": response.content}
 
@@ -49,7 +49,15 @@ def second_step(state: BrokenState) -> dict:
     # BUG: 'undefined_var' key doesn't exist in state
     # This raises KeyError at RUNTIME
     undefined_value = state["undefined_var"]  # KeyError!
-    return {"output": f"Using: {undefined_value}"}
+
+    llm = get_llm_instance()
+    messages = []
+    system_prompt = get_system_prompt_or_none("ask")
+    if system_prompt:
+        messages.append(SystemMessage(content=system_prompt))
+    messages.append(HumanMessage(content="Use this: " + undefined_value))
+    response = llm.invoke(messages)
+    return {"output": response.content}
 
 
 def build_graph() -> StateGraph:

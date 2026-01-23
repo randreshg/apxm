@@ -33,7 +33,12 @@ def analyze_question(state: HotpotQAState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Analyze this question and identify the key entities and reasoning steps needed: {question}"))
+    messages.append(
+        HumanMessage(
+            content="Analyze this question and identify the key entities and reasoning steps needed: "
+            + question
+        )
+    )
     response = llm.invoke(messages)
     return {"analysis": response.content}
 
@@ -47,10 +52,14 @@ def gather_info(state: HotpotQAState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=(
-        f"Based on the question '{question}', what information do we need to gather? "
-        "Provide a brief summary of what facts we need to find."
-    )))
+    messages.append(
+        HumanMessage(
+            content="Based on the question '"
+            + question
+            + "', what information do we need to gather? "
+            + "Provide a brief summary of what facts we need to find."
+        )
+    )
     response = llm.invoke(messages)
     return {"info_needed": response.content}
 
@@ -65,11 +74,15 @@ def synthesize_answer(state: HotpotQAState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=(
-        f"Given the question: {question}\n"
-        f"And the information needed: {info_needed}\n"
-        "Provide a concise answer. The answer should be short (a few words or yes/no)."
-    )))
+    messages.append(
+        HumanMessage(
+            content="Given the question: "
+            + question
+            + "\nAnd the information needed: "
+            + info_needed
+            + "\nProvide a concise answer. The answer should be short (a few words or yes/no)."
+        )
+    )
     response = llm.invoke(messages)
     return {"answer": response.content}
 

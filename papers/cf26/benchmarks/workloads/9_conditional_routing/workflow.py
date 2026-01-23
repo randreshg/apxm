@@ -35,7 +35,12 @@ def classify_input(state: RoutingState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Classify this input into exactly one word: technical, creative, or factual. Input: {user_input}"))
+    messages.append(
+        HumanMessage(
+            content="Classify this input into exactly one word: technical, creative, or factual. Input: "
+            + user_input
+        )
+    )
     response = llm.invoke(messages)
     category = response.content.strip().lower()
     # Normalize category
@@ -77,7 +82,9 @@ def technical_response(state: RoutingState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Provide a detailed technical explanation for: {user_input}"))
+    messages.append(
+        HumanMessage(content="Provide a detailed technical explanation for: " + user_input)
+    )
     response = llm.invoke(messages)
     return {"response": response.content}
 
@@ -91,7 +98,9 @@ def creative_response(state: RoutingState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Provide a creative, imaginative response for: {user_input}"))
+    messages.append(
+        HumanMessage(content="Provide a creative, imaginative response for: " + user_input)
+    )
     response = llm.invoke(messages)
     return {"response": response.content}
 
@@ -105,7 +114,7 @@ def factual_response(state: RoutingState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Provide accurate, factual information for: {user_input}"))
+    messages.append(HumanMessage(content="Provide accurate factual information for: " + user_input))
     response = llm.invoke(messages)
     return {"response": response.content}
 
@@ -119,7 +128,7 @@ def general_response(state: RoutingState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Provide a helpful general response for: {user_input}"))
+    messages.append(HumanMessage(content="Provide a helpful general response for: " + user_input))
     response = llm.invoke(messages)
     return {"response": response.content}
 
@@ -133,7 +142,7 @@ def refine_response(state: RoutingState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Refine and summarize this response: {routed_response}"))
+    messages.append(HumanMessage(content="Refine and summarize this response: " + routed_response))
     response = llm.invoke(messages)
     return {"output": response.content}
 

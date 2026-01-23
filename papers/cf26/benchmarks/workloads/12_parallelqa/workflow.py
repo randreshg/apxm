@@ -37,7 +37,12 @@ def decompose_question(state: ParallelQAState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Break down this question into independent sub-questions that can be answered in parallel: {question}"))
+    messages.append(
+        HumanMessage(
+            content="Break down this question into independent sub-questions that can be answered in parallel: "
+            + question
+        )
+    )
     response = llm.invoke(messages)
     return {"decomposition": response.content}
 
@@ -51,7 +56,7 @@ def answer_sub1(state: ParallelQAState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Answer the first sub-question from: {decomposition}"))
+    messages.append(HumanMessage(content="Answer the first sub-question from: " + decomposition))
     response = llm.invoke(messages)
     return {"sub_answer1": response.content}
 
@@ -65,7 +70,7 @@ def answer_sub2(state: ParallelQAState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=f"Answer the second sub-question from: {decomposition}"))
+    messages.append(HumanMessage(content="Answer the second sub-question from: " + decomposition))
     response = llm.invoke(messages)
     return {"sub_answer2": response.content}
 
@@ -86,11 +91,15 @@ def synthesize_answer(state: ParallelQAState) -> dict:
     system_prompt = get_system_prompt_or_none("ask")
     if system_prompt:
         messages.append(SystemMessage(content=system_prompt))
-    messages.append(HumanMessage(content=(
-        f"Given the original question: {question}\n"
-        f"And the sub-answers: {combined}\n"
-        "Provide the final answer. Be concise."
-    )))
+    messages.append(
+        HumanMessage(
+            content="Given the original question: "
+            + question
+            + "\nAnd the sub-answers: "
+            + combined
+            + "\nProvide the final answer. Be concise."
+        )
+    )
     response = llm.invoke(messages)
     return {"answer": response.content}
 

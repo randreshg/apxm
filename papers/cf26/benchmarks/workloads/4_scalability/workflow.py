@@ -25,31 +25,28 @@ def get_llm_instance():
     return get_llm()
 
 
-TASK_TOPICS = [
-    "science",    # task_0
-    "history",    # task_1
-    "geography",  # task_2
-    "technology", # task_3
-    "art",        # task_4
-    "music",      # task_5
-    "sports",     # task_6
-    "nature",     # task_7
+TASK_PROMPTS = [
+    "Provide a brief fact about science",     # task_0
+    "Provide a brief fact about history",     # task_1
+    "Provide a brief fact about geography",   # task_2
+    "Provide a brief fact about technology",  # task_3
+    "Provide a brief fact about art",         # task_4
+    "Provide a brief fact about music",       # task_5
+    "Provide a brief fact about sports",      # task_6
+    "Provide a brief fact about nature",      # task_7
 ]
 
 
-def create_task_node(task_id: str):
+def create_task_node(prompt: str):
     """Create a task node that makes a real LLM call."""
     def task_fn(state: ScalabilityState) -> dict:
         llm = get_llm_instance()
-
-        task_idx = int(task_id.split("_")[1]) if "_" in task_id else 0
-        topic = TASK_TOPICS[task_idx % len(TASK_TOPICS)]
 
         messages = []
         system_prompt = get_system_prompt_or_none("ask")
         if system_prompt:
             messages.append(SystemMessage(content=system_prompt))
-        messages.append(HumanMessage(content=f"Provide a brief fact about {topic}"))
+        messages.append(HumanMessage(content=prompt))
         response = llm.invoke(messages)
         return {"results": [response.content]}
 
@@ -58,7 +55,7 @@ def create_task_node(task_id: str):
 
 def merge_results(state: ScalabilityState) -> dict:
     """Merge all parallel results."""
-    return {"final": f"Merged {len(state['results'])} results"}
+    return {"final": "\n".join(state["results"])}
 
 
 def build_parallel_graph(n: int) -> StateGraph:
@@ -74,7 +71,7 @@ def build_parallel_graph(n: int) -> StateGraph:
 
     # Add task nodes
     for i in range(n):
-        builder.add_node(f"task_{i}", create_task_node(f"task_{i}"))
+        builder.add_node(f"task_{i}", create_task_node(TASK_PROMPTS[i]))
 
     # Add merge node
     builder.add_node("merge", merge_results)
@@ -107,6 +104,6 @@ def run(n: int = 4) -> dict:
 
 if __name__ == "__main__":
     for n in [2, 4, 8]:
-        print(f"\n{n}-way parallel:")
+        print(f"\nN={n} Parallel Result")
         result = run(n)
-        print(f"  {result['final']}")
+        print(result["final"])
