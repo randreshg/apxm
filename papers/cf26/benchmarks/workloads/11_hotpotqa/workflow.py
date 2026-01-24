@@ -44,9 +44,9 @@ def analyze_question(state: HotpotQAState) -> dict:
 
 
 def gather_info(state: HotpotQAState) -> dict:
-    """Simulate gathering information about entities."""
+    """Determine what information is needed based on the analysis."""
     llm = get_llm_instance()
-    question = state["question"]
+    analysis = state["analysis"]
 
     messages = []
     system_prompt = get_system_prompt_or_none("ask")
@@ -54,10 +54,10 @@ def gather_info(state: HotpotQAState) -> dict:
         messages.append(SystemMessage(content=system_prompt))
     messages.append(
         HumanMessage(
-            content="Based on the question '"
-            + question
-            + "', what information do we need to gather? "
-            + "Provide a brief summary of what facts we need to find."
+            content="Based on this analysis: "
+            + analysis
+            + "\nWhat specific facts do we need to find to answer the original question? "
+            + "Provide a brief summary."
         )
     )
     response = llm.invoke(messages)
@@ -68,6 +68,7 @@ def synthesize_answer(state: HotpotQAState) -> dict:
     """Reason about gathered information to answer."""
     llm = get_llm_instance()
     question = state["question"]
+    analysis = state["analysis"]
     info_needed = state["info_needed"]
 
     messages = []
@@ -76,14 +77,17 @@ def synthesize_answer(state: HotpotQAState) -> dict:
         messages.append(SystemMessage(content=system_prompt))
     messages.append(
         HumanMessage(
-            content="Given the question: "
+            content="Question: "
             + question
-            + "\nAnd the information needed: "
+            + "\nAnalysis: "
+            + analysis
+            + "\nRelevant facts: "
             + info_needed
-            + "\n\nIMPORTANT: Your response MUST be ONLY the answer itself. "
-            + "Do NOT include any reasoning, explanation, or preamble. "
-            + "For yes/no questions, respond with exactly 'yes' or 'no'. "
-            + "For entity questions, respond with just the entity name."
+            + "\n\nBased on your knowledge, provide the direct answer:"
+            + "\n- Yes/no questions: answer 'yes' or 'no'"
+            + "\n- Entity questions: give the specific name"
+            + "\n- Do NOT say 'neither' or 'unknown' - make your best judgment"
+            + "\n\nFinal answer:"
         )
     )
     response = llm.invoke(messages)
