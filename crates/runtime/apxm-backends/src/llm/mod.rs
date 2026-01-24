@@ -139,7 +139,7 @@ pub mod schema;
 // Re-export key public API types
 pub use backends::{
     AnthropicModel, GenerationConfig, GoogleModel, LLMBackend, LLMRequest, LLMResponse,
-    OllamaModel, OpenAIModel, RequestBuilder, TokenUsage,
+    OllamaModel, OpenAIModel, RequestBuilder, TokenUsage, ToolChoice, ToolDefinition,
 };
 pub use observability::{AggregatedMetrics, MetricsTracker, RequestMetrics, RequestTracer};
 pub use provider::{Provider, ProviderId};

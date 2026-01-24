@@ -234,8 +234,16 @@ impl SchedulerState {
 
         // Increment remaining counter for new nodes
         let new_node_count = config.inner_dag.nodes.len();
+        let old_remaining = self.remaining.load(std::sync::atomic::Ordering::SeqCst);
         self.remaining
-            .fetch_add(new_node_count, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(new_node_count, std::sync::atomic::Ordering::SeqCst);
+        let new_remaining = self.remaining.load(std::sync::atomic::Ordering::SeqCst);
+        tracing::info!(
+            old_remaining = old_remaining,
+            added = new_node_count,
+            new_remaining = new_remaining,
+            "Incremented remaining for spliced nodes"
+        );
 
         // Enqueue ready nodes
         for (node_id, priority) in &ready_nodes {

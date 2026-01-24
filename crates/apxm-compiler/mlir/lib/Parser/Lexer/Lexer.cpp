@@ -186,8 +186,10 @@ Token Lexer::lexIdentifierOrKeyword() {
 
       // Structure keywords
       .Case("capability", TokenKind::kw_capability)
+      .Case("discoverable", TokenKind::kw_discoverable)
       .Case("flow", TokenKind::kw_flow)
       .Case("memory", TokenKind::kw_memory)
+      .Case("tools", TokenKind::kw_tools)
 
       // Control flow
       .Case("case", TokenKind::kw_case)

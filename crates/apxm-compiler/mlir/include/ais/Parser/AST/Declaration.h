@@ -231,6 +231,9 @@ class AgentDecl final : public ASTNode {
   llvm::SmallVector<std::unique_ptr<BeliefDecl>, 4> beliefDecls;
   llvm::SmallVector<std::unique_ptr<GoalDecl>, 4> goalDecls;
   llvm::SmallVector<std::unique_ptr<OnEventDecl>, 4> onEventDecls;
+  llvm::SmallVector<std::string, 4> tools;
+  llvm::SmallVector<std::string, 4> discoverable;
+  std::string agentContext;
 
 public:
   AgentDecl(Location loc, llvm::StringRef name,
@@ -239,8 +242,11 @@ public:
             llvm::MutableArrayRef<std::unique_ptr<FlowDecl>> flowDecls,
             llvm::MutableArrayRef<std::unique_ptr<BeliefDecl>> beliefDecls = {},
             llvm::MutableArrayRef<std::unique_ptr<GoalDecl>> goalDecls = {},
-            llvm::MutableArrayRef<std::unique_ptr<OnEventDecl>> onEventDecls = {})
-      : ASTNode(Kind::AgentDecl, loc), name(name.str()) {
+            llvm::MutableArrayRef<std::unique_ptr<OnEventDecl>> onEventDecls = {},
+            llvm::ArrayRef<std::string> tools = {},
+            llvm::ArrayRef<std::string> discoverable = {},
+            llvm::StringRef agentContext = "")
+      : ASTNode(Kind::AgentDecl, loc), name(name.str()), agentContext(agentContext.str()) {
     assert(!name.empty() && "Agent name cannot be empty");
 
     this->memoryDecls.reserve(memoryDecls.size());
@@ -272,6 +278,16 @@ public:
     for (auto &&decl : onEventDecls) {
       this->onEventDecls.push_back(std::move(decl));
     }
+
+    this->tools.reserve(tools.size());
+    for (const auto &tool : tools) {
+      this->tools.push_back(tool);
+    }
+
+    this->discoverable.reserve(discoverable.size());
+    for (const auto &disc : discoverable) {
+      this->discoverable.push_back(disc);
+    }
   }
 
   llvm::StringRef getName() const noexcept { return name; }
@@ -293,6 +309,9 @@ public:
   llvm::ArrayRef<std::unique_ptr<OnEventDecl>> getOnEventDecls() const noexcept {
     return {onEventDecls.data(), onEventDecls.size()};
   }
+  llvm::ArrayRef<std::string> getTools() const noexcept { return tools; }
+  llvm::ArrayRef<std::string> getDiscoverable() const noexcept { return discoverable; }
+  llvm::StringRef getAgentContext() const noexcept { return agentContext; }
 
   static bool classof(const ASTNode *node) {
     return node->getKind() == Kind::AgentDecl;

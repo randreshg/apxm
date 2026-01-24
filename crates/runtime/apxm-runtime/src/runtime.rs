@@ -94,10 +94,9 @@ impl Runtime {
         let aam = Aam::new();
         let capability_system = Arc::new(CapabilitySystem::with_aam(aam.clone()));
 
-        // Register default capabilities
-        use crate::capability::executor::{EchoCapability, MockSearchCapability};
-        capability_system.register(Arc::new(EchoCapability::new()))?;
-        capability_system.register(Arc::new(MockSearchCapability::new()))?;
+        // NOTE: No default capabilities are registered here.
+        // Capabilities should be registered by the executor based on what
+        // the workflow declares in its `tools: [...]` list.
 
         // Initialize flow registry for cross-agent flow calls
         let flow_registry = Arc::new(FlowRegistry::new());

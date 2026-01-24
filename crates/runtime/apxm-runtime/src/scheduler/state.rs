@@ -193,7 +193,8 @@ impl SchedulerState {
 
     #[inline]
     pub fn mark_done(&self) {
-        self.remaining.store(0, Ordering::Relaxed);
+        tracing::debug!("mark_done called, setting remaining to 0");
+        self.remaining.store(0, Ordering::SeqCst);
         self.concurrency.cancel();
         self.notify_done.notify_waiters();
     }

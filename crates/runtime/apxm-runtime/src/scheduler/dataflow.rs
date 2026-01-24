@@ -163,7 +163,7 @@ fn spawn_watchdog(state: Arc<SchedulerState>) {
             tokio::time::sleep(Duration::from_millis(cfg.watchdog_interval_ms)).await;
 
             // Check if execution is complete
-            if state.remaining.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+            if state.remaining.load(std::sync::atomic::Ordering::SeqCst) == 0 {
                 break;
             }
 
@@ -180,7 +180,7 @@ fn spawn_watchdog(state: Arc<SchedulerState>) {
 
             if now_ms.saturating_sub(last_progress_ms) >= cfg.deadlock_timeout_ms {
                 // Deadlock detected
-                let remaining = state.remaining.load(std::sync::atomic::Ordering::Relaxed);
+                let remaining = state.remaining.load(std::sync::atomic::Ordering::SeqCst);
 
                 state.set_first_error(RuntimeError::SchedulerDeadlock {
                     timeout_ms: cfg.deadlock_timeout_ms,

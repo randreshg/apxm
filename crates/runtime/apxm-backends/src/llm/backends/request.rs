@@ -1,6 +1,47 @@
 //! LLM request types and builders.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Definition of a tool that can be called by the LLM.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    /// Unique name of the tool
+    pub name: String,
+    /// Human-readable description of what the tool does
+    pub description: String,
+    /// JSON Schema for the tool's input parameters
+    pub parameters: serde_json::Value,
+}
+
+impl ToolDefinition {
+    /// Create a new tool definition.
+    pub fn new(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        parameters: serde_json::Value,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            description: description.into(),
+            parameters,
+        }
+    }
+}
+
+/// Controls how the LLM should use tools.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub enum ToolChoice {
+    /// Let the model decide whether to use tools
+    #[default]
+    Auto,
+    /// Don't use any tools
+    None,
+    /// Force the model to use a tool
+    Required,
+    /// Force the model to use a specific tool
+    Specific(String),
+}
 
 /// Request to send to an LLM backend.
 #[derive(Debug, Clone)]
@@ -29,6 +70,10 @@ pub struct LLMRequest {
     pub model: Option<String>,
     /// Operation type for intelligent routing (e.g., "reason", "plan", "generate")
     pub operation_type: Option<String>,
+    /// Tools available for the LLM to call
+    pub tools: Option<Vec<ToolDefinition>>,
+    /// How the LLM should use tools
+    pub tool_choice: Option<ToolChoice>,
 }
 
 impl LLMRequest {
@@ -47,6 +92,8 @@ impl LLMRequest {
             backend: None,
             model: None,
             operation_type: None,
+            tools: None,
+            tool_choice: None,
         }
     }
 
@@ -116,6 +163,29 @@ impl LLMRequest {
         self
     }
 
+    /// Set tools available for the LLM to call.
+    pub fn with_tools(mut self, tools: Vec<ToolDefinition>) -> Self {
+        self.tools = Some(tools);
+        self
+    }
+
+    /// Add a single tool to the request.
+    pub fn add_tool(mut self, tool: ToolDefinition) -> Self {
+        self.tools.get_or_insert_with(Vec::new).push(tool);
+        self
+    }
+
+    /// Set how the LLM should use tools.
+    pub fn with_tool_choice(mut self, choice: ToolChoice) -> Self {
+        self.tool_choice = Some(choice);
+        self
+    }
+
+    /// Check if this request has tools configured.
+    pub fn has_tools(&self) -> bool {
+        self.tools.as_ref().map(|t| !t.is_empty()).unwrap_or(false)
+    }
+
     /// Validate request parameters.
     pub fn validate(&self) -> anyhow::Result<()> {
         if self.prompt.is_empty() {
@@ -182,6 +252,18 @@ impl RequestBuilder {
     /// Add stop sequence.
     pub fn stop(mut self, stop: impl Into<String>) -> Self {
         self.request = self.request.add_stop_sequence(stop);
+        self
+    }
+
+    /// Set tools available for the LLM.
+    pub fn tools(mut self, tools: Vec<ToolDefinition>) -> Self {
+        self.request = self.request.with_tools(tools);
+        self
+    }
+
+    /// Set how the LLM should use tools.
+    pub fn tool_choice(mut self, choice: ToolChoice) -> Self {
+        self.request = self.request.with_tool_choice(choice);
         self
     }
 
@@ -289,5 +371,58 @@ mod tests {
 
         let deterministic = GenerationConfig::deterministic();
         assert_eq!(deterministic.temperature, 0.0);
+    }
+
+    #[test]
+    fn test_tool_definition() {
+        let tool = ToolDefinition::new(
+            "bash",
+            "Execute shell commands",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"}
+                },
+                "required": ["command"]
+            }),
+        );
+        assert_eq!(tool.name, "bash");
+        assert_eq!(tool.description, "Execute shell commands");
+    }
+
+    #[test]
+    fn test_request_with_tools() {
+        let tools = vec![
+            ToolDefinition::new("bash", "Execute shell commands", serde_json::json!({})),
+            ToolDefinition::new("read", "Read file contents", serde_json::json!({})),
+        ];
+
+        let req = LLMRequest::new("Hello").with_tools(tools);
+        assert!(req.has_tools());
+        assert_eq!(req.tools.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_request_add_tool() {
+        let req = LLMRequest::new("Hello")
+            .add_tool(ToolDefinition::new("bash", "Execute shell", serde_json::json!({})))
+            .add_tool(ToolDefinition::new("read", "Read file", serde_json::json!({})));
+
+        assert!(req.has_tools());
+        assert_eq!(req.tools.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_tool_choice_variants() {
+        let auto = ToolChoice::Auto;
+        let none = ToolChoice::None;
+        let required = ToolChoice::Required;
+        let specific = ToolChoice::Specific("bash".to_string());
+
+        // Test that they're different
+        assert!(matches!(auto, ToolChoice::Auto));
+        assert!(matches!(none, ToolChoice::None));
+        assert!(matches!(required, ToolChoice::Required));
+        assert!(matches!(specific, ToolChoice::Specific(_)));
     }
 }

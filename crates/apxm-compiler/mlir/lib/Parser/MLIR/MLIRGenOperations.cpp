@@ -221,10 +221,26 @@ mlir::Value MLIRGenOperations::generateAskOp(MLIRGen &gen, llvm::ArrayRef<std::u
   auto i64Type = gen.builder.getI64Type();
   auto tokenType = mlir::ais::TokenType::get(&gen.context, i64Type);
 
-  return gen.builder.create<mlir::ais::AskOp>(
+  auto askOp = gen.builder.create<mlir::ais::AskOp>(
       loc, tokenType,
       gen.builder.getStringAttr(templateStr),
       contextArgs);
+
+  // Attach agent-level system prompt if configured
+  if (!gen.currentAgentContext.empty()) {
+    askOp->setAttr("system_prompt", gen.builder.getStringAttr(gen.currentAgentContext));
+  }
+
+  // Attach agent-level tools if configured
+  if (!gen.currentAgentTools.empty()) {
+    llvm::SmallVector<mlir::Attribute, 4> toolAttrs;
+    for (const auto &tool : gen.currentAgentTools) {
+      toolAttrs.push_back(gen.builder.getStringAttr(tool));
+    }
+    askOp->setAttr("tools", gen.builder.getArrayAttr(toolAttrs));
+  }
+
+  return askOp;
 }
 
 mlir::Value MLIRGenOperations::generateThinkOp(MLIRGen &gen, llvm::ArrayRef<std::unique_ptr<Expr>> args,

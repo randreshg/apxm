@@ -78,6 +78,15 @@ mlir::LogicalResult MLIRGen::generateAgentDecl(mlir::ModuleOp module, AgentDecl 
   auto agentOp =
       builder.create<mlir::ais::AgentOp>(agentLoc, builder.getStringAttr(agent->getName()));
 
+  // Store agent-level context for use in LLM operations
+  currentAgentContext = agent->getAgentContext().str();
+
+  // Store agent-level tools for use in LLM operations
+  currentAgentTools.clear();
+  for (const auto &tool : agent->getTools()) {
+    currentAgentTools.push_back(tool);
+  }
+
   flowSymbols.clear();
   flowTypes.clear();
   for (const auto &flowDecl : agent->getFlowDecls()) {
@@ -230,6 +239,29 @@ mlir::LogicalResult MLIRGen::generateAgentDecl(mlir::ModuleOp module, AgentDecl 
 
   if (!handlerAttrs.empty())
     agentOp->setAttr("handlers", builder.getArrayAttr(handlerAttrs));
+
+  // Generate tools attribute
+  if (!agent->getTools().empty()) {
+    llvm::SmallVector<mlir::Attribute, 4> toolsAttrs;
+    for (const auto &tool : agent->getTools()) {
+      toolsAttrs.push_back(builder.getStringAttr(tool));
+    }
+    agentOp->setAttr("tools", builder.getArrayAttr(toolsAttrs));
+  }
+
+  // Generate discoverable attribute
+  if (!agent->getDiscoverable().empty()) {
+    llvm::SmallVector<mlir::Attribute, 4> discoverableAttrs;
+    for (const auto &disc : agent->getDiscoverable()) {
+      discoverableAttrs.push_back(builder.getStringAttr(disc));
+    }
+    agentOp->setAttr("discoverable", builder.getArrayAttr(discoverableAttrs));
+  }
+
+  // Generate context attribute
+  if (!agent->getAgentContext().empty()) {
+    agentOp->setAttr("context", builder.getStringAttr(agent->getAgentContext()));
+  }
 
   // Generate flow declarations as functions
   for (const auto &flow : agent->getFlowDecls()) {

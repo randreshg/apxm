@@ -28,7 +28,9 @@ pub use identifiers::{
 pub use intents::{
     Entity, EntityType, ExportFormat, InspectTarget, Intent, MemoryQueryType, ProgramBuildStep,
 };
-pub use models::{FinishReason, LLMResponse, ModelCapabilities, ModelInfo, TokenUsage};
+pub use models::{
+    FinishReason, LLMResponse, ModelCapabilities, ModelInfo, TokenUsage, ToolCall, ToolResult,
+};
 
 // Re-export from operations (which re-exports from apxm-ais)
 pub use operations::metadata::{

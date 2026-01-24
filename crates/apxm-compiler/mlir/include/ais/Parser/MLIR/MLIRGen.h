@@ -55,6 +55,11 @@ private:
   llvm::StringSet<> flowSymbols;
   llvm::StringMap<mlir::FunctionType> flowTypes;
 
+  // Agent-level context for LLM operations (system prompt)
+  std::string currentAgentContext;
+  // Agent-level tools configuration
+  llvm::SmallVector<std::string, 4> currentAgentTools;
+
   //===--------------------------------------------------------------------===//
   // Declaration Generation
   //===--------------------------------------------------------------------===//

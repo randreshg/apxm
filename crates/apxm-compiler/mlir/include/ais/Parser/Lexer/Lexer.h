@@ -31,8 +31,10 @@ enum class TokenKind {
 
   // Structure keywords (alphabetical)
   kw_capability,
+  kw_discoverable,
   kw_flow,
   kw_memory,
+  kw_tools,
 
   // Control flow keywords (alphabetical)
   kw_case,

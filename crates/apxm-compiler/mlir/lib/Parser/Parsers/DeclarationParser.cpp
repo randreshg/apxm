@@ -66,9 +66,84 @@ std::unique_ptr<AgentDecl> DeclarationParser::parseAgent() {
   llvm::SmallVector<std::unique_ptr<BeliefDecl>, 4> beliefDecls;
   llvm::SmallVector<std::unique_ptr<GoalDecl>, 4> goalDecls;
   llvm::SmallVector<std::unique_ptr<OnEventDecl>, 4> onEventDecls;
+  llvm::SmallVector<std::string, 4> tools;
+  llvm::SmallVector<std::string, 4> discoverable;
+  std::string agentContext;
 
   while (!peek(TokenKind::r_brace) && !peek(TokenKind::eof)) {
-    if (peek(TokenKind::kw_memory)) {
+    if (peek(TokenKind::kw_tools)) {
+      // Parse tools: [name1, name2, ...]
+      advance();
+      if (!expect(TokenKind::colon)) {
+        synchronize();
+        continue;
+      }
+      if (!expect(TokenKind::l_square)) {
+        synchronize();
+        continue;
+      }
+      while (!peek(TokenKind::r_square) && !peek(TokenKind::eof)) {
+        if (peek(TokenKind::identifier)) {
+          tools.push_back(peek().spelling.str());
+          advance();
+        } else {
+          emitError(getCurrentLocation(), "Expected tool name identifier");
+          synchronize();
+          break;
+        }
+        if (!peek(TokenKind::r_square) && !consume(TokenKind::comma)) {
+          break;
+        }
+      }
+      if (!expect(TokenKind::r_square)) {
+        synchronize();
+        continue;
+      }
+    } else if (peek(TokenKind::kw_discoverable)) {
+      // Parse discoverable: [name1, name2, ...]
+      advance();
+      if (!expect(TokenKind::colon)) {
+        synchronize();
+        continue;
+      }
+      if (!expect(TokenKind::l_square)) {
+        synchronize();
+        continue;
+      }
+      while (!peek(TokenKind::r_square) && !peek(TokenKind::eof)) {
+        if (peek(TokenKind::identifier)) {
+          discoverable.push_back(peek().spelling.str());
+          advance();
+        } else {
+          emitError(getCurrentLocation(), "Expected discoverable tool name identifier");
+          synchronize();
+          break;
+        }
+        if (!peek(TokenKind::r_square) && !consume(TokenKind::comma)) {
+          break;
+        }
+      }
+      if (!expect(TokenKind::r_square)) {
+        synchronize();
+        continue;
+      }
+    } else if (peek(TokenKind::kw_context)) {
+      // Parse context: "string"
+      advance();
+      if (!expect(TokenKind::colon)) {
+        synchronize();
+        continue;
+      }
+      if (!peek(TokenKind::string_literal)) {
+        emitError(getCurrentLocation(), "Expected string literal for context");
+        synchronize();
+        continue;
+      }
+      if (auto value = getStringValue(peek())) {
+        agentContext = *value;
+      }
+      advance();
+    } else if (peek(TokenKind::kw_memory)) {
       advance();
       if (peek(TokenKind::l_brace)) {
         advance();
@@ -176,7 +251,8 @@ std::unique_ptr<AgentDecl> DeclarationParser::parseAgent() {
   }
 
   return std::make_unique<AgentDecl>(nameLoc, agentName, memoryDecls, capabilityDecls,
-                                    flowDecls, beliefDecls, goalDecls, onEventDecls);
+                                    flowDecls, beliefDecls, goalDecls, onEventDecls,
+                                    tools, discoverable, agentContext);
 }
 
 std::unique_ptr<MemoryDecl> DeclarationParser::parseMemoryDecl() {

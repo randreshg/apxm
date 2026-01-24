@@ -35,9 +35,25 @@ pub async fn worker_loop(
     executor: Arc<ExecutorEngine>,
     base_ctx: ExecutionContext,
 ) {
+    tracing::debug!(worker = worker_id, "Worker starting");
+
     loop {
         // Check termination conditions
-        if state.remaining.load(Ordering::Relaxed) == 0 || state.is_cancelled() {
+        let remaining = state.remaining.load(Ordering::SeqCst);
+        let cancelled = state.is_cancelled();
+        tracing::trace!(
+            worker = worker_id,
+            remaining = remaining,
+            cancelled = cancelled,
+            "Worker checking termination"
+        );
+        if remaining == 0 || cancelled {
+            tracing::info!(
+                worker = worker_id,
+                remaining = remaining,
+                cancelled = cancelled,
+                "Worker exiting"
+            );
             break;
         }
 
@@ -47,6 +63,7 @@ pub async fn worker_loop(
         });
         let Some(node_id) = stolen else {
             // No work available, yield
+            tracing::trace!(worker = worker_id, "No work found, yielding");
             tokio::task::yield_now().await;
             continue;
         };
@@ -480,8 +497,14 @@ async fn publish_outputs(state: &SchedulerState, node_id: u64, outputs: &[TokenI
 /// and reliably detect the transition to zero.
 #[inline]
 fn finish_one(state: &SchedulerState) {
-    let prev = state.remaining.fetch_sub(1, Ordering::Relaxed);
+    let prev = state.remaining.fetch_sub(1, Ordering::SeqCst);
+    tracing::debug!(
+        prev_remaining = prev,
+        new_remaining = prev.saturating_sub(1),
+        "finish_one called"
+    );
     if prev == 1 {
+        tracing::info!("Remaining hit 0, notifying done");
         state.notify_done.notify_waiters();
     }
 }

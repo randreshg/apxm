@@ -6,9 +6,9 @@
 //! This file updates the provider default model and the list of known models
 //! surfaced by `list_models()` to reflect more recent model names.
 
-use crate::llm::backends::{LLMBackend, LLMRequest, LLMResponse};
+use crate::llm::backends::{LLMBackend, LLMRequest, LLMResponse, ToolChoice};
 use anyhow::{Context, Result};
-use apxm_core::types::{FinishReason, ModelCapabilities, ModelInfo, TokenUsage};
+use apxm_core::types::{FinishReason, ModelCapabilities, ModelInfo, TokenUsage, ToolCall};
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
@@ -97,6 +97,39 @@ impl OpenAIBackend {
             body["stop"] = json!(request.stop_sequences);
         }
 
+        // Add tools if provided
+        if let Some(tools) = &request.tools {
+            if !tools.is_empty() {
+                let openai_tools: Vec<serde_json::Value> = tools
+                    .iter()
+                    .map(|t| {
+                        json!({
+                            "type": "function",
+                            "function": {
+                                "name": t.name,
+                                "description": t.description,
+                                "parameters": t.parameters
+                            }
+                        })
+                    })
+                    .collect();
+                body["tools"] = json!(openai_tools);
+
+                // Add tool_choice if specified
+                if let Some(choice) = &request.tool_choice {
+                    body["tool_choice"] = match choice {
+                        ToolChoice::Auto => json!("auto"),
+                        ToolChoice::None => json!("none"),
+                        ToolChoice::Required => json!("required"),
+                        ToolChoice::Specific(name) => json!({
+                            "type": "function",
+                            "function": {"name": name}
+                        }),
+                    };
+                }
+            }
+        }
+
         body
     }
 
@@ -104,15 +137,38 @@ impl OpenAIBackend {
     fn parse_response(&self, response: OpenAIResponse) -> Result<LLMResponse> {
         let choice = response.choices.first().context("No choices in response")?;
 
-        let content = choice.message.content.clone();
-        let finish_reason = FinishReason::from_string(&choice.finish_reason);
+        let content = choice.message.content.clone().unwrap_or_default();
+
+        // Parse tool calls if present
+        let tool_calls: Vec<ToolCall> = choice
+            .message
+            .tool_calls
+            .as_ref()
+            .map(|calls| {
+                calls
+                    .iter()
+                    .filter_map(|tc| {
+                        let args: serde_json::Value =
+                            serde_json::from_str(&tc.function.arguments).unwrap_or(json!({}));
+                        Some(ToolCall::new(tc.id.clone(), tc.function.name.clone(), args))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Determine finish reason
+        let finish_reason = if !tool_calls.is_empty() {
+            FinishReason::ToolUse
+        } else {
+            FinishReason::from_string(&choice.finish_reason)
+        };
 
         let usage = TokenUsage::new(
             response.usage.prompt_tokens,
             response.usage.completion_tokens,
         );
 
-        Ok(LLMResponse::new(content, &self.model, usage, finish_reason))
+        Ok(LLMResponse::new(content, &self.model, usage, finish_reason).with_tool_calls(tool_calls))
     }
 }
 
@@ -219,7 +275,22 @@ struct Choice {
 
 #[derive(Debug, Deserialize)]
 struct Message {
-    content: String,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    tool_calls: Option<Vec<OpenAIToolCall>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAIToolCall {
+    id: String,
+    function: OpenAIFunction,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAIFunction {
+    name: String,
+    arguments: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -231,7 +302,7 @@ struct Usage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::llm::backends::LLMRequest;
+    use crate::llm::backends::{LLMRequest, ToolDefinition};
 
     #[test]
     fn test_build_request_body_basic() {
@@ -269,5 +340,74 @@ mod tests {
         assert_eq!(body["model"], "gpt-4-turbo");
         assert_eq!(body["messages"][0]["role"], "system");
         assert_eq!(body["messages"][1]["content"], "Hello");
+    }
+
+    #[test]
+    fn test_build_request_body_with_tools() {
+        let backend = OpenAIBackend {
+            api_key: "test".to_string(),
+            model: "gpt-4".to_string(),
+            base_url: DEFAULT_BASE_URL.to_string(),
+            client: reqwest::Client::new(),
+        };
+
+        let tools = vec![
+            ToolDefinition::new(
+                "bash",
+                "Execute shell commands",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string"}
+                    },
+                    "required": ["command"]
+                }),
+            ),
+            ToolDefinition::new(
+                "read",
+                "Read file contents",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"}
+                    },
+                    "required": ["path"]
+                }),
+            ),
+        ];
+
+        let request = LLMRequest::new("List files")
+            .with_tools(tools)
+            .with_tool_choice(ToolChoice::Auto);
+
+        let body = backend.build_request_body(&request);
+
+        assert!(body.get("tools").is_some());
+        let tools_arr = body["tools"].as_array().unwrap();
+        assert_eq!(tools_arr.len(), 2);
+        assert_eq!(tools_arr[0]["function"]["name"], "bash");
+        assert_eq!(tools_arr[1]["function"]["name"], "read");
+        assert_eq!(body["tool_choice"], "auto");
+    }
+
+    #[test]
+    fn test_build_request_body_with_specific_tool_choice() {
+        let backend = OpenAIBackend {
+            api_key: "test".to_string(),
+            model: "gpt-4".to_string(),
+            base_url: DEFAULT_BASE_URL.to_string(),
+            client: reqwest::Client::new(),
+        };
+
+        let tools = vec![ToolDefinition::new("bash", "Execute shell", json!({}))];
+
+        let request = LLMRequest::new("Run command")
+            .with_tools(tools)
+            .with_tool_choice(ToolChoice::Specific("bash".to_string()));
+
+        let body = backend.build_request_body(&request);
+
+        assert_eq!(body["tool_choice"]["type"], "function");
+        assert_eq!(body["tool_choice"]["function"]["name"], "bash");
     }
 }

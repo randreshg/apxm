@@ -19,7 +19,7 @@ pub use anthropic::{AnthropicBackend, AnthropicModel};
 pub use google::{GoogleBackend, GoogleModel};
 pub use ollama::{OllamaBackend, OllamaModel};
 pub use openai::{OpenAIBackend, OpenAIModel};
-pub use request::{GenerationConfig, LLMRequest, RequestBuilder};
+pub use request::{GenerationConfig, LLMRequest, RequestBuilder, ToolChoice, ToolDefinition};
 pub use response::{LLMResponse, TokenUsage};
 pub use traits::LLMBackend;
 
