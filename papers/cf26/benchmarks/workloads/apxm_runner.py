@@ -19,6 +19,7 @@ Usage:
 """
 
 import json
+import re as _re
 import os
 import subprocess
 import sys
@@ -1313,6 +1314,11 @@ def _run_dataset_apxm(workload: WorkloadConfig, iterations: int, warmup: int) ->
                         break
                 else:
                     answer = lines[-1]
+
+
+                answer = answer.strip().rstrip('.').strip()
+                answer = _re.sub(r'^[-•*]\s*', '', answer)
+                answer = answer.split('\n')[0].strip()
 
             # For fairness vs LangGraph (in-process invoke timing), prefer A-PXM runtime_ms
             # when available. execution_time_ms includes subprocess + compile overhead.
