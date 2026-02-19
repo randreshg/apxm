@@ -1,4 +1,0 @@
-# This workload is expected to fail compilation.
-# It demonstrates A-PXM's compile-time error detection.
-#
-# Expected error: undefined variable 'undefined_var'

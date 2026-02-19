@@ -260,4 +260,3 @@ ollama pull gpt-oss:20b-cloud
 
 - See [AGENTS.md](AGENTS.md) for full CLI reference and AIS DSL documentation
 - Explore the `examples/` directory for more AIS programs
-- Check [Benchmark Workloads](../papers/CF26/benchmarks/workloads/README.md) for real-world examples
