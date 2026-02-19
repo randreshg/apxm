@@ -292,19 +292,11 @@ fn build_link_spec(library_path: &Path, config: &LibraryConfig) -> Result<LinkSp
 
 /// Emit cargo directives for the provided LinkSpec.
 pub fn emit_link_directives(spec: &LinkSpec, out_dir: &Path) -> Result<()> {
-    // Create symlink if requested (Unix only)
-    if cfg!(unix)
-        && let Some((src, dst_name)) = &spec.symlink
-    {
+    // Create link/copy alias if requested.
+    if let Some((src, dst_name)) = &spec.symlink {
         let dst = out_dir.join(dst_name);
         if !dst.exists() {
-            std::os::unix::fs::symlink(src, &dst).with_context(|| {
-                format!(
-                    "Failed to create symlink {} -> {}",
-                    dst.display(),
-                    src.display()
-                )
-            })?;
+            create_link_or_copy(src, &dst)?;
         }
     }
 
@@ -334,6 +326,49 @@ pub fn emit_link_directives(spec: &LinkSpec, out_dir: &Path) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+#[cfg(unix)]
+fn create_link_or_copy(src: &Path, dst: &Path) -> Result<()> {
+    std::os::unix::fs::symlink(src, dst).with_context(|| {
+        format!(
+            "Failed to create symlink {} -> {}",
+            dst.display(),
+            src.display()
+        )
+    })?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn create_link_or_copy(src: &Path, dst: &Path) -> Result<()> {
+    if let Err(err) = std::os::windows::fs::symlink_file(src, dst) {
+        log_debug!(
+            "build::link",
+            "symlink_file failed ({}), falling back to copy",
+            err
+        );
+        fs::copy(src, dst).with_context(|| {
+            format!(
+                "Failed to copy library alias {} -> {}",
+                src.display(),
+                dst.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn create_link_or_copy(src: &Path, dst: &Path) -> Result<()> {
+    fs::copy(src, dst).with_context(|| {
+        format!(
+            "Failed to copy library alias {} -> {}",
+            src.display(),
+            dst.display()
+        )
+    })?;
     Ok(())
 }
 
