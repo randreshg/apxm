@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 # AIS (single source of truth for operations)
 apxm-ais = { version = "0.0.1", path = "../apxm-ais" }
+apxm-graph = { version = "0.0.1", path = "../apxm-graph" }
 
 # core (will be phased out)
 apxm-core = { version = "0.0.1", path = "../runtime/apxm-core" }

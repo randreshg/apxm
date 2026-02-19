@@ -168,7 +168,10 @@ impl OpenAIBackend {
             response.usage.completion_tokens,
         );
 
-        Ok(LLMResponse::new(content, &self.model, usage, finish_reason).with_tool_calls(tool_calls))
+        Ok(
+            LLMResponse::new(content, &self.model, usage, finish_reason)
+                .with_tool_calls(tool_calls),
+        )
     }
 }
 

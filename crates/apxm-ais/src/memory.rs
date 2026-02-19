@@ -94,7 +94,6 @@ impl fmt::Display for MemoryTier {
     }
 }
 
-
 /// Latency class for memory operations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LatencyClass {

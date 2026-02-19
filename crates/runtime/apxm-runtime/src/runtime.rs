@@ -2,7 +2,7 @@
 
 use crate::{
     aam::Aam,
-    capability::{flow_registry::FlowRegistry, CapabilitySystem},
+    capability::{CapabilitySystem, flow_registry::FlowRegistry},
     executor::{ExecutionContext, ExecutionResult, ExecutorEngine, InnerPlanLinker, NoOpLinker},
     memory::{MemoryConfig, MemorySystem},
     scheduler::{DataflowScheduler, SchedulerConfig},
@@ -172,8 +172,10 @@ impl Runtime {
         let executor = Arc::new(ExecutorEngine::new(context.clone()));
 
         // Execute with dataflow scheduler for automatic parallelism
-        let (results, stats, scheduler_metrics) =
-            self.scheduler.execute(dag, executor, context, vec![]).await?;
+        let (results, stats, scheduler_metrics) = self
+            .scheduler
+            .execute(dag, executor, context, vec![])
+            .await?;
 
         #[cfg(feature = "metrics")]
         let llm_metrics = self.llm_registry.metrics().aggregate();
@@ -234,7 +236,8 @@ impl Runtime {
                         flow = %flow_name,
                         "Auto-registering flow from artifact"
                     );
-                    self.flow_registry.register_flow(&agent_name, &flow_name, dag.clone());
+                    self.flow_registry
+                        .register_flow(&agent_name, &flow_name, dag.clone());
                     count += 1;
                 }
             }
@@ -278,11 +281,7 @@ impl Runtime {
         // 2. Validate argument count against parameters
         let params = &entry_dag.metadata.parameters;
         if args.len() != params.len() {
-            let flow_name = entry_dag
-                .metadata
-                .name
-                .as_deref()
-                .unwrap_or("<unnamed>");
+            let flow_name = entry_dag.metadata.name.as_deref().unwrap_or("<unnamed>");
             let param_desc = if params.is_empty() {
                 "no parameters".to_string()
             } else {
@@ -311,7 +310,8 @@ impl Runtime {
                     flow = %flow_name,
                     "Auto-registering flow from artifact"
                 );
-                self.flow_registry.register_flow(&agent_name, &flow_name, dag.clone());
+                self.flow_registry
+                    .register_flow(&agent_name, &flow_name, dag.clone());
             }
         }
 

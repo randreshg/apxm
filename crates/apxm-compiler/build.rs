@@ -139,8 +139,12 @@ fn generate_pass_files(out_dir: &Path, build_dir: Option<&Path>) -> Result<()> {
     // Generate PassDispatch.inc
     let dispatch_content = generate_pass_dispatch();
     let dispatch_path = out_dir.join("PassDispatch.inc");
-    fs::write(&dispatch_path, &dispatch_content)
-        .with_context(|| format!("Failed to write PassDispatch.inc: {}", dispatch_path.display()))?;
+    fs::write(&dispatch_path, &dispatch_content).with_context(|| {
+        format!(
+            "Failed to write PassDispatch.inc: {}",
+            dispatch_path.display()
+        )
+    })?;
     log_info!(
         "apxm-compiler-build",
         "Generated PassDispatch.inc: {} ({} bytes)",
@@ -151,8 +155,12 @@ fn generate_pass_files(out_dir: &Path, build_dir: Option<&Path>) -> Result<()> {
     // Generate PassDescriptors.inc
     let descriptors_content = generate_pass_descriptors();
     let descriptors_path = out_dir.join("PassDescriptors.inc");
-    fs::write(&descriptors_path, &descriptors_content)
-        .with_context(|| format!("Failed to write PassDescriptors.inc: {}", descriptors_path.display()))?;
+    fs::write(&descriptors_path, &descriptors_content).with_context(|| {
+        format!(
+            "Failed to write PassDescriptors.inc: {}",
+            descriptors_path.display()
+        )
+    })?;
     log_info!(
         "apxm-compiler-build",
         "Generated PassDescriptors.inc: {} ({} bytes)",

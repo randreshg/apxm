@@ -9,9 +9,9 @@ use super::{ExecutionContext, Node, Result, Value};
 use apxm_core::{
     error::RuntimeError,
     types::{
+        DependencyType, TokenId,
         execution::{Edge, ExecutionDag},
         operations::AISOperationType,
-        DependencyType, TokenId,
     },
 };
 
@@ -102,7 +102,8 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     // This prevents the switch handler's Null return from being published to these tokens
     // The sub-DAG will produce the actual values
     if !node.output_tokens.is_empty() {
-        ctx.dag_splicer.mark_tokens_delegated(node.id, &node.output_tokens);
+        ctx.dag_splicer
+            .mark_tokens_delegated(node.id, &node.output_tokens);
         tracing::debug!(
             output_tokens = ?node.output_tokens,
             node_id = node.id,
@@ -120,9 +121,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         Err(e) => {
             // If splicing not supported, return null (void execution)
             if e.to_string().contains("not supported") {
-                tracing::warn!(
-                    "Switch: DAG splicing not supported, returning null"
-                );
+                tracing::warn!("Switch: DAG splicing not supported, returning null");
                 Ok(Value::Null)
             } else {
                 Err(e)
@@ -142,41 +141,45 @@ fn parse_sub_dag(value: &Value) -> Result<ExecutionDag> {
 
     // Parse nodes
     if let Some(nodes_value) = obj.get("nodes")
-        && let Some(nodes_arr) = nodes_value.as_array() {
-            for node_value in nodes_arr {
-                if let Some(parsed_node) = parse_node(node_value)? {
-                    dag.nodes.push(parsed_node);
-                }
+        && let Some(nodes_arr) = nodes_value.as_array()
+    {
+        for node_value in nodes_arr {
+            if let Some(parsed_node) = parse_node(node_value)? {
+                dag.nodes.push(parsed_node);
             }
         }
+    }
 
     // Parse edges
     if let Some(edges_value) = obj.get("edges")
-        && let Some(edges_arr) = edges_value.as_array() {
-            for edge_value in edges_arr {
-                if let Some(parsed_edge) = parse_edge(edge_value)? {
-                    dag.edges.push(parsed_edge);
-                }
+        && let Some(edges_arr) = edges_value.as_array()
+    {
+        for edge_value in edges_arr {
+            if let Some(parsed_edge) = parse_edge(edge_value)? {
+                dag.edges.push(parsed_edge);
             }
         }
+    }
 
     // Parse entry nodes
     if let Some(entry_value) = obj.get("entry_nodes")
-        && let Some(entry_arr) = entry_value.as_array() {
-            dag.entry_nodes = entry_arr
-                .iter()
-                .filter_map(|v| v.as_i64().map(|i| i as u64))
-                .collect();
-        }
+        && let Some(entry_arr) = entry_value.as_array()
+    {
+        dag.entry_nodes = entry_arr
+            .iter()
+            .filter_map(|v| v.as_i64().map(|i| i as u64))
+            .collect();
+    }
 
     // Parse exit nodes
     if let Some(exit_value) = obj.get("exit_nodes")
-        && let Some(exit_arr) = exit_value.as_array() {
-            dag.exit_nodes = exit_arr
-                .iter()
-                .filter_map(|v| v.as_i64().map(|i| i as u64))
-                .collect();
-        }
+        && let Some(exit_arr) = exit_value.as_array()
+    {
+        dag.exit_nodes = exit_arr
+            .iter()
+            .filter_map(|v| v.as_i64().map(|i| i as u64))
+            .collect();
+    }
 
     Ok(dag)
 }
@@ -197,13 +200,13 @@ fn parse_node(value: &Value) -> Result<Option<apxm_core::types::execution::Node>
             message: "Node missing id".to_string(),
         })?;
 
-    let op_type_num = obj
-        .get("op_type")
-        .and_then(|v| v.as_i64())
-        .ok_or_else(|| RuntimeError::Operation {
-            op_type: AISOperationType::Switch,
-            message: "Node missing op_type".to_string(),
-        })?;
+    let op_type_num =
+        obj.get("op_type")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| RuntimeError::Operation {
+                op_type: AISOperationType::Switch,
+                message: "Node missing op_type".to_string(),
+            })?;
 
     let op_type = map_op_type(op_type_num as u32).ok_or_else(|| RuntimeError::Operation {
         op_type: AISOperationType::Switch,
@@ -214,29 +217,32 @@ fn parse_node(value: &Value) -> Result<Option<apxm_core::types::execution::Node>
 
     // Parse attributes
     if let Some(attrs_value) = obj.get("attributes")
-        && let Some(attrs_obj) = attrs_value.as_object() {
-            for (key, val) in attrs_obj {
-                node.attributes.insert(key.clone(), val.clone());
-            }
+        && let Some(attrs_obj) = attrs_value.as_object()
+    {
+        for (key, val) in attrs_obj {
+            node.attributes.insert(key.clone(), val.clone());
         }
+    }
 
     // Parse input tokens
     if let Some(input_value) = obj.get("input_tokens")
-        && let Some(input_arr) = input_value.as_array() {
-            node.input_tokens = input_arr
-                .iter()
-                .filter_map(|v| v.as_i64().map(|i| i as TokenId))
-                .collect();
-        }
+        && let Some(input_arr) = input_value.as_array()
+    {
+        node.input_tokens = input_arr
+            .iter()
+            .filter_map(|v| v.as_i64().map(|i| i as TokenId))
+            .collect();
+    }
 
     // Parse output tokens
     if let Some(output_value) = obj.get("output_tokens")
-        && let Some(output_arr) = output_value.as_array() {
-            node.output_tokens = output_arr
-                .iter()
-                .filter_map(|v| v.as_i64().map(|i| i as TokenId))
-                .collect();
-        }
+        && let Some(output_arr) = output_value.as_array()
+    {
+        node.output_tokens = output_arr
+            .iter()
+            .filter_map(|v| v.as_i64().map(|i| i as TokenId))
+            .collect();
+    }
 
     Ok(Some(node))
 }
@@ -294,7 +300,7 @@ fn parse_edge(value: &Value) -> Result<Option<Edge>> {
 fn map_op_type(num: u32) -> Option<AISOperationType> {
     match num {
         0 => Some(AISOperationType::Inv),
-        1 => Some(AISOperationType::Ask),    // was Rsn
+        1 => Some(AISOperationType::Ask), // was Rsn
         2 => Some(AISOperationType::QMem),
         3 => Some(AISOperationType::UMem),
         4 => Some(AISOperationType::Plan),

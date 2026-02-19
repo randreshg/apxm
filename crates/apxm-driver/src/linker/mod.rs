@@ -44,7 +44,7 @@ impl LinkerConfig {
 /// Result returned after linking compilation/runtime steps.
 pub struct LinkResult {
     /// Compiler module produced by linking.
-    pub module: Module,
+    pub module: Option<Module>,
     /// Compiled artifact that can be reused.
     pub artifact: Artifact,
     /// Runtime execution report for this artifact.
@@ -92,6 +92,23 @@ impl Linker {
         self.compiler.compile(input, mlir)
     }
 
+    /// Compile graph input into an executable artifact.
+    pub fn compile_graph(&self, input: &Path) -> Result<Artifact, DriverError> {
+        let graph = self.compiler.load_graph(input)?;
+        let module = self.compiler.compile_graph(&graph)?;
+        let artifact_bytes = module.generate_artifact_bytes()?;
+        let artifact = Artifact::from_bytes(&artifact_bytes)
+            .map_err(|e| DriverError::Runtime(RuntimeError::State(e.to_string())))?;
+
+        if let Err(err) = artifact.dag().validate() {
+            return Err(DriverError::Runtime(RuntimeError::State(format!(
+                "Artifact DAG validation failed: {}",
+                err
+            ))));
+        }
+        Ok(artifact)
+    }
+
     /// Compile the user file and execute the generated artifact through the runtime.
     pub async fn run(&self, input: &Path, mlir: bool) -> Result<LinkResult, DriverError> {
         log_info!(
@@ -137,7 +154,7 @@ impl Linker {
         let runtime_time = runtime_start.elapsed();
 
         Ok(LinkResult {
-            module,
+            module: Some(module),
             artifact,
             execution,
             #[cfg(feature = "metrics")]
@@ -200,7 +217,7 @@ impl Linker {
         let runtime_time = runtime_start.elapsed();
 
         Ok(LinkResult {
-            module,
+            module: Some(module),
             artifact,
             execution,
             #[cfg(feature = "metrics")]
@@ -208,6 +225,42 @@ impl Linker {
                 compile_time,
                 artifact_time,
                 validation_time,
+                runtime_time,
+            },
+        })
+    }
+
+    /// Compile graph input and execute with optional entry arguments.
+    pub async fn run_graph(
+        &self,
+        input: &Path,
+        args: Vec<String>,
+    ) -> Result<LinkResult, DriverError> {
+        log_info!("driver", "Compiling graph {}", input.display());
+        #[cfg(feature = "metrics")]
+        let compile_start = std::time::Instant::now();
+        let artifact = self.compile_graph(input)?;
+        #[cfg(feature = "metrics")]
+        let compile_time = compile_start.elapsed();
+
+        #[cfg(feature = "metrics")]
+        let runtime_start = std::time::Instant::now();
+        let execution = self
+            .runtime
+            .execute_artifact_with_args(artifact.clone(), args)
+            .await?;
+        #[cfg(feature = "metrics")]
+        let runtime_time = runtime_start.elapsed();
+
+        Ok(LinkResult {
+            module: None,
+            artifact,
+            execution,
+            #[cfg(feature = "metrics")]
+            metrics: LinkMetrics {
+                compile_time,
+                artifact_time: std::time::Duration::ZERO,
+                validation_time: std::time::Duration::ZERO,
                 runtime_time,
             },
         })

@@ -68,14 +68,14 @@ impl OllamaBackend {
         // Parse all Ollama options from config
         // These will be passed through to the Ollama API
         let mut ollama_options = serde_json::Map::new();
-        
+
         if let Some(config_obj) = config.as_ref().and_then(|c| c.as_object()) {
             for (key, value) in config_obj {
                 // Skip non-option fields
                 if key == "model" || key == "base_url" {
                     continue;
                 }
-                
+
                 // Convert string values to appropriate types for Ollama
                 let converted_value = if let Some(s) = value.as_str() {
                     if INT_OPTIONS.contains(&key.as_str()) {
@@ -97,7 +97,7 @@ impl OllamaBackend {
                 } else {
                     value.clone()
                 };
-                
+
                 ollama_options.insert(key.clone(), converted_value);
             }
         }

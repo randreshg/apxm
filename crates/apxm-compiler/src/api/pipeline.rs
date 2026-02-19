@@ -2,8 +2,10 @@
 
 use crate::api::{Context, Module};
 use crate::passes::PassManager;
-use apxm_core::error::compiler::Result;
+use apxm_core::error::compiler::{CompilerError, Result};
+use apxm_core::error::{builder::ErrorBuilder, codes::ErrorCode};
 use apxm_core::types::{OptimizationLevel, PipelineConfig};
+use apxm_graph::ApxmGraph;
 
 /// Pipeline API for compiling and optimizing modules.
 pub struct Pipeline<'ctx> {
@@ -40,6 +42,18 @@ impl<'ctx> Pipeline<'ctx> {
 
     pub fn compile_dsl(&self, source: &str, filename: &str) -> Result<Module> {
         let module = Module::parse_dsl(self.context, source, filename)?;
+        self.process_module(module)
+    }
+
+    /// Compile a graph input by lowering to textual MLIR first.
+    pub fn compile_graph(&self, graph: &ApxmGraph) -> Result<Module> {
+        let mlir_text = graph.to_mlir().map_err(|e| {
+            CompilerError::Unsupported(Box::new(ErrorBuilder::generic(
+                ErrorCode::InternalError,
+                format!("Graph lowering failed: {e}"),
+            )))
+        })?;
+        let module = Module::parse(self.context, &mlir_text)?;
         self.process_module(module)
     }
 

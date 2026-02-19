@@ -124,7 +124,11 @@ impl Artifact {
     fn payload(&self) -> Result<Vec<u8>, Box<bincode::ErrorKind>> {
         let payload = ArtifactPayload {
             metadata: self.metadata.clone(),
-            dags: self.dags.iter().map(wire::WireDag::from_execution_dag).collect(),
+            dags: self
+                .dags
+                .iter()
+                .map(wire::WireDag::from_execution_dag)
+                .collect(),
             sections: self.sections.clone(),
         };
         bincode::serialize(&payload)

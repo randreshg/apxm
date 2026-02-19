@@ -107,8 +107,8 @@ mod tests {
             ToolCall::new("call_2", "read", serde_json::json!({"path": "file.txt"})),
         ];
 
-        let response = LLMResponse::new("", "gpt-4", usage, FinishReason::ToolUse)
-            .with_tool_calls(tool_calls);
+        let response =
+            LLMResponse::new("", "gpt-4", usage, FinishReason::ToolUse).with_tool_calls(tool_calls);
 
         assert!(response.has_tool_calls());
         assert!(response.wants_tool_use());

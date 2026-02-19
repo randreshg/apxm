@@ -1,6 +1,9 @@
 //! Execution context - Holds runtime state and provides access to subsystems
 
-use crate::{aam::Aam, capability::CapabilitySystem, capability::flow_registry::FlowRegistry, memory::MemorySystem};
+use crate::{
+    aam::Aam, capability::CapabilitySystem, capability::flow_registry::FlowRegistry,
+    memory::MemorySystem,
+};
 use apxm_backends::LLMRegistry;
 use apxm_core::InstructionConfig;
 use std::sync::Arc;

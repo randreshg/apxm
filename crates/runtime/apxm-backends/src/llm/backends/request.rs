@@ -405,8 +405,16 @@ mod tests {
     #[test]
     fn test_request_add_tool() {
         let req = LLMRequest::new("Hello")
-            .add_tool(ToolDefinition::new("bash", "Execute shell", serde_json::json!({})))
-            .add_tool(ToolDefinition::new("read", "Read file", serde_json::json!({})));
+            .add_tool(ToolDefinition::new(
+                "bash",
+                "Execute shell",
+                serde_json::json!({}),
+            ))
+            .add_tool(ToolDefinition::new(
+                "read",
+                "Read file",
+                serde_json::json!({}),
+            ));
 
         assert!(req.has_tools());
         assert_eq!(req.tools.as_ref().unwrap().len(), 2);

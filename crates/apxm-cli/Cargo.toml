@@ -14,6 +14,7 @@ path = "src/main.rs"
 apxm-core = { path = "../runtime/apxm-core" }
 apxm-driver = { path = "../apxm-driver", optional = true }
 apxm-artifact = { path = "../runtime/apxm-artifact", optional = true }
+apxm-graph = { path = "../apxm-graph", optional = true }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1.48", features = ["rt-multi-thread", "macros"], optional = true }
 anyhow = "1.0"
@@ -23,7 +24,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], option
 
 [features]
 default = []
-driver = ["dep:apxm-driver", "dep:tokio", "dep:apxm-artifact", "dep:serde_json", "dep:tracing-subscriber"]
+driver = ["dep:apxm-driver", "dep:tokio", "dep:apxm-artifact", "dep:apxm-graph", "dep:serde_json", "dep:tracing-subscriber"]
 metrics = ["driver", "apxm-driver/metrics"]
 # Compile out all tracing for zero overhead (propagates through chain)
 no-trace = ["apxm-driver/no-trace", "apxm-core/no-trace"]

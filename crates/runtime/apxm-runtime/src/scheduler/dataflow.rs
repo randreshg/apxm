@@ -47,7 +47,11 @@ impl DataflowScheduler {
         executor: Arc<ExecutorEngine>,
         mut ctx: ExecutionContext,
         inputs: Vec<Value>,
-    ) -> RuntimeResult<(std::collections::HashMap<u64, Value>, ExecutionStats, SchedulerMetrics)> {
+    ) -> RuntimeResult<(
+        std::collections::HashMap<u64, Value>,
+        ExecutionStats,
+        SchedulerMetrics,
+    )> {
         let start = Instant::now();
 
         apxm_sched!(info,
@@ -69,8 +73,13 @@ impl DataflowScheduler {
         self.enforce_cost_budget(&dag)?;
 
         // Build shared scheduler state
-        let (state, workers) =
-            SchedulerState::new(dag, self.config.clone(), self.metrics.clone(), start, inputs)?;
+        let (state, workers) = SchedulerState::new(
+            dag,
+            self.config.clone(),
+            self.metrics.clone(),
+            start,
+            inputs,
+        )?;
         let state = Arc::new(state);
 
         ctx.dag_splicer = Arc::new(super::splicing::SchedulerDagSplicer::new(Arc::clone(
@@ -83,7 +92,8 @@ impl DataflowScheduler {
         // Spawn worker threads
         let worker_handles = spawn_workers(state.clone(), workers, executor, ctx);
 
-        apxm_sched!(debug,
+        apxm_sched!(
+            debug,
             workers_spawned = worker_handles.len(),
             "All workers spawned, waiting for completion"
         );
@@ -114,7 +124,8 @@ impl DataflowScheduler {
         // Capture scheduler metrics snapshot
         let scheduler_metrics = SchedulerMetrics::from_collector(&state.metrics);
 
-        apxm_sched!(info,
+        apxm_sched!(
+            info,
             duration_ms = start.elapsed().as_millis(),
             executed = stats.executed_nodes,
             failed = stats.failed_nodes,

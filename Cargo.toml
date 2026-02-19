@@ -4,6 +4,8 @@ members = [
 	"crates/apxm-cli",
 	"crates/apxm-compiler",
 	"crates/apxm-driver",
+	"crates/apxm-graph",
+	"crates/apxm-tools",
 	"crates/runtime/*"
 ]
 

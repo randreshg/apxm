@@ -55,7 +55,11 @@ pub struct ReflectionOutput {
 pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -> Result<Value> {
     // Get prompt from attribute or use default
     let prompt = get_optional_string_attribute(node, "prompt")?
-        .or_else(|| get_optional_string_attribute(node, "trace_id").ok().flatten())
+        .or_else(|| {
+            get_optional_string_attribute(node, "trace_id")
+                .ok()
+                .flatten()
+        })
         .unwrap_or_default();
 
     let model = get_optional_string_attribute(node, "model")?;
@@ -124,8 +128,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
                 "{}\n\n{}\n\n\
                  Respond in JSON format with: insights (array), patterns (array), \
                  recommendations (array), and summary (string).",
-                effective_prompt,
-                history_section
+                effective_prompt, history_section
             )
         });
 
@@ -142,9 +145,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         .instruction_config
         .reflect
         .clone()
-        .or_else(|| {
-            apxm_backends::render_prompt("reflect_system", &serde_json::json!({})).ok()
-        })
+        .or_else(|| apxm_backends::render_prompt("reflect_system", &serde_json::json!({})).ok())
         .unwrap_or_else(|| {
             "You are an expert at analyzing execution patterns and extracting insights. \
              Always respond in valid JSON format with structured analysis."

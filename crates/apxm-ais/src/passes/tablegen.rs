@@ -43,7 +43,10 @@ fn generate_pass_def(pass: &PassSpec) -> String {
 
     // Description (multi-line)
     let escaped_desc = pass.description.replace('\n', "\n    ");
-    lines.push(format!("  let description = [{{\n    {}\n  }}];", escaped_desc));
+    lines.push(format!(
+        "  let description = [{{\n    {}\n  }}];",
+        escaped_desc
+    ));
 
     // Constructor
     lines.push(format!("  let constructor = \"{}\";", pass.constructor));
@@ -85,9 +88,13 @@ pub fn generate_passes_tablegen() -> String {
     output.push_str(PASSES_TD_HEADER);
 
     // Section comments
-    output.push_str("//===----------------------------------------------------------------------===//\n");
+    output.push_str(
+        "//===----------------------------------------------------------------------===//\n",
+    );
     output.push_str("// Domain-Specific Transform Passes\n");
-    output.push_str("//===----------------------------------------------------------------------===//\n\n");
+    output.push_str(
+        "//===----------------------------------------------------------------------===//\n\n",
+    );
 
     let mut current_category: Option<PassCategory> = None;
 

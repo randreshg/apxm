@@ -53,28 +53,33 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     let mut args = HashMap::new();
 
     // First, check for params_json attribute (from InvOp MLIR)
-    if let Some(params_json) = node.attributes.get("params_json").and_then(|v| v.as_string()) {
+    if let Some(params_json) = node
+        .attributes
+        .get("params_json")
+        .and_then(|v| v.as_string())
+    {
         // Parse JSON and extract key-value pairs
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(params_json)
-            && let Some(obj) = parsed.as_object() {
-                for (k, v) in obj {
-                    let value = match v {
-                        serde_json::Value::String(s) => Value::String(s.clone()),
-                        serde_json::Value::Number(n) => {
-                            if let Some(i) = n.as_i64() {
-                                Value::Number(apxm_core::types::values::Number::Integer(i))
-                            } else if let Some(f) = n.as_f64() {
-                                Value::Number(apxm_core::types::values::Number::Float(f))
-                            } else {
-                                continue;
-                            }
+            && let Some(obj) = parsed.as_object()
+        {
+            for (k, v) in obj {
+                let value = match v {
+                    serde_json::Value::String(s) => Value::String(s.clone()),
+                    serde_json::Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            Value::Number(apxm_core::types::values::Number::Integer(i))
+                        } else if let Some(f) = n.as_f64() {
+                            Value::Number(apxm_core::types::values::Number::Float(f))
+                        } else {
+                            continue;
                         }
-                        serde_json::Value::Bool(b) => Value::Bool(*b),
-                        _ => continue, // Skip complex nested values
-                    };
-                    args.insert(k.clone(), value);
-                }
+                    }
+                    serde_json::Value::Bool(b) => Value::Bool(*b),
+                    _ => continue, // Skip complex nested values
+                };
+                args.insert(k.clone(), value);
             }
+        }
     }
 
     // If no args from params_json, check for arg_* attributes (named arguments)

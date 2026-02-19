@@ -45,8 +45,8 @@ pub use aam::{AAM, Beliefs, Capabilities, Goals};
 pub use memory::MemoryTier;
 pub use operations::tablegen::generate_tablegen;
 pub use operations::{
-    AGENT, AIS_OPERATIONS, AISOperationType, ASK, BRANCH_ON_VALUE, COMMUNICATE, CONST_STR, ERR, EXC,
-    FENCE, INTERNAL_OPERATIONS, INV, JUMP, LOOP_END, LOOP_START, MERGE, METADATA_OPERATIONS,
+    AGENT, AIS_OPERATIONS, AISOperationType, ASK, BRANCH_ON_VALUE, COMMUNICATE, CONST_STR, ERR,
+    EXC, FENCE, INTERNAL_OPERATIONS, INV, JUMP, LOOP_END, LOOP_START, MERGE, METADATA_OPERATIONS,
     OperationCategory, OperationEmit, OperationField, OperationMetadata, OperationSpec, PLAN, QMEM,
     REASON, REFLECT, RETURN, THINK, TRY_CATCH, UMEM, VERIFY, WAIT_ALL, find_operation_by_mnemonic,
     find_operation_by_name, get_all_operations, get_operation_metadata, get_operation_spec,

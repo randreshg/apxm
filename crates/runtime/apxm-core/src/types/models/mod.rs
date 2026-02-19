@@ -184,7 +184,10 @@ mod tests {
         assert_eq!(FinishReason::from_string("Stop"), FinishReason::Stop);
         assert_eq!(FinishReason::from_string("end_turn"), FinishReason::Stop);
         assert_eq!(FinishReason::from_string("length"), FinishReason::Length);
-        assert_eq!(FinishReason::from_string("max_tokens"), FinishReason::Length);
+        assert_eq!(
+            FinishReason::from_string("max_tokens"),
+            FinishReason::Length
+        );
         assert_eq!(FinishReason::from_string("tool_use"), FinishReason::ToolUse);
         assert_eq!(
             FinishReason::from_string("tool_calls"),
@@ -202,11 +205,7 @@ mod tests {
 
     #[test]
     fn test_tool_call_creation() {
-        let call = ToolCall::new(
-            "call_123",
-            "bash",
-            serde_json::json!({"command": "ls -la"}),
-        );
+        let call = ToolCall::new("call_123", "bash", serde_json::json!({"command": "ls -la"}));
         assert_eq!(call.id, "call_123");
         assert_eq!(call.name, "bash");
         assert_eq!(call.args["command"], "ls -la");

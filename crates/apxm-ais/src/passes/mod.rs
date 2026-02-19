@@ -13,9 +13,7 @@
 
 mod tablegen;
 
-pub use tablegen::{
-    generate_pass_descriptors, generate_pass_dispatch, generate_passes_tablegen,
-};
+pub use tablegen::{generate_pass_descriptors, generate_pass_dispatch, generate_passes_tablegen};
 
 // ============================================================================
 // Pass Categories

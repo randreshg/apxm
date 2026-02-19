@@ -12,6 +12,8 @@ apxm-compiler = { path = "../apxm-compiler" }
 apxm-runtime = { path = "../runtime/apxm-runtime" }
 apxm-artifact = { path = "../runtime/apxm-artifact" }
 apxm-backends = { path = "../runtime/apxm-backends" }
+apxm-tools = { path = "../apxm-tools" }
+apxm-graph = { path = "../apxm-graph" }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

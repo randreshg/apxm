@@ -176,7 +176,10 @@ impl AISOperationType {
 
     /// Returns true if this is a public AIS operation (part of the 19).
     pub fn is_public(&self) -> bool {
-        !matches!(self, AISOperationType::ConstStr | AISOperationType::Yield | AISOperationType::Agent)
+        !matches!(
+            self,
+            AISOperationType::ConstStr | AISOperationType::Yield | AISOperationType::Agent
+        )
     }
 
     /// Returns true if this is a metadata operation.

@@ -63,10 +63,10 @@ pub use llm::{
     RequestTracer,
     RetryConfig,
     RetryStrategy,
+    TokenUsage,
     // Tool types
     ToolChoice,
     ToolDefinition,
-    TokenUsage,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

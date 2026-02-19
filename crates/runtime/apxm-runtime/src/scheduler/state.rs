@@ -258,10 +258,8 @@ impl SchedulerState {
         let token_id = self.next_promise_token_id.fetch_add(1, Ordering::Relaxed);
 
         // Register promise state
-        self.pending_promises.insert(
-            token_id,
-            PromiseState::new(target_agent, target_flow),
-        );
+        self.pending_promises
+            .insert(token_id, PromiseState::new(target_agent, target_flow));
 
         // Register token as not ready (consumers will wait)
         self.tokens.insert(token_id, TokenState::new());

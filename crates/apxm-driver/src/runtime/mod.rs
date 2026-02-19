@@ -10,6 +10,8 @@ use crate::{error::DriverError, linker::LinkerConfig};
 
 mod llm;
 use llm::configure_llm_registry;
+mod capabilities;
+use capabilities::configure_capability_registry;
 mod inner_plan;
 use inner_plan::CompilerInnerPlanLinker;
 
@@ -25,6 +27,7 @@ impl RuntimeExecutor {
             .map_err(DriverError::Runtime)?;
 
         configure_llm_registry(runtime.llm_registry(), &config.apxm_config).await?;
+        configure_capability_registry(runtime.capability_system(), &config.apxm_config)?;
 
         runtime.set_instruction_config(config.apxm_config.instruction.clone());
 

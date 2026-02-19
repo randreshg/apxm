@@ -99,7 +99,8 @@ pub async fn worker_loop(
             // Inputs not ready - requeue at lowest priority and continue
             // This shouldn't normally happen since readiness is tracked,
             // but handle gracefully in case of race conditions
-            apxm_op!(trace,
+            apxm_op!(
+                trace,
                 worker = worker_id,
                 node_id = node_id,
                 "Inputs not ready, requeuing"
@@ -116,7 +117,8 @@ pub async fn worker_loop(
         let child_ctx = base_ctx.child();
         let outputs = node.output_tokens.clone();
 
-        let outcome = execute_with_retries(&state, &executor, &node, &inputs, &child_ctx, worker_id).await;
+        let outcome =
+            execute_with_retries(&state, &executor, &node, &inputs, &child_ctx, worker_id).await;
 
         // Handle outcome
         match outcome {
@@ -235,7 +237,8 @@ async fn execute_with_retries(
         #[cfg(feature = "metrics")]
         let exec_start = Instant::now();
 
-        apxm_op!(trace,
+        apxm_op!(
+            trace,
             worker = worker_id,
             node_id = node.id,
             attempt = attempt + 1,
@@ -287,7 +290,8 @@ async fn execute_with_retries(
 
                 // Exponential backoff with cap
                 let backoff_ms = calculate_backoff(&state.cfg, attempt);
-                apxm_op!(trace,
+                apxm_op!(
+                    trace,
                     worker = worker_id,
                     node_id = node.id,
                     backoff_ms = backoff_ms,
@@ -422,17 +426,15 @@ async fn handle_failure(event: &WorkerEvent<'_>, error: RuntimeError, attempts: 
 
     // Check for fallback value
     if let Some(fallback) = event.node.attributes.get("fallback").cloned() {
-        apxm_op!(info,
-            node_id = event.node_id,
-            "Using fallback value"
-        );
+        apxm_op!(info, node_id = event.node_id, "Using fallback value");
         // Use fallback value instead of failing
         publish_outputs(event.state, event.node_id, event.outputs, fallback).await;
         finish_one(event.state);
         false // Don't abort
     } else {
         // No fallback - abort execution
-        apxm_op!(warn,
+        apxm_op!(
+            warn,
             node_id = event.node_id,
             "No fallback, aborting execution"
         );
@@ -449,7 +451,8 @@ async fn publish_outputs(state: &SchedulerState, node_id: u64, outputs: &[TokenI
     for &token_id in outputs {
         // Fast path: check sparse delegation set (almost always empty)
         if state.delegated_tokens.contains(&(node_id, token_id)) {
-            apxm_token!(trace,
+            apxm_token!(
+                trace,
                 token_id = token_id,
                 delegator = node_id,
                 "Token delegated by this node; skipping publish"
@@ -460,7 +463,8 @@ async fn publish_outputs(state: &SchedulerState, node_id: u64, outputs: &[TokenI
         // Mark token as ready with value
         if let Some(mut token) = state.tokens.get_mut(&token_id) {
             if token.ready {
-                apxm_token!(trace,
+                apxm_token!(
+                    trace,
                     token_id = token_id,
                     "Token already ready; skipping duplicate publish"
                 );
@@ -475,10 +479,7 @@ async fn publish_outputs(state: &SchedulerState, node_id: u64, outputs: &[TokenI
             state.tokens.insert(token_id, token_state);
         }
 
-        apxm_token!(trace,
-            token_id = token_id,
-            "Token produced and ready"
-        );
+        apxm_token!(trace, token_id = token_id, "Token produced and ready");
 
         // Propagate readiness to consumers
         let _ = state.ready_set.on_token_ready(

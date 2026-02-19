@@ -133,7 +133,10 @@ mod tests {
     #[test]
     fn test_validate_ask_success() {
         let mut attrs = HashMap::new();
-        attrs.insert("template_str".to_string(), Value::String("test".to_string()));
+        attrs.insert(
+            "template_str".to_string(),
+            Value::String("test".to_string()),
+        );
 
         let result = validate_operation(AISOperationType::Ask, &attrs);
         assert!(result.is_ok());
@@ -193,7 +196,10 @@ mod tests {
     #[test]
     fn test_has_required_fields() {
         let mut attrs = HashMap::new();
-        attrs.insert("template_str".to_string(), Value::String("test".to_string()));
+        attrs.insert(
+            "template_str".to_string(),
+            Value::String("test".to_string()),
+        );
 
         assert!(has_required_fields(AISOperationType::Ask, &attrs));
         assert!(!has_required_fields(AISOperationType::UMem, &attrs));
@@ -210,7 +216,10 @@ mod tests {
     #[test]
     fn test_strict_validation_unknown_field() {
         let mut attrs = HashMap::new();
-        attrs.insert("template_str".to_string(), Value::String("test".to_string()));
+        attrs.insert(
+            "template_str".to_string(),
+            Value::String("test".to_string()),
+        );
         attrs.insert(
             "unknown_field".to_string(),
             Value::String("value".to_string()),

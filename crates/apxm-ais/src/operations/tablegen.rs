@@ -487,9 +487,7 @@ pub fn generate_tablegen() -> String {
 pub fn get_mlir_operation_specs() -> Vec<MlirOperationSpec> {
     // For now, create basic specs from the base definitions.
     // This will be expanded to include full MLIR metadata.
-    get_all_operations()
-        .map(derive_mlir_spec)
-        .collect()
+    get_all_operations().map(derive_mlir_spec).collect()
 }
 
 /// Derive MLIR spec from base operation spec.

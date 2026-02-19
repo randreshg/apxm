@@ -80,10 +80,7 @@ fn get_tools_by_names(ctx: &ExecutionContext, names: &[String]) -> Vec<ToolDefin
 }
 
 /// Execute a single tool call via the capability system
-async fn execute_tool_call(
-    ctx: &ExecutionContext,
-    tool_call: &ToolCall,
-) -> ToolResult {
+async fn execute_tool_call(ctx: &ExecutionContext, tool_call: &ToolCall) -> ToolResult {
     apxm_llm!(debug,
         execution_id = %ctx.execution_id,
         tool_name = %tool_call.name,
@@ -93,11 +90,10 @@ async fn execute_tool_call(
 
     // Convert JSON args to HashMap<String, Value>
     let args: HashMap<String, Value> = match &tool_call.args {
-        serde_json::Value::Object(obj) => {
-            obj.iter()
-                .map(|(k, v)| (k.clone(), json_to_value(v)))
-                .collect()
-        }
+        serde_json::Value::Object(obj) => obj
+            .iter()
+            .map(|(k, v)| (k.clone(), json_to_value(v)))
+            .collect(),
         _ => HashMap::new(),
     };
 
@@ -142,12 +138,12 @@ fn json_to_value(json: &serde_json::Value) -> Value {
             }
         }
         serde_json::Value::String(s) => Value::String(s.clone()),
-        serde_json::Value::Array(arr) => {
-            Value::Array(arr.iter().map(json_to_value).collect())
-        }
-        serde_json::Value::Object(obj) => {
-            Value::Object(obj.iter().map(|(k, v)| (k.clone(), json_to_value(v))).collect())
-        }
+        serde_json::Value::Array(arr) => Value::Array(arr.iter().map(json_to_value).collect()),
+        serde_json::Value::Object(obj) => Value::Object(
+            obj.iter()
+                .map(|(k, v)| (k.clone(), json_to_value(v)))
+                .collect(),
+        ),
     }
 }
 
@@ -157,9 +153,15 @@ fn format_tool_results_message(results: &[ToolResult]) -> String {
         .iter()
         .map(|r| {
             if r.success {
-                format!("<tool_result id=\"{}\">\n{}\n</tool_result>", r.tool_call_id, r.content)
+                format!(
+                    "<tool_result id=\"{}\">\n{}\n</tool_result>",
+                    r.tool_call_id, r.content
+                )
             } else {
-                format!("<tool_error id=\"{}\">\n{}\n</tool_error>", r.tool_call_id, r.content)
+                format!(
+                    "<tool_error id=\"{}\">\n{}\n</tool_error>",
+                    r.tool_call_id, r.content
+                )
             }
         })
         .collect::<Vec<_>>()
@@ -290,18 +292,14 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
             let system_prompt = get_optional_string_attribute(node, "system_prompt")?
                 .or_else(|| ctx.instruction_config.ask.clone())
                 .or_else(|| apxm_backends::render_prompt("ask_system", &serde_json::json!({})).ok())
-                .unwrap_or_else(|| {
-                    "You are a helpful AI assistant. Answer concisely.".to_string()
-                });
+                .unwrap_or_else(|| "You are a helpful AI assistant. Answer concisely.".to_string());
             request = request.with_system_prompt(system_prompt);
         }
         LlmMode::Think => {
             // Extended thinking - set budget via metadata for backends that support it
             if let Some(budget_tokens) = budget {
-                request = request.with_metadata_value(
-                    "thinking_budget",
-                    serde_json::json!(budget_tokens),
-                );
+                request = request
+                    .with_metadata_value("thinking_budget", serde_json::json!(budget_tokens));
             }
             // Priority: 1) config instruction, 2) template, 3) hardcoded fallback
             let system_prompt = ctx
@@ -548,7 +546,10 @@ async fn execute_ask_with_tools(
                     .iter()
                     .map(|r| {
                         let mut obj = HashMap::new();
-                        obj.insert("tool_call_id".to_string(), Value::String(r.tool_call_id.clone()));
+                        obj.insert(
+                            "tool_call_id".to_string(),
+                            Value::String(r.tool_call_id.clone()),
+                        );
                         obj.insert("content".to_string(), Value::String(r.content.clone()));
                         obj.insert("success".to_string(), Value::Bool(r.success));
                         Value::Object(obj)
@@ -572,18 +573,12 @@ async fn execute_ask_with_tools(
         let tool_results_message = format_tool_results_message(&tool_results);
         let continuation_prompt = format!(
             "{}\n\n{}\n\nBased on the tool results above, please continue.",
-            current_request.prompt,
-            tool_results_message
+            current_request.prompt, tool_results_message
         );
 
         // Update request for next iteration
         current_request = LLMRequest::new(continuation_prompt)
-            .with_system_prompt(
-                current_request
-                    .system_prompt
-                    .clone()
-                    .unwrap_or_default(),
-            )
+            .with_system_prompt(current_request.system_prompt.clone().unwrap_or_default())
             .with_temperature(current_request.temperature);
 
         // Keep tools available for subsequent calls

@@ -55,10 +55,7 @@ impl FlowRegistry {
 
     /// List all registered flows.
     pub fn list_flows(&self) -> Vec<(String, String)> {
-        self.flows
-            .iter()
-            .map(|entry| entry.key().clone())
-            .collect()
+        self.flows.iter().map(|entry| entry.key().clone()).collect()
     }
 
     /// Get all flows for a specific agent.

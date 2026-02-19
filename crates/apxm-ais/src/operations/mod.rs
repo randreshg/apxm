@@ -21,6 +21,7 @@ pub use definitions::{
 pub use metadata::{
     // All static metadata instances
     AGENT,
+    ASK,
     BRANCH_ON_VALUE,
     COMMUNICATE,
     CONST_STR,
@@ -39,7 +40,6 @@ pub use metadata::{
     REASON,
     REFLECT,
     RETURN,
-    ASK,
     THINK,
     TRY_CATCH,
     UMEM,

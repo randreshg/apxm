@@ -277,13 +277,11 @@ pub static EXC: OperationMetadata = OperationMetadata {
 /// Print Output operation metadata.
 pub static PRINT: OperationMetadata = OperationMetadata {
     name: "print",
-    fields: &[
-        OperationField {
-            name: "message",
-            required: true,
-            description: "Message to print",
-        },
-    ],
+    fields: &[OperationField {
+        name: "message",
+        required: true,
+        description: "Message to print",
+    }],
     needs_submission: true,
 };
 

@@ -295,7 +295,9 @@ impl DagSplicer for SchedulerDagSplicer {
     fn mark_tokens_delegated(&self, delegator_node_id: u64, token_ids: &[TokenId]) {
         for &token_id in token_ids {
             // Insert into sparse delegation set - O(1) and zero overhead for non-switch DAGs
-            self.state.delegated_tokens.insert((delegator_node_id, token_id));
+            self.state
+                .delegated_tokens
+                .insert((delegator_node_id, token_id));
             log_debug!(
                 "scheduler::splice",
                 token_id = token_id,
@@ -358,7 +360,8 @@ mod tests {
 
         let cfg = SchedulerConfig::default();
         let metrics = Arc::new(MetricsCollector::default());
-        let (state, _) = SchedulerState::new(outer_dag, cfg, metrics, Instant::now(), vec![]).unwrap();
+        let (state, _) =
+            SchedulerState::new(outer_dag, cfg, metrics, Instant::now(), vec![]).unwrap();
         let state = Arc::new(state);
 
         let mut inner_dag = ExecutionDag::new();

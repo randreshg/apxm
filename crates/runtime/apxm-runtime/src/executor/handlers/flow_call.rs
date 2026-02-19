@@ -134,10 +134,7 @@ async fn execute_impl(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -
     // Create a child context for the sub-flow execution
     let child_ctx = ctx
         .child()
-        .with_metadata(
-            "parent_execution_id".to_string(),
-            ctx.execution_id.clone(),
-        )
+        .with_metadata("parent_execution_id".to_string(), ctx.execution_id.clone())
         .with_metadata(
             "flow_call_depth".to_string(),
             (current_depth + 1).to_string(),
@@ -209,11 +206,11 @@ mod tests {
     use crate::capability::CapabilitySystem;
     use crate::capability::flow_registry::FlowRegistry;
     use crate::memory::{MemoryConfig, MemorySystem};
+    use apxm_backends::LLMRegistry;
     use apxm_core::types::{
         execution::{ExecutionDag, NodeMetadata},
         operations::AISOperationType,
     };
-    use apxm_backends::LLMRegistry;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -255,7 +252,12 @@ mod tests {
         // Register a test flow
         flow_registry.register_flow("TestAgent", "greet", create_simple_flow_dag());
 
-        let ctx = ExecutionContext::new(memory, llm_registry, capability_system, crate::aam::Aam::new());
+        let ctx = ExecutionContext::new(
+            memory,
+            llm_registry,
+            capability_system,
+            crate::aam::Aam::new(),
+        );
         // Need to use with_inner_plan_support to set flow_registry, or modify the context
         let ctx = ExecutionContext {
             flow_registry,
@@ -275,10 +277,8 @@ mod tests {
             "agent_name".to_string(),
             Value::String("TestAgent".to_string()),
         );
-        node.attributes.insert(
-            "flow_name".to_string(),
-            Value::String("greet".to_string()),
-        );
+        node.attributes
+            .insert("flow_name".to_string(), Value::String("greet".to_string()));
 
         let result = execute(&ctx, &node, vec![]).await.unwrap();
         assert_eq!(result, Value::String("hello from sub-flow".to_string()));
@@ -294,7 +294,12 @@ mod tests {
         let llm_registry = Arc::new(LLMRegistry::new());
         let capability_system = Arc::new(CapabilitySystem::new());
 
-        let ctx = ExecutionContext::new(memory, llm_registry, capability_system, crate::aam::Aam::new());
+        let ctx = ExecutionContext::new(
+            memory,
+            llm_registry,
+            capability_system,
+            crate::aam::Aam::new(),
+        );
 
         // Create a FLOW_CALL node for a non-existent flow
         let mut node = apxm_core::types::execution::Node {
@@ -334,13 +339,21 @@ mod tests {
         // Register a simple flow
         flow_registry.register_flow("TestAgent", "test", create_simple_flow_dag());
 
-        let ctx = ExecutionContext::new(memory, llm_registry, capability_system, crate::aam::Aam::new());
+        let ctx = ExecutionContext::new(
+            memory,
+            llm_registry,
+            capability_system,
+            crate::aam::Aam::new(),
+        );
         let ctx = ExecutionContext {
             flow_registry,
             ..ctx
         };
         // Simulate being at max depth
-        let ctx = ctx.with_metadata("flow_call_depth".to_string(), MAX_FLOW_CALL_DEPTH.to_string());
+        let ctx = ctx.with_metadata(
+            "flow_call_depth".to_string(),
+            MAX_FLOW_CALL_DEPTH.to_string(),
+        );
 
         let mut node = apxm_core::types::execution::Node {
             id: 1,
@@ -354,10 +367,8 @@ mod tests {
             "agent_name".to_string(),
             Value::String("TestAgent".to_string()),
         );
-        node.attributes.insert(
-            "flow_name".to_string(),
-            Value::String("test".to_string()),
-        );
+        node.attributes
+            .insert("flow_name".to_string(), Value::String("test".to_string()));
 
         let result = execute(&ctx, &node, vec![]).await;
         assert!(result.is_err());
