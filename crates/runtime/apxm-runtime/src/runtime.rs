@@ -360,6 +360,97 @@ impl Runtime {
         })
     }
 
+    /// Execute an artifact with positional arguments and an optional session identifier.
+    ///
+    /// Identical to [`execute_artifact_with_args`] but forwards `session_id` into the
+    /// [`ExecutionContext`] so downstream capability executors can correlate invocations.
+    pub async fn execute_artifact_with_session(
+        &self,
+        artifact: Artifact,
+        args: Vec<String>,
+        session_id: Option<String>,
+    ) -> Result<RuntimeExecutionResult, RuntimeError> {
+        // 1. Find @entry DAG
+        let entry_dag = artifact.entry_dag().cloned().ok_or_else(|| {
+            let name = artifact
+                .dags()
+                .first()
+                .and_then(|d| d.metadata.name.as_deref())
+                .unwrap_or("<unnamed>");
+            RuntimeError::State(format!(
+                "No @entry flow found in artifact '{}'. Mark a flow with @entry to designate the entry point.",
+                name
+            ))
+        })?;
+
+        // 2. Validate argument count against parameters
+        let params = &entry_dag.metadata.parameters;
+        if args.len() != params.len() {
+            let flow_name = entry_dag.metadata.name.as_deref().unwrap_or("<unnamed>");
+            let param_desc = if params.is_empty() {
+                "no parameters".to_string()
+            } else {
+                params
+                    .iter()
+                    .map(|p| format!("{}: {}", p.name, p.type_name))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            return Err(RuntimeError::State(format!(
+                "Flow '{}' requires {} argument(s) ({}) but {} were provided",
+                flow_name,
+                params.len(),
+                param_desc,
+                args.len()
+            )));
+        }
+
+        // 3. Auto-register all non-entry flows
+        for dag in artifact.flow_dags() {
+            if let Some(ref name) = dag.metadata.name {
+                let (agent_name, flow_name) = parse_flow_name(name);
+                self.flow_registry
+                    .register_flow(&agent_name, &flow_name, dag.clone());
+            }
+        }
+
+        // 4. Convert args to Values and execute with inputs
+        let arg_values: Vec<Value> = args.into_iter().map(Value::String).collect();
+
+        #[cfg(feature = "metrics")]
+        self.llm_registry.metrics().reset();
+
+        let context = ExecutionContext {
+            execution_id: uuid::Uuid::now_v7().to_string(),
+            session_id,
+            memory: Arc::clone(&self.memory),
+            llm_registry: Arc::clone(&self.llm_registry),
+            capability_system: Arc::clone(&self.capability_system),
+            aam: self.aam.clone(),
+            inner_plan_linker: Arc::clone(&self.inner_plan_linker),
+            dag_splicer: Arc::new(crate::executor::NoOpSplicer),
+            flow_registry: Arc::clone(&self.flow_registry),
+            instruction_config: self.instruction_config.clone(),
+            start_time: std::time::Instant::now(),
+            metadata: std::collections::HashMap::new(),
+        };
+
+        let executor = Arc::new(ExecutorEngine::new(context.clone()));
+
+        let (results, stats, scheduler_metrics) = self
+            .scheduler
+            .execute(entry_dag, executor, context, arg_values)
+            .await?;
+
+        Ok(RuntimeExecutionResult {
+            results,
+            stats,
+            #[cfg(feature = "metrics")]
+            llm_metrics: self.llm_registry.metrics().aggregate(),
+            scheduler_metrics,
+        })
+    }
+
     /// Execute an artifact from raw bytes
     pub async fn execute_artifact_bytes(
         &self,
