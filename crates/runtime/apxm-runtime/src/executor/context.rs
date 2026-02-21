@@ -9,6 +9,7 @@ use apxm_core::InstructionConfig;
 use std::sync::Arc;
 
 use super::dag_splicer::{DagSplicer, NoOpSplicer};
+use super::events::ExecutionEventEmitter;
 use super::inner_plan_linker::{InnerPlanLinker, NoOpLinker};
 
 /// Execution context passed to all operation handlers
@@ -48,6 +49,12 @@ pub struct ExecutionContext {
     pub start_time: std::time::Instant,
     /// Custom metadata
     pub metadata: std::collections::HashMap<String, String>,
+    /// Optional global token budget for this execution.
+    pub token_budget: Option<u64>,
+    /// Total consumed tokens across LLM requests in this execution.
+    pub consumed_tokens: Arc<std::sync::atomic::AtomicU64>,
+    /// Optional execution event emitter.
+    pub event_emitter: Option<Arc<dyn ExecutionEventEmitter>>,
 }
 
 impl ExecutionContext {
@@ -71,6 +78,9 @@ impl ExecutionContext {
             instruction_config: InstructionConfig::default(),
             start_time: std::time::Instant::now(),
             metadata: std::collections::HashMap::new(),
+            token_budget: None,
+            consumed_tokens: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            event_emitter: None,
         }
     }
 
@@ -97,6 +107,9 @@ impl ExecutionContext {
             instruction_config: InstructionConfig::default(),
             start_time: std::time::Instant::now(),
             metadata: std::collections::HashMap::new(),
+            token_budget: None,
+            consumed_tokens: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            event_emitter: None,
         }
     }
 
@@ -129,6 +142,18 @@ impl ExecutionContext {
         self
     }
 
+    /// Set a global token budget for the execution.
+    pub fn with_token_budget(mut self, budget: Option<u64>) -> Self {
+        self.token_budget = budget;
+        self
+    }
+
+    /// Set an execution event emitter.
+    pub fn with_event_emitter(mut self, emitter: Option<Arc<dyn ExecutionEventEmitter>>) -> Self {
+        self.event_emitter = emitter;
+        self
+    }
+
     /// Get elapsed time since execution started
     pub fn elapsed(&self) -> std::time::Duration {
         self.start_time.elapsed()
@@ -149,6 +174,9 @@ impl ExecutionContext {
             instruction_config: self.instruction_config.clone(),
             start_time: std::time::Instant::now(),
             metadata: self.metadata.clone(),
+            token_budget: self.token_budget,
+            consumed_tokens: Arc::clone(&self.consumed_tokens),
+            event_emitter: self.event_emitter.as_ref().map(Arc::clone),
         }
     }
 

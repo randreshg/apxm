@@ -51,6 +51,11 @@ sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }
 # Embedded KV store
 redb = "2.6.3"
 
+# ═══ Embeddings (optional) ═══
+
+# Local embedding generation (ONNX, no Python)
+fastembed = { version = "4", optional = true }
+
 # ═══ Prompts ═══
 
 # Template rendering
@@ -83,3 +88,4 @@ tokio-test = "0.4"
 
 [features]
 metrics = []
+embeddings = ["fastembed"]

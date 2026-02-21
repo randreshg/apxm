@@ -3,9 +3,12 @@
 use crate::{
     aam::Aam,
     capability::{CapabilitySystem, flow_registry::FlowRegistry},
-    executor::{ExecutionContext, ExecutionResult, ExecutorEngine, InnerPlanLinker, NoOpLinker},
+    executor::{
+        ExecutionContext, ExecutionEventEmitter, ExecutionResult, ExecutorEngine, InnerPlanLinker,
+        NoOpLinker,
+    },
     memory::{MemoryConfig, MemorySystem},
-    scheduler::{DataflowScheduler, SchedulerConfig},
+    scheduler::{DataflowScheduler, SchedulerConfig, SessionLaneGuard},
 };
 use apxm_artifact::Artifact;
 use apxm_backends::LLMRegistry;
@@ -41,6 +44,8 @@ pub struct RuntimeConfig {
     pub memory_config: MemoryConfig,
     /// Scheduler configuration
     pub scheduler_config: SchedulerConfig,
+    /// Optional token budget (total across all LLM requests in one execution).
+    pub token_budget: Option<u64>,
 }
 
 impl RuntimeConfig {
@@ -49,12 +54,19 @@ impl RuntimeConfig {
         Self {
             memory_config: MemoryConfig::in_memory_ltm(),
             scheduler_config: SchedulerConfig::default(),
+            token_budget: None,
         }
     }
 
     /// Set scheduler configuration
     pub fn with_scheduler_config(mut self, config: SchedulerConfig) -> Self {
         self.scheduler_config = config;
+        self
+    }
+
+    /// Set a global token budget for each execution.
+    pub fn with_token_budget(mut self, budget: u64) -> Self {
+        self.token_budget = Some(budget);
         self
     }
 }
@@ -71,6 +83,7 @@ pub struct Runtime {
     flow_registry: Arc<FlowRegistry>,
     aam: Aam,
     scheduler: DataflowScheduler,
+    session_lane_guard: SessionLaneGuard,
     inner_plan_linker: Arc<dyn InnerPlanLinker>,
     instruction_config: apxm_core::InstructionConfig,
 }
@@ -114,9 +127,34 @@ impl Runtime {
             flow_registry,
             aam,
             scheduler,
+            session_lane_guard: SessionLaneGuard::new(),
             inner_plan_linker: Arc::new(NoOpLinker),
             instruction_config: apxm_core::InstructionConfig::default(),
         })
+    }
+
+    fn build_context(
+        &self,
+        session_id: Option<String>,
+        event_emitter: Option<Arc<dyn ExecutionEventEmitter>>,
+    ) -> ExecutionContext {
+        ExecutionContext {
+            execution_id: uuid::Uuid::now_v7().to_string(),
+            session_id,
+            memory: Arc::clone(&self.memory),
+            llm_registry: Arc::clone(&self.llm_registry),
+            capability_system: Arc::clone(&self.capability_system),
+            aam: self.aam.clone(),
+            inner_plan_linker: Arc::clone(&self.inner_plan_linker),
+            dag_splicer: Arc::new(crate::executor::NoOpSplicer),
+            flow_registry: Arc::clone(&self.flow_registry),
+            instruction_config: self.instruction_config.clone(),
+            start_time: std::time::Instant::now(),
+            metadata: std::collections::HashMap::new(),
+            token_budget: self.config.token_budget,
+            consumed_tokens: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            event_emitter,
+        }
     }
 
     /// Attach a custom inner plan linker implementation to the runtime.
@@ -153,20 +191,7 @@ impl Runtime {
         self.llm_registry.metrics().reset();
 
         // Create execution context
-        let context = ExecutionContext {
-            execution_id: uuid::Uuid::now_v7().to_string(),
-            session_id: None,
-            memory: Arc::clone(&self.memory),
-            llm_registry: Arc::clone(&self.llm_registry),
-            capability_system: Arc::clone(&self.capability_system),
-            aam: self.aam.clone(),
-            inner_plan_linker: Arc::clone(&self.inner_plan_linker),
-            dag_splicer: Arc::new(crate::executor::NoOpSplicer),
-            flow_registry: Arc::clone(&self.flow_registry),
-            instruction_config: self.instruction_config.clone(),
-            start_time: std::time::Instant::now(),
-            metadata: std::collections::HashMap::new(),
-        };
+        let context = self.build_context(None, None);
 
         // Create executor
         let executor = Arc::new(ExecutorEngine::new(context.clone()));
@@ -329,20 +354,7 @@ impl Runtime {
         #[cfg(feature = "metrics")]
         self.llm_registry.metrics().reset();
 
-        let context = ExecutionContext {
-            execution_id: uuid::Uuid::now_v7().to_string(),
-            session_id: None,
-            memory: Arc::clone(&self.memory),
-            llm_registry: Arc::clone(&self.llm_registry),
-            capability_system: Arc::clone(&self.capability_system),
-            aam: self.aam.clone(),
-            inner_plan_linker: Arc::clone(&self.inner_plan_linker),
-            dag_splicer: Arc::new(crate::executor::NoOpSplicer),
-            flow_registry: Arc::clone(&self.flow_registry),
-            instruction_config: self.instruction_config.clone(),
-            start_time: std::time::Instant::now(),
-            metadata: std::collections::HashMap::new(),
-        };
+        let context = self.build_context(None, None);
 
         let executor = Arc::new(ExecutorEngine::new(context.clone()));
 
@@ -370,6 +382,12 @@ impl Runtime {
         args: Vec<String>,
         session_id: Option<String>,
     ) -> Result<RuntimeExecutionResult, RuntimeError> {
+        let _lane_permit = if let Some(ref sid) = session_id {
+            Some(self.session_lane_guard.acquire(sid).await)
+        } else {
+            None
+        };
+
         // 1. Find @entry DAG
         let entry_dag = artifact.entry_dag().cloned().ok_or_else(|| {
             let name = artifact
@@ -420,23 +438,85 @@ impl Runtime {
         #[cfg(feature = "metrics")]
         self.llm_registry.metrics().reset();
 
-        let context = ExecutionContext {
-            execution_id: uuid::Uuid::now_v7().to_string(),
-            session_id,
-            memory: Arc::clone(&self.memory),
-            llm_registry: Arc::clone(&self.llm_registry),
-            capability_system: Arc::clone(&self.capability_system),
-            aam: self.aam.clone(),
-            inner_plan_linker: Arc::clone(&self.inner_plan_linker),
-            dag_splicer: Arc::new(crate::executor::NoOpSplicer),
-            flow_registry: Arc::clone(&self.flow_registry),
-            instruction_config: self.instruction_config.clone(),
-            start_time: std::time::Instant::now(),
-            metadata: std::collections::HashMap::new(),
-        };
+        let context = self.build_context(session_id, None);
 
         let executor = Arc::new(ExecutorEngine::new(context.clone()));
 
+        let (results, stats, scheduler_metrics) = self
+            .scheduler
+            .execute(entry_dag, executor, context, arg_values)
+            .await?;
+
+        Ok(RuntimeExecutionResult {
+            results,
+            stats,
+            #[cfg(feature = "metrics")]
+            llm_metrics: self.llm_registry.metrics().aggregate(),
+            scheduler_metrics,
+        })
+    }
+
+    /// Execute an artifact with optional session ID and per-execution event emitter.
+    pub async fn execute_artifact_with_session_and_emitter(
+        &self,
+        artifact: Artifact,
+        args: Vec<String>,
+        session_id: Option<String>,
+        event_emitter: Option<Arc<dyn ExecutionEventEmitter>>,
+    ) -> Result<RuntimeExecutionResult, RuntimeError> {
+        let _lane_permit = if let Some(ref sid) = session_id {
+            Some(self.session_lane_guard.acquire(sid).await)
+        } else {
+            None
+        };
+
+        let entry_dag = artifact.entry_dag().cloned().ok_or_else(|| {
+            let name = artifact
+                .dags()
+                .first()
+                .and_then(|d| d.metadata.name.as_deref())
+                .unwrap_or("<unnamed>");
+            RuntimeError::State(format!(
+                "No @entry flow found in artifact '{}'. Mark a flow with @entry to designate the entry point.",
+                name
+            ))
+        })?;
+
+        let params = &entry_dag.metadata.parameters;
+        if args.len() != params.len() {
+            let flow_name = entry_dag.metadata.name.as_deref().unwrap_or("<unnamed>");
+            let param_desc = if params.is_empty() {
+                "no parameters".to_string()
+            } else {
+                params
+                    .iter()
+                    .map(|p| format!("{}: {}", p.name, p.type_name))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            return Err(RuntimeError::State(format!(
+                "Flow '{}' requires {} argument(s) ({}) but {} were provided",
+                flow_name,
+                params.len(),
+                param_desc,
+                args.len()
+            )));
+        }
+
+        for dag in artifact.flow_dags() {
+            if let Some(ref name) = dag.metadata.name {
+                let (agent_name, flow_name) = parse_flow_name(name);
+                self.flow_registry
+                    .register_flow(&agent_name, &flow_name, dag.clone());
+            }
+        }
+
+        let arg_values: Vec<Value> = args.into_iter().map(Value::String).collect();
+        #[cfg(feature = "metrics")]
+        self.llm_registry.metrics().reset();
+
+        let context = self.build_context(session_id, event_emitter);
+        let executor = Arc::new(ExecutorEngine::new(context.clone()));
         let (results, stats, scheduler_metrics) = self
             .scheduler
             .execute(entry_dag, executor, context, arg_values)
@@ -486,20 +566,7 @@ impl Runtime {
             "Executing DAG sequentially"
         );
 
-        let context = ExecutionContext {
-            execution_id: uuid::Uuid::now_v7().to_string(),
-            session_id: None,
-            memory: Arc::clone(&self.memory),
-            llm_registry: Arc::clone(&self.llm_registry),
-            capability_system: Arc::clone(&self.capability_system),
-            aam: self.aam.clone(),
-            inner_plan_linker: Arc::clone(&self.inner_plan_linker),
-            dag_splicer: Arc::new(crate::executor::NoOpSplicer),
-            flow_registry: Arc::clone(&self.flow_registry),
-            instruction_config: self.instruction_config.clone(),
-            start_time: std::time::Instant::now(),
-            metadata: std::collections::HashMap::new(),
-        };
+        let context = self.build_context(None, None);
 
         let executor = ExecutorEngine::new(context);
         executor.execute_dag(dag).await
@@ -537,20 +604,7 @@ impl Runtime {
 
     /// Create a new execution context
     pub fn create_context(&self) -> ExecutionContext {
-        ExecutionContext {
-            execution_id: uuid::Uuid::now_v7().to_string(),
-            session_id: None,
-            memory: Arc::clone(&self.memory),
-            llm_registry: Arc::clone(&self.llm_registry),
-            capability_system: Arc::clone(&self.capability_system),
-            aam: self.aam.clone(),
-            inner_plan_linker: Arc::clone(&self.inner_plan_linker),
-            dag_splicer: Arc::new(crate::executor::NoOpSplicer),
-            flow_registry: Arc::clone(&self.flow_registry),
-            instruction_config: self.instruction_config.clone(),
-            start_time: std::time::Instant::now(),
-            metadata: std::collections::HashMap::new(),
-        }
+        self.build_context(None, None)
     }
 
     /// Get flow registry reference

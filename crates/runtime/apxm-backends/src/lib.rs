@@ -76,6 +76,8 @@ pub use llm::{
 pub use storage::{
     // Backend trait and types
     BackendStats,
+    // Embeddings
+    Embedder,
     // Implementations
     InMemoryBackend,
     RedbBackend,
@@ -83,7 +85,11 @@ pub use storage::{
     SqliteBackend,
     StorageBackend,
     StorageResult,
+    cosine_similarity,
 };
+
+#[cfg(feature = "embeddings")]
+pub use storage::LocalEmbedder;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Prompts Re-exports

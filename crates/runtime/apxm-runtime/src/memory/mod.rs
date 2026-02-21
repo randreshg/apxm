@@ -7,11 +7,13 @@
 
 mod config;
 mod episodic;
+mod facts;
 mod ltm;
 mod stm;
 
 pub use config::MemoryConfig;
 pub use episodic::{EpisodicEntry, EpisodicMemory};
+pub use facts::{Fact, FactFilter, FactResult};
 pub use ltm::LongTermMemory;
 pub use stm::ShortTermMemory;
 

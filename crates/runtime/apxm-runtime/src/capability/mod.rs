@@ -32,13 +32,16 @@
 
 pub mod executor;
 pub mod flow_registry;
+pub mod interceptor;
 pub mod metadata;
 pub mod registry;
 
 use crate::aam::{Aam, TransitionLabel};
 use apxm_core::{error::RuntimeError, types::values::Value};
 use executor::CapabilityExecutor;
+use interceptor::{CapabilityInterceptor, InterceptDecision};
 use metadata::CapabilityMetadata;
+use parking_lot::RwLock;
 use registry::CapabilityRegistry;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
@@ -55,6 +58,7 @@ pub struct CapabilitySystem {
     registry: Arc<CapabilityRegistry>,
     default_timeout: Duration,
     aam: Option<Aam>,
+    interceptors: Arc<RwLock<Vec<Arc<dyn CapabilityInterceptor>>>>,
 }
 
 impl CapabilitySystem {
@@ -64,6 +68,7 @@ impl CapabilitySystem {
             registry: Arc::new(CapabilityRegistry::new()),
             default_timeout: Duration::from_secs(30),
             aam: None,
+            interceptors: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -73,6 +78,7 @@ impl CapabilitySystem {
             registry: Arc::new(CapabilityRegistry::new()),
             default_timeout: timeout,
             aam: None,
+            interceptors: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -82,7 +88,23 @@ impl CapabilitySystem {
             registry: Arc::new(CapabilityRegistry::new()),
             default_timeout: Duration::from_secs(30),
             aam: Some(aam),
+            interceptors: Arc::new(RwLock::new(Vec::new())),
         }
+    }
+
+    /// Register a capability interceptor.
+    pub fn register_interceptor(&self, interceptor: Arc<dyn CapabilityInterceptor>) {
+        let name = interceptor.name().to_string();
+        let mut guard = self.interceptors.write();
+        if guard.iter().any(|it| it.name() == name) {
+            return;
+        }
+        guard.push(interceptor);
+    }
+
+    /// Check whether an interceptor is already registered.
+    pub fn has_interceptor(&self, name: &str) -> bool {
+        self.interceptors.read().iter().any(|it| it.name() == name)
     }
 
     /// Get read-only access to the capability registry
@@ -177,6 +199,24 @@ impl CapabilitySystem {
                 ),
             })?;
 
+        // Apply pre-invoke interceptors
+        let mut args = args;
+        let interceptors = self.interceptors.read().clone();
+        for interceptor in &interceptors {
+            match interceptor.pre_invoke(name, &args).await {
+                InterceptDecision::Allow => {}
+                InterceptDecision::Deny { reason } => {
+                    return Err(RuntimeError::Capability {
+                        capability: name.to_string(),
+                        message: reason,
+                    });
+                }
+                InterceptDecision::EditArgs { args: edited } => {
+                    args = edited;
+                }
+            }
+        }
+
         // Validate arguments against schema
         self.validate_args(name, &args).await?;
 
@@ -190,6 +230,11 @@ impl CapabilitySystem {
                 tracing::error!(capability = %name, error = %e, "Capability execution failed");
                 e
             })?;
+
+        // Post-invoke hooks (best effort)
+        for interceptor in &interceptors {
+            interceptor.post_invoke(name, &result).await;
+        }
 
         tracing::info!(capability = %name, "Capability executed successfully");
         Ok(result)
@@ -253,6 +298,42 @@ mod tests {
     use super::*;
     use crate::aam::Aam;
     use executor::EchoCapability;
+    use interceptor::CapabilityInterceptor;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct DenyAll;
+
+    #[async_trait::async_trait]
+    impl CapabilityInterceptor for DenyAll {
+        fn name(&self) -> &str {
+            "deny_all"
+        }
+
+        async fn pre_invoke(
+            &self,
+            _name: &str,
+            _args: &HashMap<String, Value>,
+        ) -> InterceptDecision {
+            InterceptDecision::Deny {
+                reason: "blocked".to_string(),
+            }
+        }
+    }
+
+    struct ObservingPost {
+        called: Arc<AtomicBool>,
+    }
+
+    #[async_trait::async_trait]
+    impl CapabilityInterceptor for ObservingPost {
+        fn name(&self) -> &str {
+            "observing_post"
+        }
+
+        async fn post_invoke(&self, _name: &str, _result: &Value) {
+            self.called.store(true, Ordering::SeqCst);
+        }
+    }
 
     #[tokio::test]
     async fn test_capability_system_creation() {
@@ -322,5 +403,35 @@ mod tests {
         assert!(system.register(Arc::new(EchoCapability::new())).is_ok());
         let capabilities = aam.capabilities();
         assert!(capabilities.contains_key("echo"));
+    }
+
+    #[tokio::test]
+    async fn test_interceptor_can_deny() {
+        let system = CapabilitySystem::new();
+        assert!(system.register(Arc::new(EchoCapability::new())).is_ok());
+        system.register_interceptor(Arc::new(DenyAll));
+
+        let mut args = HashMap::new();
+        args.insert("message".to_string(), Value::String("x".to_string()));
+        let err = system.invoke("echo", args).await.unwrap_err();
+        assert!(err.to_string().contains("blocked"));
+    }
+
+    #[tokio::test]
+    async fn test_interceptor_post_invoke_called() {
+        let system = CapabilitySystem::new();
+        assert!(system.register(Arc::new(EchoCapability::new())).is_ok());
+        let called = Arc::new(AtomicBool::new(false));
+        system.register_interceptor(Arc::new(ObservingPost {
+            called: Arc::clone(&called),
+        }));
+
+        let mut args = HashMap::new();
+        args.insert("message".to_string(), Value::String("x".to_string()));
+        let _ = system
+            .invoke("echo", args)
+            .await
+            .expect("invoke should succeed");
+        assert!(called.load(Ordering::SeqCst));
     }
 }

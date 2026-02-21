@@ -4,7 +4,6 @@ use apxm_core::log_warn;
 use apxm_core::paths::ApxmPaths;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
-use uuid::Uuid;
 
 /// Configuration for Short-Term Memory
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,12 +78,15 @@ impl LtmConfig {
 pub struct EpisodicConfig {
     /// Maximum number of entries to keep (older entries evicted)
     pub max_entries: Option<usize>,
+    /// Optional persistent JSONL file path for episodic entries.
+    pub path: Option<PathBuf>,
 }
 
 impl Default for EpisodicConfig {
     fn default() -> Self {
         Self {
             max_entries: Some(10000), // Keep last 10k episodes
+            path: Some(default_episodic_path()),
         }
     }
 }
@@ -103,7 +105,10 @@ impl MemoryConfig {
         Self {
             stm_config: StmConfig::default(),
             ltm_config: LtmConfig::in_memory(),
-            episodic_config: EpisodicConfig::default(),
+            episodic_config: EpisodicConfig {
+                max_entries: Some(10000),
+                path: None,
+            },
         }
     }
 
@@ -119,16 +124,30 @@ impl MemoryConfig {
 
 fn default_ltm_path() -> PathBuf {
     if let Ok(paths) = ApxmPaths::discover() {
-        let storage_dir = paths.project_dir().join("storage").join("ltm");
-        if let Err(err) = fs::create_dir_all(&storage_dir) {
+        let memory_dir = paths.project_dir().join("memory");
+        if let Err(err) = fs::create_dir_all(&memory_dir) {
             log_warn!(
                 "memory::config",
                 error = %err,
-                "Failed to create .apxm/storage/ltm directory"
+                "Failed to create .apxm/memory directory"
             );
         }
-        let file_name = format!("run-{}.db", Uuid::now_v7());
-        return storage_dir.join(file_name);
+        return memory_dir.join("ltm.sqlite");
     }
-    PathBuf::from(format!("apxm_ltm-{}.db", Uuid::now_v7()))
+    PathBuf::from("apxm_ltm.sqlite")
+}
+
+fn default_episodic_path() -> PathBuf {
+    if let Ok(paths) = ApxmPaths::discover() {
+        let memory_dir = paths.project_dir().join("memory");
+        if let Err(err) = fs::create_dir_all(&memory_dir) {
+            log_warn!(
+                "memory::config",
+                error = %err,
+                "Failed to create .apxm/memory directory"
+            );
+        }
+        return memory_dir.join("episodes.jsonl");
+    }
+    PathBuf::from("apxm_episodes.jsonl")
 }

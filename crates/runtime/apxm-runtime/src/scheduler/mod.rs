@@ -11,6 +11,7 @@
 pub mod concurrency_control;
 pub mod config;
 pub mod dataflow;
+pub mod lane_queue;
 pub mod queue;
 pub mod ready_set;
 pub mod splicing;
@@ -24,6 +25,7 @@ pub(crate) mod internal_state;
 // Public exports
 pub use config::SchedulerConfig;
 pub use dataflow::DataflowScheduler;
+pub use lane_queue::SessionLaneGuard;
 pub use queue::{Priority, PriorityQueue};
 pub use splicing::SpliceConfig;
 

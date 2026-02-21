@@ -157,4 +157,35 @@ mod tests {
         let parsed_bytes = ApxmGraph::from_bytes(&bytes).expect("parse bytes");
         assert_eq!(parsed_bytes, graph);
     }
+
+    #[test]
+    fn from_json_contract_allows_missing_optional_fields() {
+        let json = r#"{
+          "name": "contract_graph",
+          "nodes": [
+            { "id": 1, "name": "ask", "op": "Ask", "attributes": { "template_str": "{0}" } }
+          ],
+          "edges": []
+        }"#;
+        let graph = ApxmGraph::from_json(json).expect("graph should parse");
+        assert_eq!(graph.name, "contract_graph");
+        assert!(graph.parameters.is_empty());
+        assert!(graph.metadata.is_empty());
+    }
+
+    #[test]
+    fn from_json_contract_rejects_duplicate_node_ids() {
+        let json = r#"{
+          "name": "invalid_graph",
+          "nodes": [
+            { "id": 1, "name": "a", "op": "Const", "attributes": { "value": "x" } },
+            { "id": 1, "name": "b", "op": "Ask", "attributes": { "template_str": "{0}" } }
+          ],
+          "edges": [],
+          "parameters": [],
+          "metadata": {}
+        }"#;
+        let err = ApxmGraph::from_json(json).expect_err("duplicate ids should fail");
+        assert!(err.to_string().contains("validation"));
+    }
 }

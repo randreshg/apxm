@@ -9,6 +9,8 @@ use apxm_core::{error::RuntimeError, types::values::Value};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::io::Write;
+use std::path::PathBuf;
 use tokio::sync::RwLock;
 
 type Result<T> = std::result::Result<T, RuntimeError>;
@@ -45,14 +47,33 @@ impl EpisodicEntry {
 pub struct EpisodicMemory {
     entries: RwLock<VecDeque<EpisodicEntry>>,
     max_entries: Option<usize>,
+    path: Option<PathBuf>,
 }
 
 impl EpisodicMemory {
     /// Create a new episodic memory with the given configuration
     pub fn new(config: EpisodicConfig) -> Self {
+        let mut entries = VecDeque::new();
+        if let Some(path) = config.path.as_ref()
+            && path.exists()
+            && let Ok(content) = std::fs::read_to_string(path)
+        {
+            for line in content.lines().filter(|line| !line.trim().is_empty()) {
+                if let Ok(entry) = serde_json::from_str::<EpisodicEntry>(line) {
+                    entries.push_back(entry);
+                }
+            }
+            if let Some(max) = config.max_entries {
+                while entries.len() > max {
+                    entries.pop_front();
+                }
+            }
+        }
+
         Self {
-            entries: RwLock::new(VecDeque::new()),
+            entries: RwLock::new(entries),
             max_entries: config.max_entries,
+            path: config.path,
         }
     }
 
@@ -61,6 +82,7 @@ impl EpisodicMemory {
         Self {
             entries: RwLock::new(VecDeque::new()),
             max_entries: None,
+            path: None,
         }
     }
 
@@ -84,6 +106,7 @@ impl EpisodicMemory {
         }
 
         entries.push_back(entry);
+        self.persist_entries(&entries).await?;
 
         Ok(entry_id)
     }
@@ -160,6 +183,9 @@ impl EpisodicMemory {
     /// Clear all entries
     pub async fn clear(&self) -> Result<()> {
         self.entries.write().await.clear();
+        if let Some(path) = &self.path {
+            let _ = std::fs::write(path, "");
+        }
         Ok(())
     }
 
@@ -183,6 +209,44 @@ impl EpisodicMemory {
             oldest_timestamp,
             newest_timestamp,
         })
+    }
+
+    async fn persist_entries(&self, entries: &VecDeque<EpisodicEntry>) -> Result<()> {
+        let Some(path) = &self.path else {
+            return Ok(());
+        };
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent).map_err(|e| RuntimeError::Memory {
+                message: format!("episodic create_dir_all: {e}"),
+                space: Some("episodic".to_string()),
+            })?;
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(path)
+            .map_err(|e| RuntimeError::Memory {
+                message: format!("episodic open: {e}"),
+                space: Some("episodic".to_string()),
+            })?;
+
+        for entry in entries {
+            let line = serde_json::to_string(entry)
+                .map_err(|e| RuntimeError::Serialization(format!("{e}")))?;
+            file.write_all(line.as_bytes())
+                .map_err(|e| RuntimeError::Memory {
+                    message: format!("episodic write: {e}"),
+                    space: Some("episodic".to_string()),
+                })?;
+            file.write_all(b"\n").map_err(|e| RuntimeError::Memory {
+                message: format!("episodic write newline: {e}"),
+                space: Some("episodic".to_string()),
+            })?;
+        }
+        Ok(())
     }
 }
 
@@ -245,6 +309,7 @@ mod tests {
     async fn test_episodic_capacity_limit() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let config = EpisodicConfig {
             max_entries: Some(3),
+            path: None,
         };
         let episodic = EpisodicMemory::new(config);
 

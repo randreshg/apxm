@@ -34,9 +34,16 @@ pub use aam::{
     Aam, CapabilityRecord, Goal, GoalId, GoalStatus, STAGED_BELIEF_PREFIX, TransitionLabel,
     effects::{AamComponent, OperationEffects, operation_effects},
 };
-pub use capability::{CapabilitySystem, flow_registry::FlowRegistry};
-pub use executor::{ExecutionContext, ExecutorEngine, InnerPlanLinker, NoOpLinker};
-pub use memory::{MemoryConfig, MemorySpace, MemorySystem};
+pub use capability::{
+    CapabilitySystem,
+    flow_registry::FlowRegistry,
+    interceptor::{CapabilityInterceptor, InterceptDecision},
+};
+pub use executor::{
+    ExecutionContext, ExecutionEvent, ExecutionEventEmitter, ExecutorEngine, InnerPlanLinker,
+    NoOpLinker,
+};
+pub use memory::{Fact, FactFilter, FactResult, MemoryConfig, MemorySpace, MemorySystem};
 pub use observability::{MetricsCollector, SchedulerMetrics};
 pub use runtime::{Runtime, RuntimeConfig, RuntimeExecutionResult};
 pub use scheduler::{DataflowScheduler, SchedulerConfig};

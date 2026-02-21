@@ -29,9 +29,12 @@ use apxm_core::apxm_llm;
 use apxm_core::error::RuntimeError;
 use apxm_core::types::operations::AISOperationType;
 use apxm_core::types::{ToolCall, ToolResult};
+use jsonschema::JSONSchema;
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 
 /// LLM operation mode (derived from operation type)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +60,120 @@ impl From<&AISOperationType> for LlmMode {
 
 /// Maximum number of tool loop iterations to prevent infinite loops
 const MAX_TOOL_ITERATIONS: usize = 10;
+
+fn resolve_token_budget(ctx: &ExecutionContext, node: &Node) -> Option<u64> {
+    node.attributes
+        .get("token_budget")
+        .and_then(|v| v.as_u64())
+        .or(ctx.token_budget)
+}
+
+fn charge_tokens(ctx: &ExecutionContext, budget: Option<u64>, delta: usize) -> Result<()> {
+    let Some(limit) = budget else {
+        return Ok(());
+    };
+    let added = u64::try_from(delta).unwrap_or(u64::MAX);
+    let total = ctx
+        .consumed_tokens
+        .fetch_add(added, Ordering::SeqCst)
+        .saturating_add(added);
+    if total > limit {
+        return Err(RuntimeError::LLM {
+            message: format!("token budget exceeded: used {} > budget {}", total, limit),
+            backend: None,
+        });
+    }
+    Ok(())
+}
+
+fn output_schema_from_node(node: &Node) -> Result<Option<JsonValue>> {
+    let Some(schema_val) = node.attributes.get("output_schema") else {
+        return Ok(None);
+    };
+    let schema = schema_val.to_json().map_err(|e| RuntimeError::LLM {
+        message: format!("invalid output_schema attribute: {e}"),
+        backend: None,
+    })?;
+    Ok(Some(schema))
+}
+
+fn validate_against_output_schema(content: &str, schema: &JsonValue) -> Result<()> {
+    let instance = parse_json_from_text(content).ok_or_else(|| RuntimeError::LLM {
+        message: "response is not valid JSON; cannot validate output_schema".to_string(),
+        backend: None,
+    })?;
+    let compiled = JSONSchema::compile(schema).map_err(|e| RuntimeError::LLM {
+        message: format!("invalid configured output_schema: {e}"),
+        backend: None,
+    })?;
+    if let Err(errors) = compiled.validate(&instance) {
+        let message = errors
+            .map(|err| err.to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(RuntimeError::LLM {
+            message: format!("schema validation failed: {message}"),
+            backend: None,
+        });
+    }
+    Ok(())
+}
+
+fn parse_json_from_text(text: &str) -> Option<JsonValue> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(value) = serde_json::from_str::<JsonValue>(trimmed) {
+        return Some(value);
+    }
+    if let Some(fenced) = extract_fenced_json(trimmed)
+        && let Ok(value) = serde_json::from_str::<JsonValue>(fenced)
+    {
+        return Some(value);
+    }
+    extract_balanced_json(trimmed).and_then(|candidate| serde_json::from_str(candidate).ok())
+}
+
+fn extract_fenced_json(text: &str) -> Option<&str> {
+    let start = text.find("```")?;
+    let rest = &text[start + 3..];
+    let rest = if let Some(after_lang) = rest.strip_prefix("json") {
+        after_lang
+    } else {
+        rest
+    };
+    let rest = rest.strip_prefix('\n').unwrap_or(rest);
+    let end = rest.find("```")?;
+    Some(rest[..end].trim())
+}
+
+fn extract_balanced_json(text: &str) -> Option<&str> {
+    for (open, close) in [('{', '}'), ('[', ']')] {
+        if let (Some(start), Some(end)) = (text.find(open), text.rfind(close))
+            && end > start
+        {
+            return Some(text[start..=end].trim());
+        }
+    }
+    None
+}
+
+fn build_schema_retry_prompt(
+    original_prompt: &str,
+    previous_output: &str,
+    schema: &JsonValue,
+    validation_error: &str,
+) -> String {
+    format!(
+        "{original_prompt}\n\n\
+         Your previous response did not satisfy the required JSON schema.\n\
+         Validation error: {validation_error}\n\n\
+         Required JSON schema:\n{schema}\n\n\
+         Previous invalid response:\n{previous_output}\n\n\
+         Return ONLY valid JSON that satisfies the schema."
+    )
+}
 
 /// Get tool definitions from the capability system for LLM requests
 fn get_tool_definitions_from_capabilities(ctx: &ExecutionContext) -> Vec<ToolDefinition> {
@@ -97,6 +214,10 @@ async fn execute_tool_call(ctx: &ExecutionContext, tool_call: &ToolCall) -> Tool
         _ => HashMap::new(),
     };
 
+    if let Some(emitter) = &ctx.event_emitter {
+        emitter.emit_tool_start(&tool_call.name, &args);
+    }
+
     // Invoke the capability
     match ctx.capability_system.invoke(&tool_call.name, args).await {
         Ok(result) => {
@@ -104,6 +225,9 @@ async fn execute_tool_call(ctx: &ExecutionContext, tool_call: &ToolCall) -> Tool
                 Value::String(s) => s,
                 other => other.to_string(),
             };
+            if let Some(emitter) = &ctx.event_emitter {
+                emitter.emit_tool_end(&tool_call.name, &Value::String(content.clone()));
+            }
             apxm_llm!(info,
                 execution_id = %ctx.execution_id,
                 tool_name = %tool_call.name,
@@ -112,6 +236,9 @@ async fn execute_tool_call(ctx: &ExecutionContext, tool_call: &ToolCall) -> Tool
             ToolResult::success(&tool_call.id, content)
         }
         Err(e) => {
+            if let Some(emitter) = &ctx.event_emitter {
+                emitter.emit_tool_end(&tool_call.name, &Value::String(e.to_string()));
+            }
             apxm_llm!(warn,
                 execution_id = %ctx.execution_id,
                 tool_name = %tool_call.name,
@@ -224,6 +351,12 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         .get("max_retries")
         .and_then(|v| v.as_u64())
         .unwrap_or(3) as u32;
+    let max_schema_retries = node
+        .attributes
+        .get("max_schema_retries")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+    let output_schema = output_schema_from_node(node)?;
 
     // Inner plan support only for Reason mode
     let supports_inner_plan = mode == LlmMode::Reason
@@ -376,6 +509,8 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
 
     // Execute with retries
     let mut last_error = None;
+    let mut schema_retries_used = 0u32;
+    let mut request = request;
     for attempt in 0..=max_retries {
         if attempt > 0 {
             apxm_llm!(warn,
@@ -391,7 +526,35 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         }
 
         match execute_llm_once(ctx, node, &request, mode, enable_inner_plan, bind_outputs).await {
-            Ok(value) => return Ok(value),
+            Ok(value) => {
+                if mode == LlmMode::Ask
+                    && let Some(schema) = output_schema.as_ref()
+                    && let Value::String(content) = &value
+                    && let Err(validation_error) = validate_against_output_schema(content, schema)
+                {
+                    let validation_error_text = validation_error.to_string();
+                    if schema_retries_used < max_schema_retries {
+                        schema_retries_used = schema_retries_used.saturating_add(1);
+                        request.prompt = build_schema_retry_prompt(
+                            &request.prompt,
+                            content,
+                            schema,
+                            &validation_error_text,
+                        );
+                        apxm_llm!(
+                            warn,
+                            execution_id = %ctx.execution_id,
+                            retry = schema_retries_used,
+                            max_schema_retries = max_schema_retries,
+                            error = %validation_error_text,
+                            "Retrying ASK due to output_schema validation failure"
+                        );
+                        continue;
+                    }
+                    return Err(validation_error);
+                }
+                return Ok(value);
+            }
             Err(e) => {
                 last_error = Some(e);
                 apxm_llm!(debug,
@@ -428,7 +591,7 @@ async fn execute_llm_once(
 
     // For Ask mode with tools, use the tool loop
     if mode == LlmMode::Ask && request.has_tools() {
-        return execute_ask_with_tools(ctx, request).await;
+        return execute_ask_with_tools(ctx, node, request).await;
     }
 
     apxm_llm!(debug,
@@ -440,7 +603,15 @@ async fn execute_llm_once(
 
     // Execute LLM request through registry
     let response = execute_llm_request(ctx, mode_name, request).await?;
+    charge_tokens(
+        ctx,
+        resolve_token_budget(ctx, node),
+        response.usage.total_tokens,
+    )?;
     let content = response.content;
+    if let Some(emitter) = &ctx.event_emitter {
+        emitter.emit_llm_token(&content);
+    }
 
     apxm_llm!(info,
         execution_id = %ctx.execution_id,
@@ -487,6 +658,7 @@ async fn execute_llm_once(
 /// 5. Repeat until LLM returns text (no tool calls)
 async fn execute_ask_with_tools(
     ctx: &ExecutionContext,
+    node: &Node,
     initial_request: &LLMRequest,
 ) -> Result<Value> {
     let mut current_request = initial_request.clone();
@@ -505,9 +677,17 @@ async fn execute_ask_with_tools(
 
         // Execute LLM request
         let response = execute_llm_request(ctx, "ASK", &current_request).await?;
+        charge_tokens(
+            ctx,
+            resolve_token_budget(ctx, node),
+            response.usage.total_tokens,
+        )?;
 
         total_input_tokens += response.usage.input_tokens;
         total_output_tokens += response.usage.output_tokens;
+        if let Some(emitter) = &ctx.event_emitter {
+            emitter.emit_llm_token(&response.content);
+        }
 
         apxm_llm!(info,
             execution_id = %ctx.execution_id,
@@ -814,6 +994,42 @@ That's all."#;
         let content = "```json\n{\"test\": 123}\n```";
         let extracted = extract_json_from_markdown(content).unwrap();
         assert_eq!(extracted, "{\"test\": 123}");
+    }
+
+    #[test]
+    fn test_parse_json_from_text_fallbacks() {
+        assert_eq!(
+            parse_json_from_text("{\"ok\":true}"),
+            Some(serde_json::json!({"ok": true}))
+        );
+        assert_eq!(
+            parse_json_from_text("```json\n{\"ok\":true}\n```"),
+            Some(serde_json::json!({"ok": true}))
+        );
+    }
+
+    #[test]
+    fn test_validate_against_output_schema_success() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "required": ["answer"],
+            "properties": {
+                "answer": { "type": "string" }
+            }
+        });
+        validate_against_output_schema("{\"answer\":\"ok\"}", &schema)
+            .expect("schema should validate");
+    }
+
+    #[test]
+    fn test_validate_against_output_schema_failure() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "required": ["answer"]
+        });
+        let err = validate_against_output_schema("{\"other\":\"x\"}", &schema)
+            .expect_err("schema should fail");
+        assert!(err.to_string().contains("schema validation failed"));
     }
 
     #[test]

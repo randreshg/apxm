@@ -6,14 +6,19 @@
 //! - Future: Embedded KV stores (RocksDB, sled)
 
 mod backend;
+pub mod embedder;
 mod kv;
 mod memory;
 mod sqlite;
 
 pub use backend::{BackendStats, SearchResult, StorageBackend};
+pub use embedder::{cosine_similarity, Embedder};
 pub use kv::RedbBackend;
 pub use memory::InMemoryBackend;
 pub use sqlite::SqliteBackend;
+
+#[cfg(feature = "embeddings")]
+pub use embedder::LocalEmbedder;
 
 pub use apxm_core::{error::RuntimeError, types::values::Value};
 
