@@ -78,6 +78,8 @@ def compile_ais(
     file: Path, env: dict[str, str], config: ApxmConfig, output: Optional[Path] = None
 ) -> subprocess.CompletedProcess:
     """Compile an AIS file."""
+    if not config.compiler_bin.exists():
+        return subprocess.CompletedProcess(args=[], returncode=1, stderr="Compiler not built. Run: apxm build")
     cmd = [str(config.compiler_bin), "compile", str(file)]
     if output:
         cmd.extend(["-o", str(output)])
@@ -421,6 +423,7 @@ def install():
 def doctor():
     """Check environment status and dependencies."""
     config = get_config()
+    errors = 0
 
     print_header("APXM Environment Check")
 
@@ -429,6 +432,7 @@ def doctor():
         print_success(f"APXM directory: {config.apxm_dir}")
     else:
         print_error(f"APXM directory not found: {config.apxm_dir}")
+        errors += 1
 
     # Check Rust toolchain
     try:
@@ -438,6 +442,7 @@ def doctor():
         print_success(f"Rust: {result.stdout.strip()}")
     except (subprocess.CalledProcessError, FileNotFoundError):
         print_error("Rust toolchain not found")
+        errors += 1
 
     # Check Cargo
     try:
@@ -447,6 +452,7 @@ def doctor():
         print_success(f"Cargo: {result.stdout.strip()}")
     except (subprocess.CalledProcessError, FileNotFoundError):
         print_error("Cargo not found")
+        errors += 1
 
     # Check conda environment
     conda_prefix = get_conda_prefix()
@@ -459,6 +465,7 @@ def doctor():
             print_success(f"MLIR: {mlir_dir}")
         else:
             print_error(f"MLIR not found at {mlir_dir}")
+            errors += 1
 
         # Check LLVM
         llvm_dir = conda_prefix / "lib" / "cmake" / "llvm"
@@ -466,9 +473,11 @@ def doctor():
             print_success(f"LLVM: {llvm_dir}")
         else:
             print_error(f"LLVM not found at {llvm_dir}")
+            errors += 1
     else:
         print_error("Conda environment 'apxm' not found")
-        print_info("  Create with: cargo run -p apxm-cli -- install")
+        print_info("  Create with: apxm install")
+        errors += 1
 
     # Check compiler binary
     if config.compiler_bin.exists():
@@ -510,6 +519,9 @@ def doctor():
         print_info("  Install with: conda env update --file environment.yaml")
 
     console.print()
+
+    if errors > 0:
+        raise typer.Exit(1)
 
 
 # Compiler Commands

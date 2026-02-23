@@ -256,8 +256,8 @@ impl StorageBackend for SqliteBackend {
             .map_err(|e| mem_err("put fts", e))?;
 
         // Store embedding if embedder is available
-        if let Some(embedder) = &self.embedder {
-            if let Ok(embedding) = embedder.embed_one(&content) {
+        if let Some(embedder) = &self.embedder
+            && let Ok(embedding) = embedder.embed_one(&content) {
                 let blob = embedding_to_blob(&embedding);
                 sqlx::query(
                     r#"
@@ -273,7 +273,6 @@ impl StorageBackend for SqliteBackend {
                 .await
                 .map_err(|e| mem_err("put embedding", e))?;
             }
-        }
 
         Ok(())
     }
@@ -422,8 +421,8 @@ impl StorageBackend for SqliteBackend {
             .collect();
 
         // Step 2: If embedder is available, combine with vector similarity
-        if let Some(embedder) = &self.embedder {
-            if let Ok(query_embedding) = embedder.embed_one(query) {
+        if let Some(embedder) = &self.embedder
+            && let Ok(query_embedding) = embedder.embed_one(query) {
                 let keys: Vec<String> = scored.iter().map(|(k, _)| k.clone()).collect();
                 let placeholders = keys
                     .iter()
@@ -461,7 +460,6 @@ impl StorageBackend for SqliteBackend {
                     }
                 }
             }
-        }
 
         // Sort by score descending
         scored.sort_by(|a, b| {
@@ -532,7 +530,7 @@ fn embedding_to_blob(embedding: &[f32]) -> Vec<u8> {
 
 /// Deserialize f32 embedding from little-endian byte blob.
 fn blob_to_embedding(blob: &[u8]) -> Option<Vec<f32>> {
-    if blob.len() % 4 != 0 {
+    if !blob.len().is_multiple_of(4) {
         return None;
     }
     Some(

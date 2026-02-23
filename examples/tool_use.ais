@@ -1,0 +1,16 @@
+// tool_use.ais - Agent that invokes a tool
+//
+// Usage: apxm execute examples/tool_use.ais
+
+agent ToolAgent {
+    capability search(query: str) -> str;
+
+    tools: [search]
+
+    @entry flow main() -> str {
+        ask("What topic should we research?") -> topic
+        search(topic) -> results
+        ask("Summarize these findings: " + results) -> summary
+        return summary
+    }
+}

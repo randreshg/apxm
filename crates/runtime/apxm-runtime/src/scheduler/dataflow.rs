@@ -190,7 +190,17 @@ fn spawn_watchdog(state: Arc<SchedulerState>) {
                 .load(std::sync::atomic::Ordering::Relaxed);
 
             if now_ms.saturating_sub(last_progress_ms) >= cfg.deadlock_timeout_ms {
-                // Deadlock detected
+                // Before declaring a deadlock, check if any operations are
+                // actively running. Long-running operations (e.g. LLM calls)
+                // are not deadlocks — the scheduler is alive, just waiting.
+                if state.has_running_ops() {
+                    // Operations are in-flight; reset the progress timer
+                    // so we don't keep re-checking every watchdog interval.
+                    state.record_progress();
+                    continue;
+                }
+
+                // True deadlock: nothing is running and no progress was made.
                 let remaining = state.remaining.load(std::sync::atomic::Ordering::SeqCst);
 
                 state.set_first_error(RuntimeError::SchedulerDeadlock {

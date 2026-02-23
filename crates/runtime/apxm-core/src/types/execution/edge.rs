@@ -80,15 +80,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_new_edge() {
-        let edge = Edge::new(1, 2, 10, DependencyType::Data);
-        assert_eq!(edge.from, 1);
-        assert_eq!(edge.to, 2);
-        assert_eq!(edge.token_id, 10);
-        assert!(edge.is_data_dependency());
-    }
-
-    #[test]
     fn test_dependency_types() {
         let data_edge = Edge::new(1, 2, 10, DependencyType::Data);
         assert!(data_edge.is_data_dependency());

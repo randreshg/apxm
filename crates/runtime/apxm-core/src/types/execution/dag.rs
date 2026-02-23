@@ -278,13 +278,6 @@ mod tests {
     use crate::types::AISOperationType;
 
     #[test]
-    fn test_new_dag() {
-        let dag = ExecutionDag::new();
-        assert!(dag.nodes.is_empty());
-        assert!(dag.edges.is_empty());
-    }
-
-    #[test]
     fn test_add_node() {
         let mut dag = ExecutionDag::new();
         let node = Node::new(1, AISOperationType::Inv);

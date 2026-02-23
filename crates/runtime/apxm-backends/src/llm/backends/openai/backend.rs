@@ -98,8 +98,8 @@ impl OpenAIBackend {
         }
 
         // Add tools if provided
-        if let Some(tools) = &request.tools {
-            if !tools.is_empty() {
+        if let Some(tools) = &request.tools
+            && !tools.is_empty() {
                 let openai_tools: Vec<serde_json::Value> = tools
                     .iter()
                     .map(|t| {
@@ -128,7 +128,6 @@ impl OpenAIBackend {
                     };
                 }
             }
-        }
 
         body
     }
@@ -147,10 +146,10 @@ impl OpenAIBackend {
             .map(|calls| {
                 calls
                     .iter()
-                    .filter_map(|tc| {
+                    .map(|tc| {
                         let args: serde_json::Value =
                             serde_json::from_str(&tc.function.arguments).unwrap_or(json!({}));
-                        Some(ToolCall::new(tc.id.clone(), tc.function.name.clone(), args))
+                        ToolCall::new(tc.id.clone(), tc.function.name.clone(), args)
                     })
                     .collect()
             })

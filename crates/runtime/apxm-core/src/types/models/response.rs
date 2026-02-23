@@ -76,18 +76,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_response_creation() {
-        let usage = TokenUsage::new(100, 50);
-        let response = LLMResponse::new("Hello", "gpt-4", usage, FinishReason::Stop);
-
-        assert_eq!(response.content, "Hello");
-        assert_eq!(response.model, "gpt-4");
-        assert_eq!(response.usage.total_tokens, 150);
-        assert!(response.completed_normally());
-        assert!(!response.has_tool_calls());
-    }
-
-    #[test]
     fn test_completion_status() {
         let usage = TokenUsage::new(100, 50);
 

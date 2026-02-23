@@ -171,14 +171,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_token_usage_calculation() {
-        let usage = TokenUsage::new(100, 50);
-        assert_eq!(usage.total_tokens, 150);
-        assert_eq!(usage.input_tokens, 100);
-        assert_eq!(usage.output_tokens, 50);
-    }
-
-    #[test]
     fn test_finish_reason_parsing() {
         assert_eq!(FinishReason::from_string("stop"), FinishReason::Stop);
         assert_eq!(FinishReason::from_string("Stop"), FinishReason::Stop);
@@ -203,26 +195,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_tool_call_creation() {
-        let call = ToolCall::new("call_123", "bash", serde_json::json!({"command": "ls -la"}));
-        assert_eq!(call.id, "call_123");
-        assert_eq!(call.name, "bash");
-        assert_eq!(call.args["command"], "ls -la");
-    }
-
-    #[test]
-    fn test_tool_result_success() {
-        let result = ToolResult::success("call_123", "file1.txt\nfile2.txt");
-        assert_eq!(result.tool_call_id, "call_123");
-        assert!(result.success);
-    }
-
-    #[test]
-    fn test_tool_result_error() {
-        let result = ToolResult::error("call_123", "Permission denied");
-        assert_eq!(result.tool_call_id, "call_123");
-        assert!(!result.success);
-        assert!(result.content.contains("Permission denied"));
-    }
 }

@@ -228,7 +228,7 @@ impl CapabilityExecutor for BashCapability {
         payload.push_str(&String::from_utf8_lossy(&output.stdout));
         payload.push_str(&String::from_utf8_lossy(&output.stderr));
 
-        if payload.as_bytes().len() > self.config.max_output_bytes {
+        if payload.len() > self.config.max_output_bytes {
             payload = String::from_utf8_lossy(&payload.as_bytes()[..self.config.max_output_bytes])
                 .to_string();
             payload.push_str("\n[output truncated]");

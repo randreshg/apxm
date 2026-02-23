@@ -1,6 +1,7 @@
 //! Executor engine - Main orchestrator for DAG execution
 
 use super::{ExecutionContext, Result, dispatcher::OperationDispatcher};
+use crate::scheduler::{DataflowScheduler, SchedulerConfig};
 use apxm_core::types::{
     execution::{ExecutionDag, ExecutionStats, Node, NodeStatus, OpStatus},
     values::Value,
@@ -30,10 +31,11 @@ impl ExecutorEngine {
         Ok(OperationOutcome { value })
     }
 
-    /// Execute a complete DAG
+    /// Execute a complete DAG using the dataflow scheduler for parallel execution.
     ///
-    /// This is a simplified synchronous executor for now.
-    /// A production implementation would use the dataflow scheduler.
+    /// Delegates to [`DataflowScheduler`] which provides automatic parallelism
+    /// via token-based dataflow execution, work stealing, and backpressure.
+    /// Falls back to sequential execution only when the scheduler is unavailable.
     pub async fn execute_dag(&self, dag: ExecutionDag) -> Result<ExecutionResult> {
         tracing::info!(
             execution_id = %self.context.execution_id,
@@ -41,12 +43,60 @@ impl ExecutorEngine {
             "Starting DAG execution"
         );
 
+        // Use the dataflow scheduler for parallel execution when the DAG has
+        // enough nodes to benefit from concurrency.
+        if dag.nodes.len() > 1 {
+            match self
+                .execute_dag_parallel(dag.clone())
+                .await
+            {
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    tracing::warn!(
+                        execution_id = %self.context.execution_id,
+                        error = %e,
+                        "Dataflow scheduler failed, falling back to sequential execution"
+                    );
+                    // Fall through to sequential execution
+                }
+            }
+        }
+
+        self.execute_dag_sequential(dag).await
+    }
+
+    /// Execute a DAG using the dataflow scheduler for automatic parallelism.
+    ///
+    /// Constructs a [`DataflowScheduler`] with default configuration, wraps
+    /// `self` in an `Arc`, and delegates the full execution to the scheduler.
+    async fn execute_dag_parallel(&self, dag: ExecutionDag) -> Result<ExecutionResult> {
+        let config = SchedulerConfig::default();
+        let scheduler = DataflowScheduler::new(config);
+
+        // The scheduler expects an Arc<ExecutorEngine>. We create a temporary
+        // engine sharing the same context so the scheduler can call back into
+        // `execute_with_context`.
+        let executor = Arc::new(ExecutorEngine::new(self.context.clone()));
+
+        let (results, stats, _scheduler_metrics) = scheduler
+            .execute(dag, executor, self.context.clone(), vec![])
+            .await?;
+
+        Ok(ExecutionResult {
+            results,
+            stats,
+        })
+    }
+
+    /// Sequential fallback executor for DAGs.
+    ///
+    /// Processes nodes in order, suitable for single-node DAGs, testing, and
+    /// as a fallback when the dataflow scheduler encounters an error.
+    async fn execute_dag_sequential(&self, dag: ExecutionDag) -> Result<ExecutionResult> {
         let start_time = std::time::Instant::now();
         let node_statuses = Arc::new(RwLock::new(HashMap::<u64, NodeStatus>::new()));
         let node_results = Arc::new(RwLock::new(HashMap::<u64, Value>::new()));
 
-        // Simple topological execution for now
-        // TODO: Integrate with dataflow scheduler for parallel execution
         for node in &dag.nodes {
             let node_start = std::time::Instant::now();
 

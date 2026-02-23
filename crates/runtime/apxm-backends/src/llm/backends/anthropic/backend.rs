@@ -78,8 +78,8 @@ impl AnthropicBackend {
         }
 
         // Add tools if provided (Anthropic format)
-        if let Some(tools) = &request.tools {
-            if !tools.is_empty() {
+        if let Some(tools) = &request.tools
+            && !tools.is_empty() {
                 let anthropic_tools: Vec<serde_json::Value> = tools
                     .iter()
                     .map(|t| {
@@ -105,7 +105,6 @@ impl AnthropicBackend {
                     };
                 }
             }
-        }
 
         body
     }

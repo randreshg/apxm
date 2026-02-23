@@ -49,11 +49,21 @@ pub fn lower_to_execution_dag(graph: &ApxmGraph) -> Result<ExecutionDag, GraphEr
         .map(|node| node.id)
         .collect::<Vec<_>>();
 
-    let exit_nodes = nodes
-        .iter()
+    // Assign synthetic output tokens to exit nodes (nodes with no outgoing edges)
+    // so the scheduler can capture their results via the standard token mechanism.
+    let next_token_id = edges.len() as u64 + 1;
+    let mut synthetic_token = next_token_id;
+
+    let exit_nodes: Vec<u64> = nodes
+        .iter_mut()
         .filter(|node| node.output_tokens.is_empty())
-        .map(|node| node.id)
-        .collect::<Vec<_>>();
+        .map(|node| {
+            let token_id = synthetic_token;
+            synthetic_token += 1;
+            node.output_tokens.push(token_id);
+            node.id
+        })
+        .collect();
 
     let is_entry = graph
         .metadata

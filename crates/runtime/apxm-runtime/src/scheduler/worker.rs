@@ -80,8 +80,10 @@ pub async fn worker_loop(
             continue;
         };
 
-        // Mark operation as running
+        // Mark operation as running and record progress so the watchdog
+        // knows the scheduler is alive during long-running operations (e.g. LLM calls).
         op_start(&state.op_states, node_id);
+        state.record_progress();
 
         apxm_op!(debug,
             worker = worker_id,

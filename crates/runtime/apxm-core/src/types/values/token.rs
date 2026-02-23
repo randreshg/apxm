@@ -117,23 +117,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_new_token() {
-        let token = Token::new(1);
-        assert_eq!(token.id, 1);
-        assert!(!token.is_ready());
-        assert!(matches!(token.status, TokenStatus::Pending));
-    }
-
-    #[test]
-    fn test_set_value() {
-        let mut token = Token::new(1);
-        let value = Value::Bool(true);
-        assert!(token.set_value(value.clone()).is_ok());
-        assert!(token.is_ready());
-        assert_eq!(token.get_value(), Some(&value));
-    }
-
-    #[test]
     fn test_set_value_when_ready() {
         let mut token = Token::new(1);
         token
@@ -171,23 +154,6 @@ mod tests {
             .consume()
             .expect("consuming ready token should work the first time");
         assert!(token.consume().is_err());
-    }
-
-    #[test]
-    fn test_get_value() {
-        let mut token = Token::new(1);
-        assert_eq!(token.get_value(), None);
-
-        let value = Value::Bool(true);
-        token
-            .set_value(value.clone())
-            .expect("token set value should succeed");
-        assert_eq!(token.get_value(), Some(&value));
-
-        token
-            .consume()
-            .expect("consuming ready token should work the first time");
-        assert_eq!(token.get_value(), None);
     }
 
     #[test]

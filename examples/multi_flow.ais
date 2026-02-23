@@ -1,0 +1,29 @@
+// multi_flow.ais - Agent with multiple flows and cross-agent calls
+//
+// Usage: apxm execute examples/multi_flow.ais
+
+agent Researcher {
+    flow research(topic: str) -> str {
+        think("Research this topic thoroughly: " + topic) -> findings
+        return findings
+    }
+
+    flow critique(text: str) -> str {
+        reason("Critically evaluate this text for accuracy: " + text) -> evaluation
+        return evaluation
+    }
+}
+
+agent Coordinator {
+    memory {
+        session: STM
+    }
+
+    @entry flow main() -> str {
+        ask("What topic should we investigate?") -> topic
+        Researcher.research(topic) -> findings
+        Researcher.critique(findings) -> evaluation
+        ask("Provide a final summary of the investigation") -> summary
+        return summary
+    }
+}

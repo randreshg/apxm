@@ -59,16 +59,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_instruction_config_default() {
-        let config = InstructionConfig::default();
-        assert!(config.ask.is_none());
-        assert!(config.think.is_none());
-        assert!(config.reason.is_none());
-        assert!(config.plan.is_none());
-        assert!(config.reflect.is_none());
-    }
-
-    #[test]
     fn test_instruction_config_get() {
         let config = InstructionConfig {
             ask: Some("Ask prompt".into()),

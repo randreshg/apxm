@@ -17,7 +17,15 @@ impl OperationDispatcher {
     ///
     /// # Returns
     /// Result value from operation execution
-    pub async fn dispatch(
+    pub fn dispatch<'a>(
+        ctx: &'a ExecutionContext,
+        node: &'a Node,
+        inputs: Vec<Value>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value>> + Send + 'a>> {
+        Box::pin(Self::dispatch_inner(ctx, node, inputs))
+    }
+
+    async fn dispatch_inner(
         ctx: &ExecutionContext,
         node: &Node,
         inputs: Vec<Value>,

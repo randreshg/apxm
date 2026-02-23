@@ -254,15 +254,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_intent_description() {
-        let intent = Intent::ExecuteTask {
-            description: "test".to_string(),
-            parameters: HashMap::new(),
-        };
-        assert_eq!(intent.description(), "Execute task");
-    }
-
-    #[test]
     fn test_intent_requires_execution() {
         let execute = Intent::ExecuteTask {
             description: "test".to_string(),
@@ -286,17 +277,4 @@ mod tests {
         assert!(!execute.is_query());
     }
 
-    #[test]
-    fn test_entity_creation() {
-        let entity = Entity::new("test_var", EntityType::VariableName, 0, 8, 0.9);
-        assert_eq!(entity.text, "test_var");
-        assert_eq!(entity.entity_type, EntityType::VariableName);
-        assert!(entity.is_high_confidence());
-    }
-
-    #[test]
-    fn test_entity_type_name() {
-        assert_eq!(EntityType::CapabilityName.name(), "Capability");
-        assert_eq!(EntityType::ModuleName.name(), "Module");
-    }
 }

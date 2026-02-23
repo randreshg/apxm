@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use apxm_core::types::{ExecutionDag, ExecutionStats, Node, NodeId, NodeStatus, TokenId, Value};
+use apxm_core::types::{
+    ExecutionDag, ExecutionStats, Node, NodeId, NodeStatus, OpStatus, TokenId, Value,
+};
 use crossbeam_deque::Worker;
 use dashmap::{DashMap, DashSet};
 use parking_lot::Mutex;
@@ -228,6 +230,16 @@ impl SchedulerState {
     pub fn record_progress(&self) {
         self.last_progress_ms
             .store(self.elapsed_ms() as u64, Ordering::Relaxed);
+    }
+
+    /// Check if any operations are currently running.
+    ///
+    /// Used by the watchdog to distinguish true deadlocks (nothing running,
+    /// nothing becoming ready) from long-running operations (e.g. LLM calls).
+    pub fn has_running_ops(&self) -> bool {
+        self.op_states
+            .iter()
+            .any(|entry| matches!(entry.value().status, OpStatus::Running))
     }
 
     pub fn collect_exit_values(&self) -> RuntimeResult<HashMap<TokenId, Value>> {

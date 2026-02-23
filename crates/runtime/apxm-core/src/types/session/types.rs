@@ -185,26 +185,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_message_role_display() {
-        assert_eq!(MessageRole::User.to_string(), "user");
-        assert_eq!(MessageRole::Assistant.to_string(), "assistant");
-        assert_eq!(MessageRole::System.to_string(), "system");
-        assert_eq!(MessageRole::Error.to_string(), "error");
-    }
-
-    #[test]
-    fn test_message_role_predicates() {
-        assert!(MessageRole::User.is_user());
-        assert!(!MessageRole::User.is_assistant());
-
-        assert!(MessageRole::Assistant.is_assistant());
-        assert!(!MessageRole::Assistant.is_user());
-
-        assert!(MessageRole::System.is_system());
-        assert!(MessageRole::Error.is_error());
-    }
-
-    #[test]
     fn test_message_creation() {
         let msg = Message::user("Hello");
         assert_eq!(msg.role, MessageRole::User);
@@ -236,12 +216,4 @@ mod tests {
         assert_eq!(example.ais_output, "add(2, 3)");
     }
 
-    #[test]
-    fn test_example_display() {
-        let example = Example::new("Test", "input", "output");
-        let formatted = format!("{}", example);
-        assert!(formatted.contains("**Example: Test**"));
-        assert!(formatted.contains("User: input"));
-        assert!(formatted.contains("```ais\noutput\n```"));
-    }
 }

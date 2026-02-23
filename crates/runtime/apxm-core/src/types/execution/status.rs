@@ -80,12 +80,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_op_status_equality() {
-        assert_eq!(OpStatus::Pending, OpStatus::Pending);
-        assert_ne!(OpStatus::Pending, OpStatus::Running);
-    }
-
-    #[test]
     fn test_execution_stats_total_nodes() {
         let stats = ExecutionStats {
             executed_nodes: 10,

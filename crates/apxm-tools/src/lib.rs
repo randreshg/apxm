@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 /// Configuration for APxM standard tools.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ToolsConfig {
     #[serde(default)]
     pub bash: BashConfig,
@@ -26,16 +27,6 @@ pub struct ToolsConfig {
     pub search_web: SearchWebConfig,
 }
 
-impl Default for ToolsConfig {
-    fn default() -> Self {
-        Self {
-            bash: BashConfig::default(),
-            read: ReadConfig::default(),
-            write: WriteConfig::default(),
-            search_web: SearchWebConfig::default(),
-        }
-    }
-}
 
 /// Register the standard APxM capabilities with the runtime capability system.
 pub fn register_standard_tools(

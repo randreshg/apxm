@@ -1,0 +1,10 @@
+// hello.ais - Minimal agent that asks a question
+//
+// Usage: apxm execute examples/hello.ais
+
+agent HelloWorld {
+    @entry flow main() -> str {
+        ask("Generate a friendly greeting for someone learning about AI agents") -> greeting
+        return greeting
+    }
+}

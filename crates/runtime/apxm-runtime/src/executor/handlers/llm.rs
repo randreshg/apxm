@@ -510,7 +510,6 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     // Execute with retries
     let mut last_error = None;
     let mut schema_retries_used = 0u32;
-    let mut request = request;
     for attempt in 0..=max_retries {
         if attempt > 0 {
             apxm_llm!(warn,

@@ -169,7 +169,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_system_stm() -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let config = MemoryConfig::default();
+        let config = MemoryConfig::in_memory_ltm();
         let system = MemorySystem::new(config).await?;
 
         // Write to STM
@@ -216,7 +216,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_system_episodic() -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let config = MemoryConfig::default();
+        let config = MemoryConfig::in_memory_ltm();
         let system = MemorySystem::new(config).await?;
 
         // Record episode

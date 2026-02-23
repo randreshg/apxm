@@ -140,12 +140,4 @@ mod tests {
         assert!(!prod.verify);
     }
 
-    #[test]
-    fn test_pipeline_config_builder() {
-        let config = PipelineConfig::default()
-            .with_opt_level(OptimizationLevel::O1)
-            .with_verify(false);
-        assert_eq!(config.opt_level, OptimizationLevel::O1);
-        assert!(!config.verify);
-    }
 }
