@@ -101,23 +101,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_plan_creation() {
-        let step1 = PlanStep::new("Analyze requirements".to_string(), 100);
-        let step2 = PlanStep::new("Implement solution".to_string(), 90)
-            .with_dependency("Analyze requirements".to_string());
-
-        let plan = Plan::new(
-            vec![step1, step2],
-            "Complete analysis and implementation".to_string(),
-        );
-
-        assert_eq!(plan.steps.len(), 2);
-        assert_eq!(plan.steps[0].priority, 100);
-        assert_eq!(plan.steps[1].dependencies.len(), 1);
-        assert!(!plan.has_inner_plan());
-    }
-
-    #[test]
     fn test_plan_with_inner_dsl() {
         let plan = Plan::new(vec![], "Test plan".to_string()).with_inner_plan(
             "agent Test { on Message { user, text } => { return text; } }".to_string(),

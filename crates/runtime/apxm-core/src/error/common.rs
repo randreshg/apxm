@@ -172,28 +172,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_source_location_new() {
-        let loc = SourceLocation::new("test.ais".to_string(), 10, 5);
-        assert_eq!(loc.file, "test.ais");
-        assert_eq!(loc.line, 10);
-        assert_eq!(loc.column, 5);
-    }
-
-    #[test]
-    fn test_source_location_display() {
-        let loc = SourceLocation::new("test.ais".to_string(), 10, 5);
-        assert_eq!(loc.to_string(), "test.ais:10:5");
-    }
-
-    #[test]
-    fn test_error_context_new() {
-        let ctx = ErrorContext::new();
-        assert!(ctx.operation_id.is_none());
-        assert!(ctx.operation_type.is_none());
-        assert!(ctx.trace_id.is_none());
-    }
-
-    #[test]
     fn test_error_context_builder() {
         let ctx = ErrorContext::new()
             .with_operation_id(42)

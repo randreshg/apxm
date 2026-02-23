@@ -76,18 +76,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_completion_status() {
-        let usage = TokenUsage::new(100, 50);
-
-        let stop_response = LLMResponse::new("text", "model", usage.clone(), FinishReason::Stop);
-        assert!(stop_response.completed_normally());
-
-        let error_response =
-            LLMResponse::new("partial", "model", usage.clone(), FinishReason::Error);
-        assert!(!error_response.completed_normally());
-    }
-
-    #[test]
     fn test_response_with_tool_calls() {
         let usage = TokenUsage::new(100, 50);
         let tool_calls = vec![

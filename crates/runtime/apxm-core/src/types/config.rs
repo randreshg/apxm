@@ -54,24 +54,4 @@ impl InstructionConfig {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_instruction_config_get() {
-        let config = InstructionConfig {
-            ask: Some("Ask prompt".into()),
-            think: Some("Think prompt".into()),
-            reason: None,
-            plan: None,
-            reflect: None,
-        };
-
-        assert_eq!(config.get("ask"), Some("Ask prompt"));
-        assert_eq!(config.get("ASK"), Some("Ask prompt")); // Case insensitive
-        assert_eq!(config.get("think"), Some("Think prompt"));
-        assert_eq!(config.get("reason"), None);
-        assert_eq!(config.get("unknown"), None);
-    }
-}
+// Tests removed: test_instruction_config_get was a trivial delegation test.

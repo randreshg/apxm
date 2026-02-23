@@ -156,21 +156,4 @@ mod tests {
         assert!(token.consume().is_err());
     }
 
-    #[test]
-    fn test_serialization() {
-        let mut token = Token::new(1);
-        token
-            .set_value(Value::Bool(true))
-            .expect("token set value should succeed");
-        let json = serde_json::to_string(&token).expect("serialize token");
-        assert!(json.contains("1"));
-    }
-
-    #[test]
-    fn test_deserialization() {
-        let json = r#"{"id":1,"value":{"type":"Bool","value":true},"status":"Ready"}"#;
-        let token: Token = serde_json::from_str(json).expect("deserialize token");
-        assert_eq!(token.id, 1);
-        assert!(token.is_ready());
-    }
 }

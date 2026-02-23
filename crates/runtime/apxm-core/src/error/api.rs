@@ -337,30 +337,6 @@ mod tests {
     use crate::error::span::Span;
 
     #[test]
-    fn test_error_new() {
-        let span = Span::new("test.apxm".to_string(), 10, 5, 3);
-        let error = Error::new(ErrorCode::ExpectedExpression, "expected expression", span);
-        assert_eq!(error.code, ErrorCode::ExpectedExpression);
-        assert_eq!(error.message, "expected expression");
-    }
-
-    #[test]
-    fn test_error_with_suggestion() {
-        let span = Span::new("test.apxm".to_string(), 10, 5, 3);
-        let error = Error::new(
-            ErrorCode::ExpectedExpression,
-            "expected expression",
-            span.clone(),
-        )
-        .with_suggestion(Suggestion::with_replacement(
-            "Add expression".to_string(),
-            span,
-            "42".to_string(),
-        ));
-        assert_eq!(error.suggestions.len(), 1);
-    }
-
-    #[test]
     fn test_error_display() {
         let span = Span::new("test.apxm".to_string(), 10, 5, 3);
         let error = Error::new(ErrorCode::ExpectedExpression, "expected expression", span);

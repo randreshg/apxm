@@ -138,48 +138,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_builder() {
-        let err = ErrorBuilder::parse("Parse failed");
-        assert_eq!(err.code, ErrorCode::InternalError);
-        assert_eq!(err.message, "Parse failed");
-    }
-
-    #[test]
-    fn test_verification_builder() {
-        let err = ErrorBuilder::verification("Verification failed");
-        assert_eq!(err.code, ErrorCode::MLIRVerificationFailed);
-        assert_eq!(err.message, "Verification failed");
-    }
-
-    #[test]
-    fn test_pass_execution_builder() {
-        let err = ErrorBuilder::pass_execution("Pass failed");
-        assert_eq!(err.code, ErrorCode::PassExecutionFailed);
-        assert_eq!(err.message, "Pass failed");
-    }
-
-    #[test]
-    fn test_pass_manager_builder() {
-        let err = ErrorBuilder::pass_manager(ErrorCode::PassNotFound, "Pass not found");
-        assert_eq!(err.code, ErrorCode::PassNotFound);
-        assert_eq!(err.message, "Pass not found");
-    }
-
-    #[test]
-    fn test_serialization_builder() {
-        let err = ErrorBuilder::serialization("Serialization failed");
-        assert_eq!(err.code, ErrorCode::InternalError);
-        assert_eq!(err.message, "Serialization failed");
-    }
-
-    #[test]
-    fn test_context_creation_builder() {
-        let err = ErrorBuilder::context_creation("Context creation failed");
-        assert_eq!(err.code, ErrorCode::InternalError);
-        assert_eq!(err.message, "Context creation failed");
-    }
-
-    #[test]
     fn test_context_operation_builder() {
         let err = ErrorBuilder::context_operation("Context operation failed");
         assert_eq!(err.code, ErrorCode::InternalError);

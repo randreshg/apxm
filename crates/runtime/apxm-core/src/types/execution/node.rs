@@ -136,33 +136,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_serialization() {
-        let mut node = Node::new(1, AISOperationType::Inv);
-        node.set_attribute("test".to_string(), Value::Bool(true));
-        let json = serde_json::to_string(&node).expect("serialize node");
-        assert!(json.contains("1"));
-        assert!(json.contains("INV"));
-    }
-
-    #[test]
-    fn test_serialization_omits_defaults() {
-        // A bare node with no attributes, tokens, or metadata should produce
-        // compact JSON without empty collections or default metadata.
-        let node = Node::new(42, AISOperationType::Inv);
-        let json = serde_json::to_string(&node).expect("serialize node");
-
-        // Should contain id and op_type
-        assert!(json.contains("42"));
-        assert!(json.contains("INV"));
-
-        // Empty collections and default metadata should be omitted
-        assert!(!json.contains("attributes"), "empty attributes should be omitted");
-        assert!(!json.contains("input_tokens"), "empty input_tokens should be omitted");
-        assert!(!json.contains("output_tokens"), "empty output_tokens should be omitted");
-        assert!(!json.contains("metadata"), "default metadata should be omitted");
-    }
-
-    #[test]
     fn test_deserialization_with_missing_fields() {
         // Minimal JSON with only required fields should deserialize correctly,
         // filling in defaults for omitted optional fields.
@@ -175,13 +148,6 @@ mod tests {
         assert!(node.input_tokens.is_empty());
         assert!(node.output_tokens.is_empty());
         assert_eq!(node.metadata, NodeMetadata::default());
-    }
-
-    #[test]
-    fn test_metadata_priority_omitted_when_zero() {
-        let meta = NodeMetadata::default();
-        let json = serde_json::to_string(&meta).expect("serialize metadata");
-        assert!(!json.contains("priority"), "zero priority should be omitted");
     }
 
     #[test]

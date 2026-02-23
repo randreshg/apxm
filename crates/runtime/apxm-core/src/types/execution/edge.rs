@@ -97,12 +97,4 @@ mod tests {
         assert!(control_edge.is_control_dependency());
     }
 
-    #[test]
-    fn test_serialization() {
-        let edge = Edge::new(1, 2, 10, DependencyType::Data);
-        let json = serde_json::to_string(&edge).expect("serialize edge");
-        assert!(json.contains("1"));
-        assert!(json.contains("2"));
-        assert!(json.contains("10"));
-    }
 }

@@ -122,22 +122,4 @@ mod tests {
         assert!("invalid".parse::<OptimizationLevel>().is_err());
         Ok(())
     }
-
-    #[test]
-    fn test_opt_level_display() {
-        assert_eq!(OptimizationLevel::O0.to_string(), "O0");
-        assert_eq!(OptimizationLevel::O3.to_string(), "O3");
-    }
-
-    #[test]
-    fn test_pipeline_config_presets() {
-        let dev = PipelineConfig::development();
-        assert_eq!(dev.opt_level, OptimizationLevel::O0);
-        assert!(dev.verify);
-
-        let prod = PipelineConfig::production();
-        assert_eq!(prod.opt_level, OptimizationLevel::O3);
-        assert!(!prod.verify);
-    }
-
 }

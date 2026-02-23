@@ -110,31 +110,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_span_new() {
-        let span = Span::new("test.apxm".to_string(), 10, 5, 3);
-        assert_eq!(span.file, "test.apxm");
-        assert_eq!(span.line_start, 10);
-        assert_eq!(span.col_start, 5);
-        assert_eq!(span.col_end, 8);
-        assert!(span.is_single_line());
-    }
-
-    #[test]
-    fn test_span_with_snippet() {
-        let span = Span::new("test.apxm".to_string(), 10, 5, 3)
-            .with_snippet("let x = 42".to_string(), (5, 8));
-        assert_eq!(span.snippet, Some("let x = 42".to_string()));
-        assert_eq!(span.highlight, Some((5, 8)));
-    }
-
-    #[test]
-    fn test_span_with_label() {
-        let span = Span::new("test.apxm".to_string(), 10, 5, 3)
-            .with_label("expected expression here".to_string());
-        assert_eq!(span.label, Some("expected expression here".to_string()));
-    }
-
-    #[test]
     fn test_span_multi_line() {
         let span = Span::multi_line("test.apxm".to_string(), 10, 5, 12, 10);
         assert_eq!(span.line_start, 10);

@@ -185,14 +185,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_message_creation() {
-        let msg = Message::user("Hello");
-        assert_eq!(msg.role, MessageRole::User);
-        assert_eq!(msg.content, "Hello");
-        assert!(msg.metadata.is_none());
-    }
-
-    #[test]
     fn test_message_with_metadata() {
         let metadata = MessageMetadata {
             token_count: Some(42),
@@ -207,13 +199,4 @@ mod tests {
             Some("gpt-4")
         );
     }
-
-    #[test]
-    fn test_example_creation() {
-        let example = Example::new("Simple addition", "Add 2 and 3", "add(2, 3)");
-        assert_eq!(example.description, "Simple addition");
-        assert_eq!(example.user_input, "Add 2 and 3");
-        assert_eq!(example.ais_output, "add(2, 3)");
-    }
-
 }

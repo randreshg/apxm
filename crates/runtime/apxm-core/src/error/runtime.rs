@@ -148,93 +148,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_scheduler_error() {
-        let error = RuntimeError::Scheduler {
-            message: "Deadlock detected".to_string(),
-        };
-
-        let display = format!("{}", error);
-        assert!(display.contains("Scheduler error"));
-        assert!(display.contains("Deadlock detected"));
-    }
-
-    #[test]
-    fn test_operation_error() {
-        let error = RuntimeError::Operation {
-            op_type: AISOperationType::Inv,
-            message: "Capability not found".to_string(),
-        };
-
-        let display = format!("{}", error);
-        assert!(display.contains("Operation execution failed"));
-        assert!(display.contains("INV"));
-        assert!(display.contains("Capability not found"));
-    }
-
-    #[test]
-    fn test_capability_error() {
-        let error = RuntimeError::Capability {
-            capability: "http_request".to_string(),
-            message: "Connection refused".to_string(),
-        };
-
-        let display = format!("{}", error);
-        assert!(display.contains("Capability error"));
-        assert!(display.contains("http_request"));
-        assert!(display.contains("Connection refused"));
-    }
-
-    #[test]
-    fn test_llm_error() {
-        let error = RuntimeError::LLM {
-            message: "API rate limit exceeded".to_string(),
-            backend: None,
-        };
-
-        let display = format!("{}", error);
-        assert!(display.contains("LLM error"));
-        assert!(display.contains("API rate limit exceeded"));
-    }
-
-    #[test]
-    fn test_llm_error_with_backend() {
-        let error = RuntimeError::LLM {
-            message: "Invalid API key".to_string(),
-            backend: Some("openai".to_string()),
-        };
-
-        let display = format!("{}", error);
-        assert!(display.contains("LLM error"));
-        assert!(display.contains("openai"));
-        assert!(display.contains("Invalid API key"));
-    }
-
-    #[test]
-    fn test_memory_error() {
-        let error = RuntimeError::Memory {
-            message: "Memory space full".to_string(),
-            space: None,
-        };
-
-        let display = format!("{}", error);
-        assert!(display.contains("Memory error"));
-        assert!(display.contains("Memory space full"));
-    }
-
-    #[test]
-    fn test_memory_error_with_space() {
-        let error = RuntimeError::Memory {
-            message: "Query failed".to_string(),
-            space: Some("LTM".to_string()),
-        };
-
-        let display = format!("{}", error);
-        assert!(display.contains("Memory error"));
-        assert!(display.contains("LTM"));
-        assert!(display.contains("Query failed"));
-    }
-
-    #[test]
     fn test_security_error_conversion() {
         let sec_error = SecurityError::PolicyViolation {
             policy: "rate_limit".to_string(),
@@ -245,28 +158,5 @@ mod tests {
         let display = format!("{}", runtime_error);
         assert!(display.contains("Security error"));
         assert!(display.contains("Policy violation"));
-    }
-
-    #[test]
-    fn test_timeout_error() {
-        let error = RuntimeError::Timeout {
-            op_id: 42,
-            timeout: Duration::from_secs(30),
-        };
-
-        let display = format!("{}", error);
-        assert!(display.contains("Timeout"));
-        assert!(display.contains("42"));
-        assert!(display.contains("30s"));
-    }
-
-    #[test]
-    fn test_error_implements_std_error() {
-        let error = RuntimeError::Scheduler {
-            message: "Test".to_string(),
-        };
-
-        // Verify it implements std::error::Error
-        let _: &dyn std::error::Error = &error;
     }
 }

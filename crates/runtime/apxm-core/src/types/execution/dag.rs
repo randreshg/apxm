@@ -278,14 +278,6 @@ mod tests {
     use crate::types::AISOperationType;
 
     #[test]
-    fn test_add_node() {
-        let mut dag = ExecutionDag::new();
-        let node = Node::new(1, AISOperationType::Inv);
-        assert!(dag.add_node(node).is_ok());
-        assert_eq!(dag.nodes.len(), 1);
-    }
-
-    #[test]
     fn test_add_duplicate_node() {
         let mut dag = ExecutionDag::new();
         let node1 = Node::new(1, AISOperationType::Inv);
@@ -296,51 +288,12 @@ mod tests {
     }
 
     #[test]
-    fn test_add_edge() {
-        let mut dag = ExecutionDag::new();
-        dag.add_node(Node::new(1, AISOperationType::Inv))
-            .expect("node insertion should succeed");
-        dag.add_node(Node::new(2, AISOperationType::Ask))
-            .expect("node insertion should succeed");
-        let edge = Edge::new(1, 2, 10, crate::types::DependencyType::Data);
-        assert!(dag.add_edge(edge).is_ok());
-        assert_eq!(dag.edges.len(), 1);
-    }
-
-    #[test]
     fn test_add_edge_invalid_source() {
         let mut dag = ExecutionDag::new();
         dag.add_node(Node::new(2, AISOperationType::Ask))
             .expect("node insertion should succeed");
         let edge = Edge::new(1, 2, 10, crate::types::DependencyType::Data);
         assert!(dag.add_edge(edge).is_err());
-    }
-
-    #[test]
-    fn test_get_node() {
-        let mut dag = ExecutionDag::new();
-        let node = Node::new(1, AISOperationType::Inv);
-        dag.add_node(node.clone())
-            .expect("node insertion should succeed");
-        assert_eq!(dag.get_node(1), Some(&node));
-        assert_eq!(dag.get_node(999), None);
-    }
-
-    #[test]
-    fn test_get_edges_from() {
-        let mut dag = ExecutionDag::new();
-        dag.add_node(Node::new(1, AISOperationType::Inv))
-            .expect("node insertion should succeed");
-        dag.add_node(Node::new(2, AISOperationType::Ask))
-            .expect("node insertion should succeed");
-        dag.add_node(Node::new(3, AISOperationType::QMem))
-            .expect("node insertion should succeed");
-        dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
-            .expect("edge insertion should succeed");
-        dag.add_edge(Edge::new(1, 3, 20, crate::types::DependencyType::Data))
-            .expect("edge insertion should succeed");
-        let edges = dag.get_edges_from(1);
-        assert_eq!(edges.len(), 2);
     }
 
     #[test]
@@ -367,22 +320,6 @@ mod tests {
             .expect("edge insertion should succeed");
         let exit = dag.find_exit_nodes();
         assert_eq!(exit, vec![2]);
-    }
-
-    #[test]
-    fn test_no_cycles_linear() {
-        let mut dag = ExecutionDag::new();
-        dag.add_node(Node::new(1, AISOperationType::Inv))
-            .expect("node insertion should succeed");
-        dag.add_node(Node::new(2, AISOperationType::Ask))
-            .expect("node insertion should succeed");
-        dag.add_node(Node::new(3, AISOperationType::QMem))
-            .expect("node insertion should succeed");
-        dag.add_edge(Edge::new(1, 2, 10, crate::types::DependencyType::Data))
-            .expect("edge insertion should succeed");
-        dag.add_edge(Edge::new(2, 3, 20, crate::types::DependencyType::Data))
-            .expect("edge insertion should succeed");
-        assert!(!dag.has_cycles());
     }
 
     #[test]

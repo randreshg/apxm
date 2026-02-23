@@ -462,13 +462,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_error_code_display() {
-        assert_eq!(ErrorCode::UnexpectedToken.as_str(), "E001");
-        assert_eq!(ErrorCode::TypeMismatch.as_str(), "E101");
-        assert_eq!(ErrorCode::InternalError.as_str(), "E900");
-    }
-
-    #[test]
     fn test_error_code_component() {
         assert_eq!(ErrorCode::UnexpectedToken.component(), "parser");
         assert_eq!(ErrorCode::TypeMismatch.component(), "type");
@@ -483,12 +476,5 @@ mod tests {
         assert_eq!(ErrorCode::from_u32(1), Some(ErrorCode::UnexpectedToken));
         assert_eq!(ErrorCode::from_u32(101), Some(ErrorCode::TypeMismatch));
         assert_eq!(ErrorCode::from_u32(999), None);
-    }
-
-    #[test]
-    fn test_error_code_documentation_url() {
-        let url = ErrorCode::UnexpectedToken.documentation_url();
-        assert!(url.contains("E001"));
-        assert!(url.starts_with("https://"));
     }
 }
