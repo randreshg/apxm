@@ -1,6 +1,6 @@
-use crate::{ApxmGraph, GraphError, OperationType};
+use crate::{ApxmGraph, GraphError};
 use apxm_core::types::{
-    AISOperationType, DependencyType, Edge, Node,
+    DependencyType, Edge, Node,
     execution::{DagMetadata, ExecutionDag, FlowParameter},
 };
 use std::collections::HashMap;
@@ -12,7 +12,7 @@ pub fn lower_to_execution_dag(graph: &ApxmGraph) -> Result<ExecutionDag, GraphEr
         .nodes
         .iter()
         .map(|graph_node| {
-            let mut node = Node::new(graph_node.id, map_operation(&graph_node.op));
+            let mut node = Node::new(graph_node.id, graph_node.op);
             node.attributes = graph_node.attributes.clone();
             node
         })
@@ -89,26 +89,6 @@ pub fn lower_to_execution_dag(graph: &ApxmGraph) -> Result<ExecutionDag, GraphEr
                 .collect(),
         },
     })
-}
-
-fn map_operation(op: &OperationType) -> AISOperationType {
-    match op {
-        OperationType::Ask => AISOperationType::Ask,
-        OperationType::Think => AISOperationType::Think,
-        OperationType::Reason => AISOperationType::Reason,
-        OperationType::QueryMemory => AISOperationType::QMem,
-        OperationType::UpdateMemory => AISOperationType::UMem,
-        OperationType::Invoke => AISOperationType::Inv,
-        OperationType::Branch => AISOperationType::BranchOnValue,
-        OperationType::Switch => AISOperationType::Switch,
-        OperationType::WaitAll => AISOperationType::WaitAll,
-        OperationType::Merge => AISOperationType::Merge,
-        OperationType::Fence => AISOperationType::Fence,
-        OperationType::Plan => AISOperationType::Plan,
-        OperationType::Reflect => AISOperationType::Reflect,
-        OperationType::Verify => AISOperationType::Verify,
-        OperationType::Const => AISOperationType::ConstStr,
-    }
 }
 
 fn map_dependency(dependency: &DependencyType) -> DependencyType {

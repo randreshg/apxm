@@ -1,7 +1,13 @@
 //! APxM Prompt Template Library
 //!
-//! This crate provides compile-time embedded prompt templates with zero runtime I/O.
-//! Templates are embedded via `include_dir!` and rendered with MiniJinja.
+//! This crate provides compile-time embedded prompt templates with zero runtime I/O
+//! by default, and optional filesystem overrides for customization.
+//!
+//! ## Override precedence (highest to lowest)
+//!
+//! 1. **Project overrides** (`.apxm/prompts/`) - project-specific customization
+//! 2. **User overrides** (`~/.apxm/prompts/`) - user-global customization
+//! 3. **Embedded templates** (compiled into binary) - default fallback
 //!
 //! ## Template naming
 //!
@@ -25,7 +31,8 @@ use include_dir::{Dir, include_dir};
 use minijinja::{Environment, Error as MiniJinjaError, Value as MJValue};
 use once_cell::sync::Lazy;
 use serde::Serialize;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 /// Embedded prompts directory (compile-time inclusion; no runtime filesystem access).
 static PROMPTS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/prompts");
@@ -94,41 +101,24 @@ fn render_from_env<T: Serialize>(
 fn build_environment() -> Environment<'static> {
     let mut env = configured_env();
 
-    // Collect registration state so we can fail loudly if anything goes wrong.
+    // Collect all templates: embedded first, then filesystem overrides.
+    let mut templates: HashMap<String, String> = HashMap::new();
+
+    // 1. Load embedded templates (lowest priority).
     let mut registration_failures: Vec<String> = Vec::new();
-    let mut added_names: Vec<String> = Vec::new();
 
     for file in PROMPTS_DIR.files() {
         let path = file.path();
         let name = template_key(path);
 
-        let source = match std::str::from_utf8(file.contents()) {
-            Ok(s) => s.to_owned(),
+        match std::str::from_utf8(file.contents()) {
+            Ok(s) => {
+                templates.insert(name, s.to_owned());
+            }
             Err(e) => {
                 let msg = format!(
                     "Prompt template is not valid UTF-8: name={:?} path={:?} err={}",
                     name, path, e
-                );
-                // Log for debugging and record as a failure so initialization is fatal.
-                log_error!("prompts", "{}", msg);
-                registration_failures.push(msg);
-                continue;
-            }
-        };
-
-        // Leak name and source to `'static` so MiniJinja's Environment can store references.
-        let name_static: &'static str = Box::leak(name.clone().into_boxed_str());
-        let source_static: &'static str = Box::leak(source.into_boxed_str());
-
-        // Attempt to register the template. Record any failure.
-        match env.add_template(name_static, source_static) {
-            Ok(()) => {
-                added_names.push(name);
-            }
-            Err(e) => {
-                let msg = format!(
-                    "Failed to register prompt template: path={:?} err={}",
-                    path, e
                 );
                 log_error!("prompts", "{}", msg);
                 registration_failures.push(msg);
@@ -136,7 +126,43 @@ fn build_environment() -> Environment<'static> {
         }
     }
 
-    // Ensure every embedded file was successfully registered. Compute missing names deterministically.
+    // 2. Load user overrides (~/.apxm/prompts/) - overrides embedded.
+    if let Some(user_dir) = user_prompts_dir() {
+        if user_dir.is_dir() {
+            load_filesystem_prompts(&user_dir, &mut templates);
+        }
+    }
+
+    // 3. Load project overrides (.apxm/prompts/) - highest priority.
+    if let Some(project_dir) = project_prompts_dir() {
+        if project_dir.is_dir() {
+            load_filesystem_prompts(&project_dir, &mut templates);
+        }
+    }
+
+    // Register all templates into the MiniJinja environment.
+    let mut added_names: Vec<String> = Vec::new();
+
+    for (name, source) in &templates {
+        let name_static: &'static str = Box::leak(name.clone().into_boxed_str());
+        let source_static: &'static str = Box::leak(source.clone().into_boxed_str());
+
+        match env.add_template(name_static, source_static) {
+            Ok(()) => {
+                added_names.push(name.clone());
+            }
+            Err(e) => {
+                let msg = format!(
+                    "Failed to register prompt template: name={:?} err={}",
+                    name, e
+                );
+                log_error!("prompts", "{}", msg);
+                registration_failures.push(msg);
+            }
+        }
+    }
+
+    // Ensure every embedded file was successfully registered.
     let mut missing: Vec<String> = Vec::new();
     for file in PROMPTS_DIR.files() {
         let key = template_key(file.path());
@@ -145,7 +171,6 @@ fn build_environment() -> Environment<'static> {
         }
     }
 
-    // If there were any failures or missing templates, fail fast with a clear diagnostic.
     if !registration_failures.is_empty() || !missing.is_empty() {
         let mut err = String::from("Prompt template registration failed during initialization.");
         if !registration_failures.is_empty() {
@@ -160,11 +185,61 @@ fn build_environment() -> Environment<'static> {
                 err.push_str(&format!("\n  - {}", m));
             }
         }
-        // Panic at startup so template issues are caught immediately and deterministically.
         panic!("{}", err);
     }
 
     env
+}
+
+/// Load prompt templates from a filesystem directory, recursively.
+fn load_filesystem_prompts(dir: &Path, templates: &mut HashMap<String, String>) {
+    load_filesystem_prompts_recursive(dir, dir, templates);
+}
+
+fn load_filesystem_prompts_recursive(
+    root: &Path,
+    dir: &Path,
+    templates: &mut HashMap<String, String>,
+) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            load_filesystem_prompts_recursive(root, &path, templates);
+        } else if path.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                let rel = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy();
+                let name = template_key(Path::new(rel.as_ref()));
+                templates.insert(name, content);
+            }
+        }
+    }
+}
+
+/// Find the project prompts directory by walking up from CWD.
+fn project_prompts_dir() -> Option<PathBuf> {
+    let mut current = std::env::current_dir().ok()?;
+    loop {
+        let candidate = current.join(".apxm").join("prompts");
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+        if !current.pop() {
+            return None;
+        }
+    }
+}
+
+/// Get the user prompts directory.
+fn user_prompts_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| home.join(".apxm").join("prompts"))
 }
 
 fn configured_env() -> Environment<'static> {
@@ -233,7 +308,6 @@ mod tests {
 
     #[test]
     fn list_prompts_is_stable() {
-        // Validates behavior, not contents (depends on embedded test fixtures).
         let _ = list_prompts();
     }
 }

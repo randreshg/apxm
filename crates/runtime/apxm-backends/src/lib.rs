@@ -38,6 +38,8 @@ pub use llm::{
     AggregatedMetrics,
     // Backend traits and types
     AnthropicModel,
+    // Factory
+    BackendFactory,
     // Retry logic
     ErrorClass,
     GenerationConfig,
@@ -58,6 +60,7 @@ pub use llm::{
     // Provider management
     Provider,
     ProviderId,
+    RegisteredProvider,
     RequestBuilder,
     RequestMetrics,
     RequestTracer,

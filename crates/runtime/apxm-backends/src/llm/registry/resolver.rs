@@ -5,7 +5,6 @@
 
 use super::health::{HealthMonitor, HealthStatus};
 use crate::llm::backends::{LLMBackend, LLMRequest};
-use crate::llm::provider::Provider;
 use anyhow::Result;
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -49,7 +48,7 @@ impl SelectionCriteria {
 /// Resolve which backend to use for a request.
 pub fn resolve(
     criteria: &SelectionCriteria,
-    backends: &Arc<DashMap<String, Arc<Provider>>>,
+    backends: &Arc<DashMap<String, Arc<dyn LLMBackend>>>,
     operation_defaults: &Arc<DashMap<String, String>>,
     default_backend: &Arc<RwLock<Option<String>>>,
     health_monitor: &HealthMonitor,
@@ -96,7 +95,7 @@ pub fn resolve(
 
 /// Find a backend that supports the given model.
 fn find_backend_for_model(
-    backends: &Arc<DashMap<String, Arc<Provider>>>,
+    backends: &Arc<DashMap<String, Arc<dyn LLMBackend>>>,
     model: &str,
 ) -> Option<String> {
     // Try exact model match first
@@ -133,7 +132,7 @@ fn find_backend_for_model(
 
 /// Select a backend based on routing strategy.
 fn select_by_strategy(
-    backends: &Arc<DashMap<String, Arc<Provider>>>,
+    backends: &Arc<DashMap<String, Arc<dyn LLMBackend>>>,
     health_monitor: &HealthMonitor,
     strategy: &RoutingStrategy,
 ) -> Result<String> {
@@ -150,7 +149,7 @@ fn select_by_strategy(
 
 /// Select the first healthy backend.
 fn select_first_healthy(
-    backends: &Arc<DashMap<String, Arc<Provider>>>,
+    backends: &Arc<DashMap<String, Arc<dyn LLMBackend>>>,
     health_monitor: &HealthMonitor,
 ) -> Result<String> {
     // Try to find a healthy backend
@@ -173,11 +172,7 @@ fn select_first_healthy(
         }
     }
 
-    // Last resort: return any backend (handle defensively)
-    //
-    // In practice the caller should ensure `backends` is non-empty. Still,
-    // avoid `unwrap()` here and return an explicit error if something
-    // unexpected happens.
+    // Last resort: return any backend
     if let Some(entry) = backends.iter().next() {
         Ok(entry.key().clone())
     } else {
@@ -186,19 +181,16 @@ fn select_first_healthy(
 }
 
 /// Select backend using round-robin (simplified: just pick first healthy).
-/// A full implementation would maintain a counter.
 fn select_round_robin(
-    backends: &Arc<DashMap<String, Arc<Provider>>>,
+    backends: &Arc<DashMap<String, Arc<dyn LLMBackend>>>,
     health_monitor: &HealthMonitor,
 ) -> Result<String> {
-    // For now, use same logic as FirstHealthy
-    // A full implementation would track the last used index
     select_first_healthy(backends, health_monitor)
 }
 
 /// Select backend with lowest average latency.
 fn select_low_latency(
-    backends: &Arc<DashMap<String, Arc<Provider>>>,
+    backends: &Arc<DashMap<String, Arc<dyn LLMBackend>>>,
     health_monitor: &HealthMonitor,
 ) -> Result<String> {
     let mut best_backend: Option<(String, std::time::Duration)> = None;
@@ -207,7 +199,6 @@ fn select_low_latency(
         let name = entry.key().clone();
         let status = health_monitor.status(&name);
 
-        // Skip unhealthy backends
         if status == HealthStatus::Unhealthy {
             continue;
         }
@@ -229,7 +220,6 @@ fn select_low_latency(
     if let Some((name, _)) = best_backend {
         Ok(name)
     } else {
-        // No latency data, fall back to first healthy
         select_first_healthy(backends, health_monitor)
     }
 }
@@ -245,7 +235,6 @@ mod tests {
 
     #[test]
     fn test_model_matching() {
-        // Test provider detection from model names
         assert!("gpt-4".starts_with("gpt-"));
         assert!("claude-3-opus".starts_with("claude-"));
         assert!("gemini-pro".starts_with("gemini-"));

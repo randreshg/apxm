@@ -1,4 +1,5 @@
-use crate::{ApxmGraph, GraphError, GraphNode, OperationType};
+use crate::{ApxmGraph, GraphError, GraphNode};
+use apxm_core::types::AISOperationType;
 use apxm_core::types::{Number, Value};
 use std::collections::{BTreeSet, HashMap};
 
@@ -250,7 +251,7 @@ fn emit_node(
     inputs: Vec<MlirValueRef>,
 ) -> Result<Option<MlirValueRef>, GraphError> {
     match node.op {
-        OperationType::Const => {
+        AISOperationType::ConstStr => {
             let value = get_string_attr(
                 &node.attributes,
                 &["value", "text", "const", "template_str", "prompt"],
@@ -271,7 +272,7 @@ fn emit_node(
                 ty: MlirValueType::Token,
             }))
         }
-        OperationType::Ask => {
+        AISOperationType::Ask => {
             let template = get_non_empty_template(&node.attributes);
             let result = format!("%n{}", node.id);
             let attrs = extra_attr_dict(&node.attributes, &["template_str", "prompt"]);
@@ -287,7 +288,7 @@ fn emit_node(
                 ty: MlirValueType::Token,
             }))
         }
-        OperationType::Think => {
+        AISOperationType::Think => {
             let template = get_non_empty_template(&node.attributes);
             let result = format!("%n{}", node.id);
             let attrs = extra_attr_dict(&node.attributes, &["template_str", "prompt"]);
@@ -303,7 +304,7 @@ fn emit_node(
                 ty: MlirValueType::Token,
             }))
         }
-        OperationType::Reason => {
+        AISOperationType::Reason => {
             let template = get_non_empty_template(&node.attributes);
             let result = format!("%n{}", node.id);
             let attrs = extra_attr_dict(&node.attributes, &["template_str", "prompt"]);
@@ -319,7 +320,7 @@ fn emit_node(
                 ty: MlirValueType::Token,
             }))
         }
-        OperationType::QueryMemory => {
+        AISOperationType::QMem => {
             let query = get_string_attr(&node.attributes, &["query"]).unwrap_or_default();
             let sid = get_string_attr(&node.attributes, &["sid", "stage", "scope"])
                 .unwrap_or_else(|| "default".to_string());
@@ -360,7 +361,7 @@ fn emit_node(
                 ty: MlirValueType::Handle { space },
             }))
         }
-        OperationType::UpdateMemory => {
+        AISOperationType::UMem => {
             let space = normalize_memory_space(
                 &get_string_attr(&node.attributes, &["space", "memory_tier"])
                     .unwrap_or_else(|| "stm".to_string()),
@@ -381,7 +382,7 @@ fn emit_node(
             ));
             Ok(None)
         }
-        OperationType::Invoke => {
+        AISOperationType::Inv => {
             let capability = get_string_attr(&node.attributes, &["capability"])
                 .unwrap_or_else(|| "unknown_capability".to_string());
             let params_json = get_string_attr(&node.attributes, &["params_json"])
@@ -399,7 +400,7 @@ fn emit_node(
                 ty: MlirValueType::Token,
             }))
         }
-        OperationType::Branch => {
+        AISOperationType::BranchOnValue => {
             let mut condition = if let Some(input) = inputs.first() {
                 input.clone()
             } else {
@@ -425,7 +426,7 @@ fn emit_node(
             ));
             Ok(None)
         }
-        OperationType::Switch => {
+        AISOperationType::Switch => {
             let discriminant = if let Some(input) = inputs.first() {
                 ensure_token(state, input.clone())?
             } else {
@@ -468,7 +469,7 @@ fn emit_node(
                 ty: MlirValueType::Token,
             }))
         }
-        OperationType::WaitAll => {
+        AISOperationType::WaitAll => {
             let tokens = inputs
                 .into_iter()
                 .map(|value| ensure_token(state, value))
@@ -497,7 +498,7 @@ fn emit_node(
                 ty: MlirValueType::Token,
             }))
         }
-        OperationType::Merge => {
+        AISOperationType::Merge => {
             let tokens = inputs
                 .into_iter()
                 .map(|value| ensure_token(state, value))
@@ -523,12 +524,12 @@ fn emit_node(
                 ty: MlirValueType::Token,
             }))
         }
-        OperationType::Fence => {
+        AISOperationType::Fence => {
             let attrs = extra_attr_dict(&node.attributes, &[]);
             state.emit(format!("    ais.fence{attrs}"));
             Ok(None)
         }
-        OperationType::Plan => {
+        AISOperationType::Plan => {
             let goal =
                 get_string_attr(&node.attributes, &["goal"]).unwrap_or_else(|| "goal".to_string());
             let attrs = extra_attr_dict(&node.attributes, &["goal"]);
@@ -546,7 +547,7 @@ fn emit_node(
                 ty: MlirValueType::Goal,
             }))
         }
-        OperationType::Reflect => {
+        AISOperationType::Reflect => {
             let trace_id = get_string_attr(&node.attributes, &["trace_id", "trace"])
                 .unwrap_or_else(|| "trace".to_string());
             let attrs = extra_attr_dict(&node.attributes, &["trace_id", "trace"]);
@@ -564,7 +565,7 @@ fn emit_node(
                 ty: MlirValueType::Token,
             }))
         }
-        OperationType::Verify => {
+        AISOperationType::Verify => {
             let template = get_string_attr(&node.attributes, &["template_str", "prompt"])
                 .unwrap_or_else(|| "Verify claim against evidence".to_string());
             let attrs = extra_attr_dict(&node.attributes, &["template_str", "prompt"]);
@@ -595,6 +596,10 @@ fn emit_node(
                 ty: MlirValueType::Token,
             }))
         }
+        unsupported => Err(GraphError::Lowering(format!(
+            "unsupported operation '{}' in MLIR lowering",
+            unsupported
+        ))),
     }
 }
 
@@ -879,7 +884,7 @@ mod tests {
                 GraphNode {
                     id: 1,
                     name: "seed".to_string(),
-                    op: OperationType::Const,
+                    op: AISOperationType::ConstStr,
                     attributes: HashMap::from([(
                         "value".to_string(),
                         Value::String("hello".to_string()),
@@ -888,7 +893,7 @@ mod tests {
                 GraphNode {
                     id: 2,
                     name: "ask".to_string(),
-                    op: OperationType::Ask,
+                    op: AISOperationType::Ask,
                     attributes: HashMap::from([(
                         "template_str".to_string(),
                         Value::String("Summarize {0}".to_string()),
@@ -918,7 +923,7 @@ mod tests {
             nodes: vec![GraphNode {
                 id: 1,
                 name: "ask".to_string(),
-                op: OperationType::Ask,
+                op: AISOperationType::Ask,
                 attributes: HashMap::from([
                     (
                         "template_str".to_string(),
@@ -952,7 +957,7 @@ mod tests {
                 GraphNode {
                     id: 1,
                     name: "input".to_string(),
-                    op: OperationType::Const,
+                    op: AISOperationType::ConstStr,
                     attributes: HashMap::from([(
                         "value".to_string(),
                         Value::String("technical".to_string()),
@@ -961,7 +966,7 @@ mod tests {
                 GraphNode {
                     id: 2,
                     name: "route".to_string(),
-                    op: OperationType::Switch,
+                    op: AISOperationType::Switch,
                     attributes: HashMap::new(),
                 },
             ],

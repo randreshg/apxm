@@ -150,6 +150,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "dashmap",
+ "dirs 5.0.1",
  "envy",
  "fastembed",
  "governor",

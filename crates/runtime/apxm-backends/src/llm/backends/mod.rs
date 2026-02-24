@@ -23,13 +23,14 @@ pub use request::{GenerationConfig, LLMRequest, RequestBuilder, ToolChoice, Tool
 pub use response::{LLMResponse, TokenUsage};
 pub use traits::LLMBackend;
 
+use apxm_core::types::ProviderProtocol;
 use std::sync::Arc;
 
 /// Factory for creating LLM backends from provider configuration.
 pub struct BackendFactory;
 
 impl BackendFactory {
-    /// Create a backend from provider type and API key.
+    /// Create a backend from provider name (string) and API key.
     pub async fn create(
         provider: &str,
         api_key: &str,
@@ -56,6 +57,36 @@ impl BackendFactory {
                 "Unknown provider: {}. Supported: openai, anthropic, google, ollama",
                 provider
             )),
+        }
+    }
+
+    /// Create a backend from a `ProviderProtocol`.
+    ///
+    /// This is the data-driven alternative — routes by protocol enum
+    /// instead of string matching. Useful for custom providers that use
+    /// an existing protocol (e.g., OpenRouter via `ProviderProtocol::OpenAI`).
+    pub async fn create_from_protocol(
+        protocol: ProviderProtocol,
+        api_key: &str,
+        config: Option<serde_json::Value>,
+    ) -> anyhow::Result<Arc<dyn LLMBackend>> {
+        match protocol {
+            ProviderProtocol::OpenAI => {
+                let backend = openai::OpenAIBackend::new(api_key, config).await?;
+                Ok(Arc::new(backend))
+            }
+            ProviderProtocol::Anthropic => {
+                let backend = anthropic::AnthropicBackend::new(api_key, config).await?;
+                Ok(Arc::new(backend))
+            }
+            ProviderProtocol::Google => {
+                let backend = google::GoogleBackend::new(api_key, config).await?;
+                Ok(Arc::new(backend))
+            }
+            ProviderProtocol::Ollama => {
+                let backend = ollama::OllamaBackend::new(api_key, config).await?;
+                Ok(Arc::new(backend))
+            }
         }
     }
 

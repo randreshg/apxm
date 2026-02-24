@@ -6,7 +6,6 @@
 #[cfg(feature = "metrics")]
 use crate::llm::RequestMetrics;
 use crate::llm::backends::{LLMBackend, LLMRequest, LLMResponse};
-use crate::llm::provider::Provider;
 use anyhow::{Context as AnyhowContext, Result};
 #[cfg(feature = "metrics")]
 use apxm_core::types::TokenUsage;
@@ -22,10 +21,13 @@ pub use health::{HealthMonitor, HealthStatus};
 pub use resolver::{RoutingStrategy, SelectionCriteria};
 
 /// LLM Registry manages multiple backends with routing and fallback.
+///
+/// Backends are stored as `Arc<dyn LLMBackend>`, allowing both enum-based
+/// `Provider` instances and custom trait implementations to be registered.
 #[derive(Clone)]
 pub struct LLMRegistry {
     /// Registered backends by name
-    backends: Arc<DashMap<String, Arc<Provider>>>,
+    backends: Arc<DashMap<String, Arc<dyn LLMBackend>>>,
     /// Default backend name
     default_backend: Arc<parking_lot::RwLock<Option<String>>>,
     /// Operation-specific backend defaults
@@ -76,16 +78,31 @@ impl LLMRegistry {
     }
 
     /// Register a backend with a given name.
-    pub fn register(&self, name: impl Into<String>, backend: Provider) -> Result<()> {
+    ///
+    /// Accepts any type implementing `LLMBackend` (including `Provider` enum).
+    pub fn register(
+        &self,
+        name: impl Into<String>,
+        backend: impl LLMBackend + 'static,
+    ) -> Result<()> {
         let name = name.into();
-        let backend = Arc::new(backend);
+        let backend: Arc<dyn LLMBackend> = Arc::new(backend);
 
-        // Register backend
-        self.backends.insert(name.clone(), backend.clone());
-
-        // Initialize health tracking
+        self.backends.insert(name.clone(), backend);
         self.health_monitor.register_backend(&name);
 
+        Ok(())
+    }
+
+    /// Register a pre-wrapped `Arc<dyn LLMBackend>`.
+    pub fn register_arc(
+        &self,
+        name: impl Into<String>,
+        backend: Arc<dyn LLMBackend>,
+    ) -> Result<()> {
+        let name = name.into();
+        self.backends.insert(name.clone(), backend);
+        self.health_monitor.register_backend(&name);
         Ok(())
     }
 
@@ -159,7 +176,7 @@ impl LLMRegistry {
     }
 
     /// Get backend by name.
-    pub fn get_backend(&self, name: &str) -> Option<Arc<Provider>> {
+    pub fn get_backend(&self, name: &str) -> Option<Arc<dyn LLMBackend>> {
         self.backends.get(name).map(|entry| entry.value().clone())
     }
 
@@ -323,10 +340,24 @@ mod tests {
     async fn test_registry_registration() -> Result<(), Box<dyn std::error::Error>> {
         let registry = LLMRegistry::new();
 
-        // Mock backend (would need real API key for actual test)
+        // Register using Provider enum (backward compatible)
         let backend = Provider::OpenAI(OpenAIBackend::new("test-key", None).await?);
-
         registry.register("test", backend)?;
+
+        assert_eq!(registry.backend_names(), vec!["test"]);
+        assert!(registry.get_backend("test").is_some());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_registry_register_arc() -> Result<(), Box<dyn std::error::Error>> {
+        let registry = LLMRegistry::new();
+
+        // Register using Arc<dyn LLMBackend>
+        let backend: Arc<dyn LLMBackend> =
+            Arc::new(OpenAIBackend::new("test-key", None).await?);
+        registry.register_arc("test", backend)?;
 
         assert_eq!(registry.backend_names(), vec!["test"]);
         assert!(registry.get_backend("test").is_some());

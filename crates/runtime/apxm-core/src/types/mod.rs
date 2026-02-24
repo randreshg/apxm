@@ -10,6 +10,7 @@ pub mod identifiers;
 pub mod intents;
 pub mod models;
 pub mod operations;
+pub mod provider_spec;
 pub mod session;
 pub mod values;
 
@@ -43,3 +44,7 @@ pub use session::{Example, Message, MessageMetadata, MessageRole};
 pub use values::{Number, Token, TokenId, TokenStatus, Value};
 
 pub use config::InstructionConfig;
+pub use provider_spec::{
+    BuiltinProviderSpec, ProviderProtocol, ProviderSpec, BUILTIN_PROVIDERS,
+    resolve_builtin_provider, resolve_provider_spec,
+};

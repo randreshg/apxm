@@ -1,14 +1,16 @@
 //! Provider enum for unified backend access.
 //!
-//! Provides an enum-based dispatch system similar to Zed's architecture.
+//! Provides both an enum-based dispatch system and a data-driven
+//! [`RegisteredProvider`] for extensible provider management.
 
 use crate::llm::backends::{
     AnthropicBackend, GoogleBackend, LLMBackend, LLMRequest, LLMResponse, OllamaBackend,
     OpenAIBackend,
 };
-use apxm_core::types::{ModelCapabilities, ModelInfo};
+use apxm_core::types::{ModelCapabilities, ModelInfo, ProviderProtocol, ProviderSpec};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Unified provider enum containing all supported backends.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -26,6 +28,16 @@ impl ProviderId {
             ProviderId::Anthropic => "anthropic",
             ProviderId::Google => "google",
             ProviderId::Ollama => "ollama",
+        }
+    }
+
+    /// Convert to a `ProviderProtocol`.
+    pub fn to_protocol(&self) -> ProviderProtocol {
+        match self {
+            ProviderId::OpenAI => ProviderProtocol::OpenAI,
+            ProviderId::Anthropic => ProviderProtocol::Anthropic,
+            ProviderId::Google => ProviderProtocol::Google,
+            ProviderId::Ollama => ProviderProtocol::Ollama,
         }
     }
 }
@@ -72,6 +84,31 @@ impl Provider {
             )),
             ProviderId::Google => Ok(Provider::Google(GoogleBackend::new(api_key, config).await?)),
             ProviderId::Ollama => Ok(Provider::Ollama(OllamaBackend::new(api_key, config).await?)),
+        }
+    }
+
+    /// Create a provider from a `ProviderProtocol`.
+    ///
+    /// This is the data-driven alternative to `new()` — routes by protocol instead
+    /// of enum variant, supporting custom/OpenAI-compatible providers.
+    pub async fn from_protocol(
+        protocol: ProviderProtocol,
+        api_key: &str,
+        config: Option<serde_json::Value>,
+    ) -> anyhow::Result<Self> {
+        match protocol {
+            ProviderProtocol::OpenAI => {
+                Ok(Provider::OpenAI(OpenAIBackend::new(api_key, config).await?))
+            }
+            ProviderProtocol::Anthropic => Ok(Provider::Anthropic(
+                AnthropicBackend::new(api_key, config).await?,
+            )),
+            ProviderProtocol::Google => {
+                Ok(Provider::Google(GoogleBackend::new(api_key, config).await?))
+            }
+            ProviderProtocol::Ollama => {
+                Ok(Provider::Ollama(OllamaBackend::new(api_key, config).await?))
+            }
         }
     }
 
@@ -143,6 +180,35 @@ impl LLMBackend for Provider {
     }
 }
 
+/// A provider instance paired with its metadata.
+///
+/// This is the data-driven alternative to the `Provider` enum, allowing
+/// registration of custom/third-party providers without adding enum variants.
+pub struct RegisteredProvider {
+    /// Provider metadata (protocol, API key env var, etc.).
+    pub spec: ProviderSpec,
+    /// The actual backend implementation.
+    pub backend: Arc<dyn LLMBackend>,
+}
+
+impl RegisteredProvider {
+    /// Create a registered provider from a spec and backend.
+    pub fn new(spec: ProviderSpec, backend: Arc<dyn LLMBackend>) -> Self {
+        Self { spec, backend }
+    }
+
+    /// Create a registered provider by resolving a `ProviderSpec` and building the backend.
+    pub async fn from_spec(
+        spec: ProviderSpec,
+        api_key: &str,
+        config: Option<serde_json::Value>,
+    ) -> anyhow::Result<Self> {
+        let provider = Provider::from_protocol(spec.protocol, api_key, config).await?;
+        let backend: Arc<dyn LLMBackend> = Arc::new(provider);
+        Ok(Self { spec, backend })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,5 +230,16 @@ mod tests {
         assert_eq!(ProviderId::Anthropic.as_str(), "anthropic");
         assert_eq!(ProviderId::Google.as_str(), "google");
         assert_eq!(ProviderId::Ollama.as_str(), "ollama");
+    }
+
+    #[test]
+    fn test_provider_id_to_protocol() {
+        assert_eq!(ProviderId::OpenAI.to_protocol(), ProviderProtocol::OpenAI);
+        assert_eq!(
+            ProviderId::Anthropic.to_protocol(),
+            ProviderProtocol::Anthropic
+        );
+        assert_eq!(ProviderId::Google.to_protocol(), ProviderProtocol::Google);
+        assert_eq!(ProviderId::Ollama.to_protocol(), ProviderProtocol::Ollama);
     }
 }

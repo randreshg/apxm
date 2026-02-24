@@ -1,4 +1,4 @@
-use apxm_core::types::{DependencyType, Value, execution::ExecutionDag};
+use apxm_core::types::{AISOperationType, DependencyType, Value, execution::ExecutionDag};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -38,28 +38,9 @@ pub struct ApxmGraph {
 pub struct GraphNode {
     pub id: u64,
     pub name: String,
-    pub op: OperationType,
+    pub op: AISOperationType,
     #[serde(default)]
     pub attributes: HashMap<String, Value>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum OperationType {
-    Ask,
-    Think,
-    Reason,
-    QueryMemory,
-    UpdateMemory,
-    Invoke,
-    Branch,
-    Switch,
-    WaitAll,
-    Merge,
-    Fence,
-    Plan,
-    Reflect,
-    Verify,
-    Const,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -121,7 +102,7 @@ mod tests {
                 GraphNode {
                     id: 1,
                     name: "start".to_string(),
-                    op: OperationType::Const,
+                    op: AISOperationType::ConstStr,
                     attributes: HashMap::from([(
                         "value".to_string(),
                         Value::String("hello".to_string()),
@@ -130,7 +111,7 @@ mod tests {
                 GraphNode {
                     id: 2,
                     name: "ask".to_string(),
-                    op: OperationType::Ask,
+                    op: AISOperationType::Ask,
                     attributes: HashMap::from([(
                         "template_str".to_string(),
                         Value::String("Summarize {0}".to_string()),
@@ -163,7 +144,7 @@ mod tests {
         let json = r#"{
           "name": "contract_graph",
           "nodes": [
-            { "id": 1, "name": "ask", "op": "Ask", "attributes": { "template_str": "{0}" } }
+            { "id": 1, "name": "ask", "op": "ASK", "attributes": { "template_str": "{0}" } }
           ],
           "edges": []
         }"#;
@@ -178,8 +159,8 @@ mod tests {
         let json = r#"{
           "name": "invalid_graph",
           "nodes": [
-            { "id": 1, "name": "a", "op": "Const", "attributes": { "value": "x" } },
-            { "id": 1, "name": "b", "op": "Ask", "attributes": { "template_str": "{0}" } }
+            { "id": 1, "name": "a", "op": "CONST_STR", "attributes": { "value": "x" } },
+            { "id": 1, "name": "b", "op": "ASK", "attributes": { "template_str": "{0}" } }
           ],
           "edges": [],
           "parameters": [],

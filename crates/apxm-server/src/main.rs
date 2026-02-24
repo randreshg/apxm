@@ -5,7 +5,8 @@ use std::sync::Arc;
 use apxm_artifact::{Artifact, ArtifactMetadata};
 use apxm_core::error::RuntimeError;
 use apxm_core::types::values::Value;
-use apxm_graph::{ApxmGraph, OperationType};
+use apxm_core::types::AISOperationType;
+use apxm_graph::ApxmGraph;
 use apxm_runtime::capability::executor::{CapabilityExecutor, CapabilityResult};
 use apxm_runtime::capability::metadata::CapabilityMetadata;
 use apxm_runtime::executor::ExecutionEventEmitter;
@@ -334,7 +335,7 @@ fn apply_runtime_attributes(
     max_schema_retries: Option<u32>,
 ) -> Result<(), String> {
     for node in &mut graph.nodes {
-        if node.op != OperationType::Ask {
+        if node.op != AISOperationType::Ask {
             continue;
         }
         if let Some(budget) = token_budget {
