@@ -1,0 +1,40 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "A-PXM",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Overview",
+        "groups": [
+          { "group": "Introduction", "pages": ["overview", "the-problem", "architecture"] },
+          { "group": "Core Concepts", "pages": ["concepts/aam", "concepts/ais", "concepts/dataflow-execution", "concepts/codelets"] }
+        ]
+      },
+      {
+        "tab": "Agent Instruction Set",
+        "groups": [
+          { "group": "Operations", "pages": ["ais/memory-ops", "ais/llm-ops", "ais/tool-ops", "ais/control-flow", "ais/sync-ops", "ais/communication"] }
+        ]
+      },
+      {
+        "tab": "Compiler",
+        "groups": [
+          { "group": "Pipeline", "pages": ["compiler/overview", "compiler/optimization-passes", "compiler/artifact-format"] }
+        ]
+      },
+      {
+        "tab": "Runtime",
+        "groups": [
+          { "group": "Scheduler", "pages": ["runtime/dataflow-scheduler", "runtime/memory-hierarchy", "runtime/multi-agent"] }
+        ]
+      },
+      {
+        "tab": "Evaluation",
+        "groups": [
+          { "group": "Results", "pages": ["evaluation/overview"] }
+        ]
+      }
+    ]
+  }
+}
