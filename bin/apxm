@@ -9,6 +9,42 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 PYTHON_CLI="${REPO_ROOT}/tools/apxm_cli.py"
 CACHE_FILE="${SCRIPT_DIR}/.python-cache"
 
+find_conda_apxm_env() {
+    for cmd in mamba conda; do
+        if command -v $cmd &>/dev/null; then
+            local env_path
+            env_path=$($cmd info --envs 2>/dev/null | grep "^apxm " | awk '{print $NF}')
+            if [[ -n "$env_path" && -d "$env_path" ]]; then
+                echo "$env_path"
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+# `activate` needs to print shell exports; the Python CLI wrapper does not expose it.
+if [[ "$1" == "activate" ]]; then
+    APXM_ENV=$(find_conda_apxm_env) || {
+        echo "Error: conda environment 'apxm' not found."
+        echo "Create it first: mamba env create -f environment.yaml"
+        exit 1
+    }
+
+    echo "export CONDA_PREFIX=${APXM_ENV}"
+    echo "export MLIR_DIR=${APXM_ENV}/lib/cmake/mlir"
+    echo "export LLVM_DIR=${APXM_ENV}/lib/cmake/llvm"
+    echo "export MLIR_PREFIX=${APXM_ENV}"
+    echo "export LLVM_PREFIX=${APXM_ENV}"
+    echo "export PATH=${APXM_ENV}/bin:\$PATH"
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        echo "export DYLD_LIBRARY_PATH=${APXM_ENV}/lib:\${DYLD_LIBRARY_PATH}"
+    else
+        echo "export LD_LIBRARY_PATH=${APXM_ENV}/lib:\${LD_LIBRARY_PATH}"
+    fi
+    exit 0
+fi
+
 # Try cached Python path first (fast path)
 if [[ -f "$CACHE_FILE" ]]; then
     CACHED_PYTHON=$(cat "$CACHE_FILE")
