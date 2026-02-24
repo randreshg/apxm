@@ -2,11 +2,13 @@
 //!
 //! Contains types for representing execution DAGs and their components.
 
+mod codelet;
 mod dag;
 mod edge;
 mod node;
 mod status;
 
+pub use codelet::{Codelet, CodeletDag, CodeletId, CodeletMetadata};
 pub use dag::{DagMetadata, ExecutionDag, FlowParameter};
 pub use edge::{DependencyType, Edge};
 pub use node::{Node, NodeId, NodeMetadata};

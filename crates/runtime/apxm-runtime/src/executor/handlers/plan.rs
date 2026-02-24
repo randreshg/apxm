@@ -200,10 +200,13 @@ async fn execute_plan_once(
 
     // Try to parse as structured plan
     if let Ok(mut plan) = parse_plan_output(&content) {
-        if enable_inner_plan {
+        if enable_inner_plan && !plan.has_inner_plan() {
             match generate_inner_plan(ctx, node, &plan, original_goal, model_override).await {
                 Ok(Some(dsl)) => {
-                    plan.inner_plan = Some(InnerPlanDsl { dsl });
+                    plan.inner_plan = Some(InnerPlanDsl {
+                        dsl: Some(dsl),
+                        codelet_dag: None,
+                    });
                 }
                 Ok(None) => {
                     tracing::warn!(
@@ -219,6 +222,11 @@ async fn execute_plan_once(
                     );
                 }
             }
+        } else if enable_inner_plan && plan.has_inner_plan() {
+            tracing::info!(
+                execution_id = %ctx.execution_id,
+                "PLAN response already contains inner plan payload"
+            );
         }
 
         // Store plan in memory
@@ -496,5 +504,24 @@ Done."#;
         let output = parse_plan_output(content).unwrap();
         assert_eq!(output.steps.len(), 1);
         assert_eq!(output.steps[0].description, "Analyze");
+    }
+
+    #[test]
+    fn test_parse_plan_output_with_inner_codelet_dag() {
+        let json = r#"{
+            "plan": [],
+            "result": "ok",
+            "inner_plan": {
+                "codelet_dag": {
+                    "name": "inner",
+                    "codelets": [],
+                    "metadata": {}
+                }
+            }
+        }"#;
+
+        let output = parse_plan_output(json).unwrap();
+        assert!(output.has_inner_plan());
+        assert!(output.inner_plan.and_then(|p| p.codelet_dag).is_some());
     }
 }

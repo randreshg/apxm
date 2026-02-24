@@ -115,6 +115,7 @@ impl From<&Node> for WireNode {
             metadata: WireNodeMetadata {
                 priority: node.metadata.priority,
                 estimated_latency: node.metadata.estimated_latency,
+                codelet_source_id: node.metadata.codelet_source_id,
             },
         }
     }
@@ -136,6 +137,7 @@ impl WireNode {
             metadata: NodeMetadata {
                 priority: self.metadata.priority,
                 estimated_latency: self.metadata.estimated_latency,
+                codelet_source_id: self.metadata.codelet_source_id,
             },
         }
     }
@@ -164,6 +166,8 @@ impl From<&Edge> for WireEdge {
 pub struct WireNodeMetadata {
     pub priority: u32,
     pub estimated_latency: Option<u64>,
+    #[serde(default)]
+    pub codelet_source_id: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -46,10 +46,7 @@ impl ExecutorEngine {
         // Use the dataflow scheduler for parallel execution when the DAG has
         // enough nodes to benefit from concurrency.
         if dag.nodes.len() > 1 {
-            match self
-                .execute_dag_parallel(dag.clone())
-                .await
-            {
+            match self.execute_dag_parallel(dag.clone()).await {
                 Ok(result) => return Ok(result),
                 Err(e) => {
                     tracing::warn!(
@@ -82,10 +79,7 @@ impl ExecutorEngine {
             .execute(dag, executor, self.context.clone(), vec![])
             .await?;
 
-        Ok(ExecutionResult {
-            results,
-            stats,
-        })
+        Ok(ExecutionResult { results, stats })
     }
 
     /// Sequential fallback executor for DAGs.
@@ -180,6 +174,7 @@ impl ExecutorEngine {
                     tracing::error!(
                         execution_id = %self.context.execution_id,
                         node_id = node.id,
+                        codelet_source_id = ?node.metadata.codelet_source_id,
                         error = %e,
                         "Node execution failed"
                     );

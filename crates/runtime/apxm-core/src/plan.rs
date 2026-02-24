@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::types::execution::CodeletDag;
+
 /// Structured plan with steps, result summary, and optional inner plan
 ///
 /// This structure is used throughout the system:
@@ -43,12 +45,16 @@ pub struct PlanStep {
 
 /// Inner plan DSL code
 ///
-/// Represents APXM DSL code that should be compiled and executed
-/// as part of multi-level planning.
+/// Represents either APXM DSL code or a structured `CodeletDag` that should
+/// be compiled and executed as part of multi-level planning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InnerPlanDsl {
-    /// Raw APXM DSL code
-    pub dsl: String,
+    /// Raw APXM DSL code.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dsl: Option<String>,
+    /// Optional structured codelet DAG.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codelet_dag: Option<CodeletDag>,
 }
 
 impl Plan {
@@ -63,13 +69,39 @@ impl Plan {
 
     /// Create a plan with inner plan DSL
     pub fn with_inner_plan(mut self, dsl: String) -> Self {
-        self.inner_plan = Some(InnerPlanDsl { dsl });
+        self.inner_plan = Some(InnerPlanDsl {
+            dsl: Some(dsl),
+            codelet_dag: None,
+        });
+        self
+    }
+
+    /// Create a plan with structured inner codelet DAG.
+    pub fn with_inner_codelet_dag(mut self, codelet_dag: CodeletDag) -> Self {
+        self.inner_plan = Some(InnerPlanDsl {
+            dsl: None,
+            codelet_dag: Some(codelet_dag),
+        });
         self
     }
 
     /// Check if this plan has an inner plan
     pub fn has_inner_plan(&self) -> bool {
-        self.inner_plan.is_some()
+        self.inner_plan
+            .as_ref()
+            .map(InnerPlanDsl::has_payload)
+            .unwrap_or(false)
+    }
+}
+
+impl InnerPlanDsl {
+    /// Returns true when this inner plan contains either DSL or a codelet DAG.
+    pub fn has_payload(&self) -> bool {
+        self.dsl
+            .as_ref()
+            .map(|dsl| !dsl.trim().is_empty())
+            .unwrap_or(false)
+            || self.codelet_dag.is_some()
     }
 }
 
@@ -107,6 +139,7 @@ mod tests {
         );
 
         assert!(plan.has_inner_plan());
+        assert!(plan.inner_plan.unwrap().dsl.is_some());
     }
 
     #[test]
@@ -121,5 +154,13 @@ mod tests {
         let deserialized: Plan = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.steps.len(), 1);
         assert_eq!(deserialized.result, "Test plan");
+    }
+
+    #[test]
+    fn test_plan_with_inner_codelet_dag() {
+        let dag = CodeletDag::new("inner");
+        let plan = Plan::new(vec![], "Test plan".to_string()).with_inner_codelet_dag(dag);
+        assert!(plan.has_inner_plan());
+        assert!(plan.inner_plan.unwrap().codelet_dag.is_some());
     }
 }

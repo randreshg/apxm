@@ -236,7 +236,11 @@ mod tests {
                 attributes: HashMap::new(),
                 input_tokens: vec![],
                 output_tokens: vec![1],
-                metadata: Default::default(),
+                metadata: apxm_core::types::NodeMetadata {
+                    priority: 0,
+                    estimated_latency: None,
+                    codelet_source_id: Some(42),
+                },
             }],
             edges: vec![],
             entry_nodes: vec![1],
@@ -273,6 +277,7 @@ mod tests {
         assert_eq!(decoded.metadata.module_name, metadata.module_name);
         assert_eq!(decoded.metadata.compiler_version, metadata.compiler_version);
         assert_eq!(decoded.dag().nodes.len(), dag.nodes.len());
+        assert_eq!(decoded.dag().nodes[0].metadata.codelet_source_id, Some(42));
     }
 
     #[test]

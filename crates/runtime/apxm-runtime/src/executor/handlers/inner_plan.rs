@@ -36,29 +36,45 @@ pub async fn execute_inner_plan(
     inner_plan: &InnerPlanDsl,
     options: InnerPlanOptions,
 ) -> Result<usize> {
-    let trimmed = inner_plan.dsl.trim();
-    if trimmed.is_empty() {
-        return Err(RuntimeError::State(
-            "Inner plan DSL is empty and cannot be executed".to_string(),
-        ));
-    }
-
-    let source_name = format!("inner_plan_{}.apxm", ctx.execution_id);
-    let dag = match ctx
-        .inner_plan_linker
-        .link_inner_plan(trimmed, &source_name)
-        .await
-    {
-        Ok(dag) => dag,
-        Err(err) => {
-            if linker_not_supported(&err) {
-                tracing::warn!(
-                    execution_id = %ctx.execution_id,
-                    "Inner plan linking is not available in this context"
-                );
-                return Ok(0);
+    let dag = if let Some(codelet_dag) = inner_plan.codelet_dag.clone() {
+        match ctx.inner_plan_linker.link_codelet_dag(codelet_dag).await {
+            Ok(dag) => dag,
+            Err(err) => {
+                if linker_not_supported(&err) {
+                    tracing::warn!(
+                        execution_id = %ctx.execution_id,
+                        "Inner plan linking is not available in this context"
+                    );
+                    return Ok(0);
+                }
+                return Err(err);
             }
-            return Err(err);
+        }
+    } else {
+        let trimmed = inner_plan.dsl.as_deref().unwrap_or("").trim();
+        if trimmed.is_empty() {
+            return Err(RuntimeError::State(
+                "Inner plan must include non-empty dsl or codelet_dag".to_string(),
+            ));
+        }
+
+        let source_name = format!("inner_plan_{}.apxm", ctx.execution_id);
+        match ctx
+            .inner_plan_linker
+            .link_inner_plan(trimmed, &source_name)
+            .await
+        {
+            Ok(dag) => dag,
+            Err(err) => {
+                if linker_not_supported(&err) {
+                    tracing::warn!(
+                        execution_id = %ctx.execution_id,
+                        "Inner plan linking is not available in this context"
+                    );
+                    return Ok(0);
+                }
+                return Err(err);
+            }
         }
     };
 

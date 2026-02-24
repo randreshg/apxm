@@ -19,8 +19,8 @@ pub use compiler::{
     OptimizationLevel, PipelineConfig, stage_rank,
 };
 pub use execution::{
-    DagMetadata, DependencyType, Edge, ExecutionDag, ExecutionStats, Node, NodeId, NodeMetadata,
-    NodeStatus, OpStatus,
+    Codelet, CodeletDag, CodeletId, CodeletMetadata, DagMetadata, DependencyType, Edge,
+    ExecutionDag, ExecutionStats, Node, NodeId, NodeMetadata, NodeStatus, OpStatus,
 };
 pub use identifiers::{
     CapabilityName, CheckpointId, ExecutionId, GoalIdType, MessageId, NodeIdType, OpIdType,

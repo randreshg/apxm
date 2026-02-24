@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use apxm_artifact::Artifact;
 use apxm_compiler::{self, Module};
-use apxm_core::types::execution::ExecutionDag;
+use apxm_core::types::execution::{CodeletDag, ExecutionDag};
 use apxm_core::{log_debug, log_info};
 use apxm_runtime::{InnerPlanLinker, RuntimeError};
 use async_trait::async_trait;
@@ -74,5 +74,26 @@ impl InnerPlanLinker for CompilerInnerPlanLinker {
         );
 
         Ok(dag)
+    }
+
+    async fn link_codelet_dag(&self, dag: CodeletDag) -> Result<ExecutionDag, RuntimeError> {
+        log_debug!(
+            "driver::inner_plan",
+            dag_name = %dag.name,
+            codelets = dag.codelets.len(),
+            "Linking inner plan codelet DAG"
+        );
+
+        let execution_dag = dag.to_execution_dag()?;
+        execution_dag.validate()?;
+
+        log_info!(
+            "driver::inner_plan",
+            nodes = execution_dag.nodes.len(),
+            edges = execution_dag.edges.len(),
+            "Inner plan codelet DAG linked successfully"
+        );
+
+        Ok(execution_dag)
     }
 }

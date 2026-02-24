@@ -161,6 +161,7 @@ fn read_node(reader: &mut BinaryReader) -> Result<Node, CompilerError> {
         metadata: NodeMetadata {
             priority,
             estimated_latency,
+            codelet_source_id: None,
         },
     })
 }

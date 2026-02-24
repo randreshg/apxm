@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::codelet::CodeletId;
 use crate::types::{AISOperationType, TokenId, Value, validate_operation};
 
 /// Type alias for node identifiers.
@@ -26,6 +27,9 @@ pub struct NodeMetadata {
     /// Estimated execution latency in nanoseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub estimated_latency: Option<u64>,
+    /// Source codelet ID used to preserve codelet boundaries through lowering.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codelet_source_id: Option<CodeletId>,
 }
 
 /// Returns `true` when a `u32` is zero (used by `skip_serializing_if`).
@@ -158,6 +162,7 @@ mod tests {
         node.add_output_token(200);
         node.metadata.priority = 10;
         node.metadata.estimated_latency = Some(5000);
+        node.metadata.codelet_source_id = Some(7);
 
         let json = serde_json::to_string(&node).expect("serialize");
         let restored: Node = serde_json::from_str(&json).expect("deserialize");
