@@ -99,35 +99,36 @@ impl OpenAIBackend {
 
         // Add tools if provided
         if let Some(tools) = &request.tools
-            && !tools.is_empty() {
-                let openai_tools: Vec<serde_json::Value> = tools
-                    .iter()
-                    .map(|t| {
-                        json!({
-                            "type": "function",
-                            "function": {
-                                "name": t.name,
-                                "description": t.description,
-                                "parameters": t.parameters
-                            }
-                        })
+            && !tools.is_empty()
+        {
+            let openai_tools: Vec<serde_json::Value> = tools
+                .iter()
+                .map(|t| {
+                    json!({
+                        "type": "function",
+                        "function": {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.parameters
+                        }
                     })
-                    .collect();
-                body["tools"] = json!(openai_tools);
+                })
+                .collect();
+            body["tools"] = json!(openai_tools);
 
-                // Add tool_choice if specified
-                if let Some(choice) = &request.tool_choice {
-                    body["tool_choice"] = match choice {
-                        ToolChoice::Auto => json!("auto"),
-                        ToolChoice::None => json!("none"),
-                        ToolChoice::Required => json!("required"),
-                        ToolChoice::Specific(name) => json!({
-                            "type": "function",
-                            "function": {"name": name}
-                        }),
-                    };
-                }
+            // Add tool_choice if specified
+            if let Some(choice) = &request.tool_choice {
+                body["tool_choice"] = match choice {
+                    ToolChoice::Auto => json!("auto"),
+                    ToolChoice::None => json!("none"),
+                    ToolChoice::Required => json!("required"),
+                    ToolChoice::Specific(name) => json!({
+                        "type": "function",
+                        "function": {"name": name}
+                    }),
+                };
             }
+        }
 
         body
     }

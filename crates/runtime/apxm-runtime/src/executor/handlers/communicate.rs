@@ -120,10 +120,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         );
         RuntimeError::Operation {
             op_type: node.op_type,
-            message: format!(
-                "Communication with agent '{}' failed: {}",
-                recipient, e
-            ),
+            message: format!("Communication with agent '{}' failed: {}", recipient, e),
         }
     })?;
 

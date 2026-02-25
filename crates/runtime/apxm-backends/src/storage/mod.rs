@@ -12,7 +12,7 @@ mod memory;
 mod sqlite;
 
 pub use backend::{BackendStats, SearchResult, StorageBackend};
-pub use embedder::{cosine_similarity, Embedder};
+pub use embedder::{Embedder, cosine_similarity};
 pub use kv::RedbBackend;
 pub use memory::InMemoryBackend;
 pub use sqlite::SqliteBackend;

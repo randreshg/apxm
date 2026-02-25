@@ -27,7 +27,6 @@ pub struct ToolsConfig {
     pub search_web: SearchWebConfig,
 }
 
-
 /// Register the standard APxM capabilities with the runtime capability system.
 pub fn register_standard_tools(
     capability_system: &CapabilitySystem,

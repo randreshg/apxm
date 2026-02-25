@@ -212,10 +212,7 @@ fn load_filesystem_prompts_recursive(
             load_filesystem_prompts_recursive(root, &path, templates);
         } else if path.is_file() {
             if let Ok(content) = std::fs::read_to_string(&path) {
-                let rel = path
-                    .strip_prefix(root)
-                    .unwrap_or(&path)
-                    .to_string_lossy();
+                let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy();
                 let name = template_key(Path::new(rel.as_ref()));
                 templates.insert(name, content);
             }

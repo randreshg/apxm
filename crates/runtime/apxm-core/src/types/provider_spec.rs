@@ -150,9 +150,9 @@ impl BuiltinProviderSpec {
 /// Returns `None` if the provider is not built-in.
 pub fn resolve_builtin_provider(name: &str) -> Option<&'static BuiltinProviderSpec> {
     let lower = name.to_lowercase();
-    BUILTIN_PROVIDERS.iter().find(|spec| {
-        spec.id == lower || spec.aliases.iter().any(|alias| *alias == lower)
-    })
+    BUILTIN_PROVIDERS
+        .iter()
+        .find(|spec| spec.id == lower || spec.aliases.iter().any(|alias| *alias == lower))
 }
 
 /// Resolve a provider spec from name, checking builtins first.

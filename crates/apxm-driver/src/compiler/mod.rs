@@ -65,8 +65,6 @@ impl Compiler {
     pub fn load_graph(&self, path: &Path) -> Result<ApxmGraph, DriverError> {
         let bytes = fs::read(path)?;
 
-        
-
         match path.extension().and_then(|ext| ext.to_str()) {
             Some("json") => std::str::from_utf8(&bytes)
                 .map_err(|e| DriverError::Driver(format!("Graph file is not UTF-8 JSON: {e}")))

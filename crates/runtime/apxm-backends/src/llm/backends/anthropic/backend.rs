@@ -79,32 +79,33 @@ impl AnthropicBackend {
 
         // Add tools if provided (Anthropic format)
         if let Some(tools) = &request.tools
-            && !tools.is_empty() {
-                let anthropic_tools: Vec<serde_json::Value> = tools
-                    .iter()
-                    .map(|t| {
-                        json!({
-                            "name": t.name,
-                            "description": t.description,
-                            "input_schema": t.parameters
-                        })
+            && !tools.is_empty()
+        {
+            let anthropic_tools: Vec<serde_json::Value> = tools
+                .iter()
+                .map(|t| {
+                    json!({
+                        "name": t.name,
+                        "description": t.description,
+                        "input_schema": t.parameters
                     })
-                    .collect();
-                body["tools"] = json!(anthropic_tools);
+                })
+                .collect();
+            body["tools"] = json!(anthropic_tools);
 
-                // Add tool_choice if specified
-                if let Some(choice) = &request.tool_choice {
-                    body["tool_choice"] = match choice {
-                        ToolChoice::Auto => json!({"type": "auto"}),
-                        ToolChoice::None => json!({"type": "none"}),
-                        ToolChoice::Required => json!({"type": "any"}),
-                        ToolChoice::Specific(name) => json!({
-                            "type": "tool",
-                            "name": name
-                        }),
-                    };
-                }
+            // Add tool_choice if specified
+            if let Some(choice) = &request.tool_choice {
+                body["tool_choice"] = match choice {
+                    ToolChoice::Auto => json!({"type": "auto"}),
+                    ToolChoice::None => json!({"type": "none"}),
+                    ToolChoice::Required => json!({"type": "any"}),
+                    ToolChoice::Specific(name) => json!({
+                        "type": "tool",
+                        "name": name
+                    }),
+                };
             }
+        }
 
         body
     }

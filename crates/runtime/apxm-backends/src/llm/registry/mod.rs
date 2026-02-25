@@ -355,8 +355,7 @@ mod tests {
         let registry = LLMRegistry::new();
 
         // Register using Arc<dyn LLMBackend>
-        let backend: Arc<dyn LLMBackend> =
-            Arc::new(OpenAIBackend::new("test-key", None).await?);
+        let backend: Arc<dyn LLMBackend> = Arc::new(OpenAIBackend::new("test-key", None).await?);
         registry.register_arc("test", backend)?;
 
         assert_eq!(registry.backend_names(), vec!["test"]);

@@ -1,8 +1,8 @@
 //! SQLite storage backend with connection pooling for high performance
 //! Provides persistent, queryable storage suitable for LTM (Long-Term Memory)
 
-use crate::storage::{SearchResult, StorageBackend, StorageResult, backend::BackendStats};
 use crate::storage::embedder::{Embedder, cosine_similarity};
+use crate::storage::{SearchResult, StorageBackend, StorageResult, backend::BackendStats};
 use apxm_core::{error::RuntimeError, types::values::Value};
 use async_trait::async_trait;
 use sqlx::{
@@ -138,7 +138,9 @@ impl SqliteBackend {
 
                     sqlx::query(SCHEMA_KV_STORE).execute(&mut *conn).await?;
                     sqlx::query(SCHEMA_KV_FTS).execute(&mut *conn).await?;
-                    sqlx::query(SCHEMA_KV_EMBEDDINGS).execute(&mut *conn).await?;
+                    sqlx::query(SCHEMA_KV_EMBEDDINGS)
+                        .execute(&mut *conn)
+                        .await?;
 
                     Ok(())
                 })
@@ -257,22 +259,23 @@ impl StorageBackend for SqliteBackend {
 
         // Store embedding if embedder is available
         if let Some(embedder) = &self.embedder
-            && let Ok(embedding) = embedder.embed_one(&content) {
-                let blob = embedding_to_blob(&embedding);
-                sqlx::query(
-                    r#"
+            && let Ok(embedding) = embedder.embed_one(&content)
+        {
+            let blob = embedding_to_blob(&embedding);
+            sqlx::query(
+                r#"
                     INSERT INTO kv_embeddings (key, embedding)
                     VALUES (?1, ?2)
                     ON CONFLICT(key) DO UPDATE
                       SET embedding = excluded.embedding;
                     "#,
-                )
-                .bind(key)
-                .bind(&blob)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| mem_err("put embedding", e))?;
-            }
+            )
+            .bind(key)
+            .bind(&blob)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| mem_err("put embedding", e))?;
+        }
 
         Ok(())
     }
@@ -422,50 +425,44 @@ impl StorageBackend for SqliteBackend {
 
         // Step 2: If embedder is available, combine with vector similarity
         if let Some(embedder) = &self.embedder
-            && let Ok(query_embedding) = embedder.embed_one(query) {
-                let keys: Vec<String> = scored.iter().map(|(k, _)| k.clone()).collect();
-                let placeholders = keys
-                    .iter()
-                    .enumerate()
-                    .map(|(i, _)| format!("?{}", i + 1))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                let sql = format!(
-                    "SELECT key, embedding FROM kv_embeddings WHERE key IN ({placeholders})"
-                );
+            && let Ok(query_embedding) = embedder.embed_one(query)
+        {
+            let keys: Vec<String> = scored.iter().map(|(k, _)| k.clone()).collect();
+            let placeholders = keys
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("?{}", i + 1))
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql =
+                format!("SELECT key, embedding FROM kv_embeddings WHERE key IN ({placeholders})");
 
-                let mut query_builder = sqlx::query_as::<_, (String, Vec<u8>)>(&sql);
-                for key in &keys {
-                    query_builder = query_builder.bind(key);
-                }
+            let mut query_builder = sqlx::query_as::<_, (String, Vec<u8>)>(&sql);
+            for key in &keys {
+                query_builder = query_builder.bind(key);
+            }
 
-                if let Ok(emb_rows) = query_builder.fetch_all(&self.pool).await {
-                    let emb_map: std::collections::HashMap<String, Vec<f32>> = emb_rows
-                        .into_iter()
-                        .filter_map(|(key, blob)| {
-                            blob_to_embedding(&blob).map(|e| (key, e))
-                        })
-                        .collect();
+            if let Ok(emb_rows) = query_builder.fetch_all(&self.pool).await {
+                let emb_map: std::collections::HashMap<String, Vec<f32>> = emb_rows
+                    .into_iter()
+                    .filter_map(|(key, blob)| blob_to_embedding(&blob).map(|e| (key, e)))
+                    .collect();
 
-                    for (key, bm25_score) in &mut scored {
-                        if let Some(stored_emb) = emb_map.get(key) {
-                            let cos_sim =
-                                cosine_similarity(&query_embedding, stored_emb).max(0.0) as f64;
-                            *bm25_score =
-                                VECTOR_WEIGHT * cos_sim + BM25_WEIGHT * *bm25_score;
-                        } else {
-                            // No embedding available — use BM25 alone, weighted
-                            *bm25_score *= BM25_WEIGHT;
-                        }
+                for (key, bm25_score) in &mut scored {
+                    if let Some(stored_emb) = emb_map.get(key) {
+                        let cos_sim =
+                            cosine_similarity(&query_embedding, stored_emb).max(0.0) as f64;
+                        *bm25_score = VECTOR_WEIGHT * cos_sim + BM25_WEIGHT * *bm25_score;
+                    } else {
+                        // No embedding available — use BM25 alone, weighted
+                        *bm25_score *= BM25_WEIGHT;
                     }
                 }
             }
+        }
 
         // Sort by score descending
-        scored.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scored.truncate(limit);
 
         // Fetch values for top results

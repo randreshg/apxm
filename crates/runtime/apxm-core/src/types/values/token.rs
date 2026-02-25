@@ -155,5 +155,4 @@ mod tests {
             .expect("consuming ready token should work the first time");
         assert!(token.consume().is_err());
     }
-
 }

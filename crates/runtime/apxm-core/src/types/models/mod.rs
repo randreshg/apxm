@@ -194,5 +194,4 @@ mod tests {
             FinishReason::Unknown
         );
     }
-
 }

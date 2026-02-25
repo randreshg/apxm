@@ -96,5 +96,4 @@ mod tests {
         assert!(!control_edge.is_effect_dependency());
         assert!(control_edge.is_control_dependency());
     }
-
 }

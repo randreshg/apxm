@@ -14,10 +14,13 @@ pub trait Embedder: Send + Sync {
     /// Generate embedding for a single text.
     fn embed_one(&self, text: &str) -> StorageResult<Vec<f32>> {
         let embeddings = self.embed(&[text])?;
-        embeddings.into_iter().next().ok_or_else(|| RuntimeError::Memory {
-            message: "No embedding returned".to_string(),
-            space: Some("embedder".to_string()),
-        })
+        embeddings
+            .into_iter()
+            .next()
+            .ok_or_else(|| RuntimeError::Memory {
+                message: "No embedding returned".to_string(),
+                space: Some("embedder".to_string()),
+            })
     }
 
     /// Get the embedding dimension.
@@ -53,8 +56,8 @@ mod local {
     impl LocalEmbedder {
         /// Create a new embedder with BGE-small-en-v1.5 (384 dimensions, fast).
         pub fn new() -> StorageResult<Self> {
-            let options = InitOptions::new(EmbeddingModel::BGESmallENV15)
-                .with_show_download_progress(true);
+            let options =
+                InitOptions::new(EmbeddingModel::BGESmallENV15).with_show_download_progress(true);
             let model = TextEmbedding::try_new(options).map_err(|e| RuntimeError::Memory {
                 message: format!("Failed to initialize FastEmbed: {e}"),
                 space: Some("embedder".to_string()),

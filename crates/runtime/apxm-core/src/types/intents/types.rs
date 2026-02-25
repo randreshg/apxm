@@ -276,5 +276,4 @@ mod tests {
         };
         assert!(!execute.is_query());
     }
-
 }
