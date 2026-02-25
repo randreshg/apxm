@@ -113,6 +113,13 @@ For multi-flow artifacts, runtime agent registration uses
 `FlowRegistry::register_agent(agent)` which stores the full runtime `Agent`
 object and also backfills legacy `(agent, flow)` DAG lookups for `flow_call`.
 
+For automatic multi-flow registration, prefer:
+
+```rust
+let artifact = Artifact::from_bytes(&artifact_bytes)?;
+let result = runtime.execute_artifact_auto(artifact).await?;
+```
+
 ## Scheduler
 
 Work-stealing dataflow scheduler with configurable parallelism:

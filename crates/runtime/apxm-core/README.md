@@ -44,6 +44,8 @@ let agent = Agent::new("Research").add_flow(main_flow);
 assert!(agent.entry_flow().is_some());
 ```
 
+Hierarchy at runtime: `Agent -> AgentFlow -> CodeletDag (optional) -> ExecutionDag nodes`.
+
 ### Error Types
 
 ```rust
