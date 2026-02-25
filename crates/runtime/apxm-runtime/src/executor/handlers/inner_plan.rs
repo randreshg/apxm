@@ -2,7 +2,7 @@
 
 use super::{ExecutionContext, Result};
 use apxm_core::{
-    InnerPlanDsl,
+    InnerPlanPayload,
     error::RuntimeError,
     types::{
         TokenId,
@@ -11,7 +11,7 @@ use apxm_core::{
 };
 use std::collections::{HashMap, HashSet};
 
-// Note: InnerPlanDsl is now imported from apxm_core
+// Note: InnerPlanPayload is now imported from apxm_core
 // This ensures consistency across the entire system
 
 /// Options controlling how the inner plan should be spliced into the outer DAG.
@@ -29,11 +29,11 @@ impl Default for InnerPlanOptions {
     }
 }
 
-/// Compile and splice an inner plan DSL into the currently executing DAG.
+/// Compile and splice an inner plan graph payload into the currently executing DAG.
 pub async fn execute_inner_plan(
     ctx: &ExecutionContext,
     node: &Node,
-    inner_plan: &InnerPlanDsl,
+    inner_plan: &InnerPlanPayload,
     options: InnerPlanOptions,
 ) -> Result<usize> {
     let dag = if let Some(codelet_dag) = inner_plan.codelet_dag.clone() {
@@ -51,14 +51,14 @@ pub async fn execute_inner_plan(
             }
         }
     } else {
-        let trimmed = inner_plan.dsl.as_deref().unwrap_or("").trim();
+        let trimmed = inner_plan.graph.as_deref().unwrap_or("").trim();
         if trimmed.is_empty() {
             return Err(RuntimeError::State(
-                "Inner plan must include non-empty dsl or codelet_dag".to_string(),
+                "Inner plan must include non-empty graph or codelet_dag".to_string(),
             ));
         }
 
-        let source_name = format!("inner_plan_{}.apxm", ctx.execution_id);
+        let source_name = format!("inner_plan_{}.json", ctx.execution_id);
         match ctx
             .inner_plan_linker
             .link_inner_plan(trimmed, &source_name)

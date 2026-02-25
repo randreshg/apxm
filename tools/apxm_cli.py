@@ -8,8 +8,8 @@ and provides convenient commands for building, running, and testing.
 Usage:
     apxm doctor                     # Check environment status
     apxm build                      # Build compiler and runtime
-    apxm execute workflow.ais       # Compile and execute an AIS file
-    apxm compile workflow.ais -o out.apxmobj  # Compile to artifact
+    apxm execute workflow.json      # Compile and execute an ApxmGraph file
+    apxm compile workflow.json -o out.apxmobj  # Compile to artifact
     apxm run out.apxmobj            # Run pre-compiled artifact
     apxm workloads list             # List available workloads
     apxm workloads check            # Verify all workloads compile
@@ -77,7 +77,7 @@ def ensure_conda_env() -> Path:
 def compile_ais(
     file: Path, env: dict[str, str], config: ApxmConfig, output: Optional[Path] = None
 ) -> subprocess.CompletedProcess:
-    """Compile an AIS file."""
+    """Compile a source workflow file."""
     if not config.compiler_bin.exists():
         return subprocess.CompletedProcess(args=[], returncode=1, stderr="Compiler not built. Run: apxm build")
     cmd = [str(config.compiler_bin), "compile", str(file)]
@@ -187,10 +187,10 @@ def build(
         print_warning("Note: --trace flag at runtime will have no effect")
 
 
-# Execute Command (compile + run .ais files)
+# Execute Command (compile + run graph files)
 @app.command(context_settings={"allow_interspersed_args": False})
 def execute(
-    file: Path = typer.Argument(..., help="AIS file to compile and execute"),
+    file: Path = typer.Argument(..., help="ApxmGraph file to compile and execute"),
     args: Optional[list[str]] = typer.Argument(None, help="Arguments for entry flow"),
     opt_level: int = typer.Option(1, "-O", "--opt-level", help="Optimization level (0-3)"),
     trace: Optional[str] = typer.Option(
@@ -203,15 +203,15 @@ def execute(
         False, "--cargo", help="Use cargo run instead of pre-built binary (slower, but auto-rebuilds)"
     ),
 ):
-    """Compile and execute an AIS file.
+    """Compile and execute an ApxmGraph file.
 
     Options must come BEFORE the file path. Arguments after file are passed to entry flow:
-        apxm execute [options] workflow.ais [args...]
+        apxm execute [options] workflow.json [args...]
 
     Examples:
-        apxm execute workflow.ais "quantum computing"
-        apxm execute --emit-metrics metrics.json workflow.ais "topic"
-        apxm execute -O2 --trace debug workflow.ais "input"
+        apxm execute workflow.json "quantum computing"
+        apxm execute --emit-metrics metrics.json workflow.json "topic"
+        apxm execute -O2 --trace debug workflow.json "input"
     """
     config = get_config()
     conda_prefix = ensure_conda_env()
@@ -260,10 +260,10 @@ def execute(
     raise typer.Exit(result.returncode)
 
 
-# Compile Command (compile .ais to .apxmobj)
+# Compile Command (compile graph to .apxmobj)
 @app.command()
 def compile(
-    file: Path = typer.Argument(..., help="AIS file to compile"),
+    file: Path = typer.Argument(..., help="ApxmGraph file to compile"),
     output: Path = typer.Option(..., "-o", "--output", help="Output artifact path"),
     emit_diagnostics: Optional[Path] = typer.Option(
         None, "--emit-diagnostics", help="Emit diagnostics JSON file"
@@ -273,7 +273,7 @@ def compile(
         False, "--cargo", help="Use cargo run instead of pre-built binary (slower, but auto-rebuilds)"
     ),
 ):
-    """Compile an AIS file to an artifact (.apxmobj)."""
+    """Compile an ApxmGraph file to an artifact (.apxmobj)."""
     config = get_config()
     conda_prefix = ensure_conda_env()
     env = setup_mlir_environment(conda_prefix, config.target_dir)
@@ -332,7 +332,7 @@ def run(
 ):
     """Run a pre-compiled artifact (.apxmobj).
 
-    Use 'apxm execute <file.ais>' to compile and run source files.
+    Use 'apxm execute <file.json>' to compile and run graph source files.
     """
     config = get_config()
     conda_prefix = ensure_conda_env()
@@ -351,7 +351,7 @@ def run(
     # Validate file extension
     if file.suffix != ".apxmobj":
         print_error(f"Expected .apxmobj artifact file, got: {file.suffix or 'no extension'}")
-        print_info("Use 'apxm execute <file.ais>' to compile and run source files.")
+        print_info("Use 'apxm execute <file.json>' to compile and run graph source files.")
         raise typer.Exit(1)
 
     if not config.compiler_bin.exists():
@@ -488,7 +488,7 @@ def doctor():
 
     # Check workloads directory
     if config.workloads_dir.exists():
-        workflows = list(config.workloads_dir.glob("*/workflow.ais"))
+        workflows = list(config.workloads_dir.glob("*/workflow.json"))
         print_success(f"Workloads: {len(workflows)} workflows found")
     else:
         print_warning(f"Workloads directory not found: {config.workloads_dir}")
@@ -616,8 +616,8 @@ def workloads_list():
             print_error(f"Workloads directory not found: {config.workloads_dir}")
             raise typer.Exit(1)
 
-        workflows = sorted(config.workloads_dir.glob("*/workflow.ais"))
-        disabled = sorted(config.workloads_dir.glob("*/workflow.ais.disabled"))
+        workflows = sorted(config.workloads_dir.glob("*/workflow.json"))
+        disabled = sorted(config.workloads_dir.glob("*/workflow.json.disabled"))
 
         for workflow in workflows:
             name = workflow.parent.name
@@ -658,7 +658,7 @@ def workloads_check(
         print_info("Run: python tools/apxm_cli.py compiler build")
         raise typer.Exit(1)
 
-    workflows = sorted(config.workloads_dir.glob("*/workflow.ais"))
+    workflows = sorted(config.workloads_dir.glob("*/workflow.json"))
 
     print_header(f"Checking {len(workflows)} Workloads")
 
@@ -814,7 +814,7 @@ def workloads_run(
 
 @benchmarks_app.command("run")
 def benchmarks_run(
-    workloads: bool = typer.Option(False, "--workloads", help="Run only DSL workloads"),
+    workloads: bool = typer.Option(False, "--workloads", help="Run only APXM workloads"),
     runtime: bool = typer.Option(False, "--runtime", help="Run only Rust runtime benchmarks"),
     analyze: bool = typer.Option(False, "--analyze", help="Analyze existing results"),
     quick: bool = typer.Option(False, "--quick", help="Quick mode (fewer iterations)"),
@@ -910,7 +910,7 @@ def workloads_benchmark(
     elif name:
         # Map name to workload number if needed
         workload_num = None
-        for workflow in config.workloads_dir.glob("*/workflow.ais"):
+        for workflow in config.workloads_dir.glob("*/workflow.json"):
             dir_name = workflow.parent.name
             if dir_name == name or dir_name.endswith(f"_{name}"):
                 # Extract number from directory name like "2_chain_fusion"

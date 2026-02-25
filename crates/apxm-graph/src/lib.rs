@@ -93,6 +93,7 @@ impl ApxmGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use apxm_core::constants::graph::attrs as graph_attrs;
 
     #[test]
     fn graph_roundtrip_json_and_bytes() {
@@ -113,7 +114,7 @@ mod tests {
                     name: "ask".to_string(),
                     op: AISOperationType::Ask,
                     attributes: HashMap::from([(
-                        "template_str".to_string(),
+                        graph_attrs::TEMPLATE_STR.to_string(),
                         Value::String("Summarize {0}".to_string()),
                     )]),
                 },

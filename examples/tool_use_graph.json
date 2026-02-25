@@ -1,0 +1,33 @@
+{
+  "name": "tool_use_graph",
+  "nodes": [
+    {
+      "id": 1,
+      "name": "search",
+      "op": "INV",
+      "attributes": {
+        "capability": "search",
+        "params_json": "{\"query\":\"latest AI agent trends\"}"
+      }
+    },
+    {
+      "id": 2,
+      "name": "summary",
+      "op": "ASK",
+      "attributes": {
+        "template_str": "Summarize these findings: {0}"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": 1,
+      "to": 2,
+      "dependency": "Data"
+    }
+  ],
+  "parameters": [],
+  "metadata": {
+    "is_entry": true
+  }
+}

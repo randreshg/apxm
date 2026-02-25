@@ -1,4 +1,5 @@
 use crate::{ApxmGraph, GraphError};
+use apxm_core::constants::graph::metadata as graph_meta;
 use apxm_core::types::{
     DependencyType, Edge, Node,
     execution::{DagMetadata, ExecutionDag, FlowParameter},
@@ -67,7 +68,7 @@ pub fn lower_to_execution_dag(graph: &ApxmGraph) -> Result<ExecutionDag, GraphEr
 
     let is_entry = graph
         .metadata
-        .get("is_entry")
+        .get(graph_meta::IS_ENTRY)
         .and_then(|value| value.as_boolean())
         .unwrap_or(true);
 

@@ -79,17 +79,17 @@ impl Linker {
         Ok(Self { compiler, runtime })
     }
 
-    /// Compile DSL/MLIR file without execution (for validation)
+    /// Compile graph file without execution (for validation)
     ///
-    /// This method compiles the input file to verify syntactic correctness
+    /// This method compiles the input file to verify graph correctness
     /// without executing it. Useful for:
     /// - Pre-validation before execution
-    /// - DSL generation feedback loops
+    /// - Graph generation feedback loops
     /// - IDE/tooling integration
     ///
     /// Returns the compiled Module on success, or a CompilerError on failure.
-    pub fn compile_only(&self, input: &Path, mlir: bool) -> Result<Module, DriverError> {
-        self.compiler.compile(input, mlir)
+    pub fn compile_only(&self, input: &Path) -> Result<Module, DriverError> {
+        self.compiler.compile(input)
     }
 
     /// Compile graph input into an executable artifact.
@@ -110,16 +110,11 @@ impl Linker {
     }
 
     /// Compile the user file and execute the generated artifact through the runtime.
-    pub async fn run(&self, input: &Path, mlir: bool) -> Result<LinkResult, DriverError> {
-        log_info!(
-            "driver",
-            "Compiling {} as {}",
-            input.display(),
-            if mlir { "MLIR" } else { "DSL" }
-        );
+    pub async fn run(&self, input: &Path) -> Result<LinkResult, DriverError> {
+        log_info!("driver", "Compiling graph {}", input.display(),);
         #[cfg(feature = "metrics")]
         let compile_start = std::time::Instant::now();
-        let module = self.compiler.compile(input, mlir)?;
+        let module = self.compiler.compile(input)?;
         #[cfg(feature = "metrics")]
         let compile_time = compile_start.elapsed();
 
@@ -171,19 +166,17 @@ impl Linker {
     pub async fn run_with_args(
         &self,
         input: &Path,
-        mlir: bool,
         args: Vec<String>,
     ) -> Result<LinkResult, DriverError> {
         log_info!(
             "driver",
-            "Compiling {} as {} with {} args",
+            "Compiling graph {} with {} args",
             input.display(),
-            if mlir { "MLIR" } else { "DSL" },
             args.len()
         );
         #[cfg(feature = "metrics")]
         let compile_start = std::time::Instant::now();
-        let module = self.compiler.compile(input, mlir)?;
+        let module = self.compiler.compile(input)?;
         #[cfg(feature = "metrics")]
         let compile_time = compile_start.elapsed();
 
@@ -274,13 +267,13 @@ impl Linker {
     /// Get list of available runtime capabilities
     ///
     /// This is useful for:
-    /// - Validating DSL before compilation
+    /// - Validating graph intent before compilation
     /// - Showing available capabilities to users
     /// - Passing to LLM for constrained generation
     ///
     /// The capability names can be used across the system:
-    /// - In future tooling to constrain DSL generation
-    /// - In `run` command to validate user-written DSL
+    /// - In future tooling to constrain graph generation
+    /// - In `run` command to validate generated graphs
     /// - For displaying help/documentation to users
     pub fn runtime_capabilities(&self) -> Vec<String> {
         self.runtime.capability_names()

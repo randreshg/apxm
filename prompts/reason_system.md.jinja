@@ -7,7 +7,7 @@ When providing structured responses, use JSON format with the following fields:
   - `description` (string): Goal description
   - `priority` (number): Priority level (0-100, default 50)
 - **inner_plan** (object, optional): include when asked to emit an inner plan
-  - `dsl` (string): Valid APXM DSL that can be compiled directly
+  - `graph` (string): Valid ApxmGraph JSON that can be compiled directly
 - **result** (any type): The main result value
 
 If the response does not require structured updates, you may respond in plain text.
@@ -25,7 +25,7 @@ If the response does not require structured updates, you may respond in plain te
     {"description": "Save preferences", "priority": 60}
   ],
   "inner_plan": {
-    "dsl": "agent InnerPlan { ... }"
+    "graph": "{\"name\":\"inner\",\"nodes\":[],\"edges\":[],\"parameters\":[],\"metadata\":{}}"
   },
   "result": "Preferences updated successfully"
 }

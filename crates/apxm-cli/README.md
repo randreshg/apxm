@@ -5,8 +5,9 @@ Minimal CLI wrapper for compile/run workflows.
 ## Overview
 
 `apxm-cli` is a thin wrapper around `apxm-driver` that exposes:
-- `compile` — compile DSL/MLIR to an artifact
-- `run` — compile + execute via the runtime
+- `compile` — compile ApxmGraph JSON/binary to an artifact
+- `execute` — compile + execute a graph via the runtime
+- `run` — execute a precompiled artifact
 - `doctor` — verify MLIR/compiler dependencies
 - `activate` — print shell exports for MLIR/LLVM env setup
 - `install` — create/update the conda env from environment.yaml
@@ -36,7 +37,7 @@ pip install typer rich
 # Use the CLI
 apxm doctor
 apxm compiler build
-apxm compiler run examples/hello_world.ais
+apxm compiler run examples/hello_graph.json
 ```
 
 See `docs/AGENTS.md` for the complete CLI reference.
@@ -48,8 +49,8 @@ See `docs/AGENTS.md` for the complete CLI reference.
 cargo build -p apxm-cli --features driver --release
 
 # Use the compiled binary
-./target/release/apxm run examples/hello_world.ais
-./target/release/apxm compile examples/hello_world.ais -o output.apxmobj
+./target/release/apxm execute examples/hello_graph.json
+./target/release/apxm compile examples/hello_graph.json -o output.apxmobj
 ./target/release/apxm doctor
 ```
 
@@ -67,7 +68,7 @@ eval "$(cargo run -p apxm-cli -- activate --shell fish)"
 ## Metrics (Optional)
 
 ```bash
-cargo run -p apxm-cli --features metrics -- run examples/hello_world.ais
+cargo run -p apxm-cli --features metrics -- execute examples/hello_graph.json
 ```
 
 ## Testing

@@ -10,7 +10,7 @@ Applies to the APXM repository.
 
 ## Preferred Commands
 - Build: `./apxm build`
-- Compile + execute AIS: `./apxm execute --cargo <file.ais> [args...]`
+- Compile + execute graph: `./apxm execute --cargo <file.json> [args...]`
 - Run artifact: `./apxm run <file.apxmobj> [args...]`
 - Diagnostics: `./apxm doctor`
 

@@ -2,6 +2,7 @@
 //!
 //! This crate provides basic types and data structures used by all APXM components.
 
+pub mod constants;
 pub mod error;
 pub mod logging;
 pub mod paths;
@@ -18,7 +19,7 @@ pub use error::{
     security::SecurityError,
 };
 
-pub use plan::{InnerPlanDsl, Plan, PlanStep};
+pub use plan::{InnerPlanPayload, Plan, PlanStep};
 
 pub use types::{
     AISOperation, AISOperationType, DependencyType, Edge, InstructionConfig, Node, NodeId,

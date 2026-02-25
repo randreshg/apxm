@@ -1,0 +1,58 @@
+{
+  "name": "multi_flow_graph",
+  "nodes": [
+    {
+      "id": 1,
+      "name": "topic",
+      "op": "ASK",
+      "attributes": {
+        "template_str": "What topic should we investigate?"
+      }
+    },
+    {
+      "id": 2,
+      "name": "research",
+      "op": "THINK",
+      "attributes": {
+        "template_str": "Research this topic thoroughly: {0}"
+      }
+    },
+    {
+      "id": 3,
+      "name": "critique",
+      "op": "REASON",
+      "attributes": {
+        "template_str": "Critically evaluate this text for accuracy: {0}"
+      }
+    },
+    {
+      "id": 4,
+      "name": "summary",
+      "op": "ASK",
+      "attributes": {
+        "template_str": "Provide a final summary of the investigation: {0}"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": 1,
+      "to": 2,
+      "dependency": "Data"
+    },
+    {
+      "from": 2,
+      "to": 3,
+      "dependency": "Data"
+    },
+    {
+      "from": 3,
+      "to": 4,
+      "dependency": "Data"
+    }
+  ],
+  "parameters": [],
+  "metadata": {
+    "is_entry": true
+  }
+}

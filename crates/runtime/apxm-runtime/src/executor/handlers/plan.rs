@@ -13,11 +13,12 @@ use super::{
 };
 use crate::aam::{Goal as AamGoal, GoalId, GoalStatus, TransitionLabel};
 use apxm_backends::LLMRequest;
-use apxm_core::{InnerPlanDsl, Plan, error::RuntimeError};
+use apxm_core::constants::graph::attrs as graph_attrs;
+use apxm_core::{InnerPlanPayload, Plan, error::RuntimeError};
 use serde::de::Error;
 use std::collections::HashMap;
 
-// Note: Plan, PlanStep, and InnerPlanDsl are now imported from apxm_core
+// Note: Plan, PlanStep, and InnerPlanPayload are now imported from apxm_core
 // This ensures consistency across the entire system (chat, runtime, compiler)
 
 /// Execute PLAN operation - LLM-based planning with inner/outer plan support
@@ -46,7 +47,7 @@ use std::collections::HashMap;
 /// ```
 pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -> Result<Value> {
     // Get goal from attribute or first input (for dynamic goals from variables)
-    let goal_attr = get_optional_string_attribute(node, "goal")?.unwrap_or_default();
+    let goal_attr = get_optional_string_attribute(node, graph_attrs::GOAL)?.unwrap_or_default();
     let goal = if goal_attr.is_empty() && !inputs.is_empty() {
         // Use first input as goal if attribute is empty
         inputs[0].to_string()
@@ -58,21 +59,21 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     } else {
         goal_attr
     };
-    let model = get_optional_string_attribute(node, "model")?;
+    let model = get_optional_string_attribute(node, graph_attrs::MODEL)?;
     let context_key = get_optional_string_attribute(node, "context_key")?;
     let supports_inner_plan = node
         .attributes
-        .get("inner_plan_supported")
+        .get(graph_attrs::INNER_PLAN_SUPPORTED)
         .and_then(|v| v.as_boolean())
         .unwrap_or(false);
     let enable_inner_plan = node
         .attributes
-        .get("enable_inner_plan")
+        .get(graph_attrs::ENABLE_INNER_PLAN)
         .and_then(|v| v.as_boolean())
         .unwrap_or(supports_inner_plan);
     let bind_outputs = node
         .attributes
-        .get("bind_inner_plan_outputs")
+        .get(graph_attrs::BIND_INNER_PLAN_OUTPUTS)
         .and_then(|v| v.as_boolean())
         .unwrap_or(true);
 
@@ -202,16 +203,16 @@ async fn execute_plan_once(
     if let Ok(mut plan) = parse_plan_output(&content) {
         if enable_inner_plan && !plan.has_inner_plan() {
             match generate_inner_plan(ctx, node, &plan, original_goal, model_override).await {
-                Ok(Some(dsl)) => {
-                    plan.inner_plan = Some(InnerPlanDsl {
-                        dsl: Some(dsl),
+                Ok(Some(graph_payload)) => {
+                    plan.inner_plan = Some(InnerPlanPayload {
+                        graph: Some(graph_payload),
                         codelet_dag: None,
                     });
                 }
                 Ok(None) => {
                     tracing::warn!(
                         execution_id = %ctx.execution_id,
-                        "Inner plan was requested but the model did not provide DSL"
+                        "Inner plan was requested but the model did not provide graph payload"
                     );
                 }
                 Err(err) => {
@@ -432,15 +433,13 @@ async fn generate_inner_plan(
         }
     })?;
 
-    // Load system prompt for DSL generation from template
+    // Load system prompt for graph-JSON generation from template.
+    // No fallback prompt is used; template load failures are explicit.
     let system_prompt = apxm_backends::render_prompt("plan_inner_system", &serde_json::json!({}))
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "Failed to load plan_inner_system template, using fallback");
-            "You are an APXM DSL code generator. Generate ONLY valid APXM DSL code - \
-             no markdown fences, no explanations, no comments outside the code. \
-             The output must be syntactically correct and compilable."
-                .to_string()
-        });
+        .map_err(|e| RuntimeError::LLM {
+        message: format!("Failed to load plan_inner_system template: {e}"),
+        backend: None,
+    })?;
 
     let mut request = LLMRequest::new(user_prompt).with_system_prompt(system_prompt);
 

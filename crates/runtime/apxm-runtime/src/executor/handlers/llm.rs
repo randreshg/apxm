@@ -24,8 +24,9 @@ use super::{
 };
 use crate::aam::{Goal as AamGoal, GoalId, GoalStatus, TransitionLabel};
 use apxm_backends::{LLMRequest, ToolChoice, ToolDefinition};
-use apxm_core::InnerPlanDsl;
+use apxm_core::InnerPlanPayload;
 use apxm_core::apxm_llm;
+use apxm_core::constants::graph::attrs as graph_attrs;
 use apxm_core::error::RuntimeError;
 use apxm_core::types::operations::AISOperationType;
 use apxm_core::types::{ToolCall, ToolResult};
@@ -63,7 +64,7 @@ const MAX_TOOL_ITERATIONS: usize = 10;
 
 fn resolve_token_budget(ctx: &ExecutionContext, node: &Node) -> Option<u64> {
     node.attributes
-        .get("token_budget")
+        .get(graph_attrs::TOKEN_BUDGET)
         .and_then(|v| v.as_u64())
         .or(ctx.token_budget)
 }
@@ -87,7 +88,7 @@ fn charge_tokens(ctx: &ExecutionContext, budget: Option<u64>, delta: usize) -> R
 }
 
 fn output_schema_from_node(node: &Node) -> Result<Option<JsonValue>> {
-    let Some(schema_val) = node.attributes.get("output_schema") else {
+    let Some(schema_val) = node.attributes.get(graph_attrs::OUTPUT_SCHEMA) else {
         return Ok(None);
     };
     let schema = schema_val.to_json().map_err(|e| RuntimeError::LLM {
@@ -309,7 +310,7 @@ pub struct StructuredReasonOutput {
     /// Optional inner plan emitted by the model
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub inner_plan: Option<InnerPlanDsl>,
+    pub inner_plan: Option<InnerPlanPayload>,
 
     /// The main result value
     pub result: Value,
@@ -342,9 +343,9 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         LlmMode::Reason => "REASON",
     };
 
-    let base_prompt = get_string_attribute(node, "template_str")
-        .or_else(|_| get_string_attribute(node, "prompt"))?;
-    let model = get_optional_string_attribute(node, "model")?;
+    let base_prompt = get_string_attribute(node, graph_attrs::TEMPLATE_STR)
+        .or_else(|_| get_string_attribute(node, graph_attrs::PROMPT))?;
+    let model = get_optional_string_attribute(node, graph_attrs::MODEL)?;
     let budget = get_optional_u64_attribute(node, "budget")?;
     let max_retries = node
         .attributes
@@ -353,7 +354,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         .unwrap_or(3) as u32;
     let max_schema_retries = node
         .attributes
-        .get("max_schema_retries")
+        .get(graph_attrs::MAX_SCHEMA_RETRIES)
         .and_then(|v| v.as_u64())
         .unwrap_or(0) as u32;
     let output_schema = output_schema_from_node(node)?;
@@ -362,18 +363,18 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     let supports_inner_plan = mode == LlmMode::Reason
         && node
             .attributes
-            .get("inner_plan_supported")
+            .get(graph_attrs::INNER_PLAN_SUPPORTED)
             .and_then(|v| v.as_boolean())
             .unwrap_or(false);
     let enable_inner_plan = mode == LlmMode::Reason
         && node
             .attributes
-            .get("enable_inner_plan")
+            .get(graph_attrs::ENABLE_INNER_PLAN)
             .and_then(|v| v.as_boolean())
             .unwrap_or(supports_inner_plan);
     let bind_outputs = node
         .attributes
-        .get("bind_inner_plan_outputs")
+        .get(graph_attrs::BIND_INNER_PLAN_OUTPUTS)
         .and_then(|v| v.as_boolean())
         .unwrap_or(true);
 
@@ -422,7 +423,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         LlmMode::Ask => {
             // Simple Q&A - minimal system prompt
             // Priority: 1) node attribute (agent context), 2) config instruction, 3) template, 4) hardcoded fallback
-            let system_prompt = get_optional_string_attribute(node, "system_prompt")?
+            let system_prompt = get_optional_string_attribute(node, graph_attrs::SYSTEM_PROMPT)?
                 .or_else(|| ctx.instruction_config.ask.clone())
                 .or_else(|| apxm_backends::render_prompt("ask_system", &serde_json::json!({})).ok())
                 .unwrap_or_else(|| "You are a helpful AI assistant. Answer concisely.".to_string());
@@ -476,7 +477,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     let tools_enabled = mode == LlmMode::Ask
         && node
             .attributes
-            .get("tools_enabled")
+            .get(graph_attrs::TOOLS_ENABLED)
             .and_then(|v| v.as_boolean())
             .unwrap_or(true); // Enable by default for Ask
 
@@ -484,7 +485,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
         // Get tool names from node attributes, or use all registered capabilities
         let tool_names: Option<Vec<String>> = node
             .attributes
-            .get("tools")
+            .get(graph_attrs::TOOLS)
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -855,7 +856,7 @@ async fn process_structured_output(
         if let Some(inner_plan) = structured.inner_plan.clone() {
             apxm_llm!(info,
                 execution_id = %ctx.execution_id,
-                "REASON provided inner plan DSL"
+                "REASON provided inner plan graph payload"
             );
 
             let inserted_nodes = execute_inner_plan(
@@ -889,7 +890,7 @@ async fn process_structured_output(
         } else {
             apxm_llm!(trace,
                 execution_id = %ctx.execution_id,
-                "REASON inner plan enabled but model omitted DSL"
+                "REASON inner plan enabled but model omitted graph payload"
             );
         }
     }
@@ -1036,7 +1037,7 @@ That's all."#;
         let json = r#"{
             "belief_updates": {},
             "new_goals": [],
-            "inner_plan": {"dsl": "agent InnerPlan { }"},
+            "inner_plan": {"graph": "{\"name\":\"inner\",\"nodes\":[],\"edges\":[],\"parameters\":[],\"metadata\":{}}"},
             "result": "ok"
         }"#;
 

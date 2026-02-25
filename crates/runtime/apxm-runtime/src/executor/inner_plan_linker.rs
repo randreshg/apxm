@@ -1,6 +1,6 @@
 //! Inner plan linker interface for runtime
 //!
-//! This module provides the interface for linking inner plan DSL code
+//! This module provides the interface for linking inner plan graph payloads
 //! during runtime execution. The linker acts as a bridge between the
 //! runtime and the compiler, delegating parsing/validation to the compiler.
 
@@ -13,19 +13,19 @@ use async_trait::async_trait;
 /// Result type for inner plan linking
 pub type LinkResult = Result<ExecutionDag, RuntimeError>;
 
-/// Trait for linking inner plan DSL code into ExecutionDAGs
+/// Trait for linking inner plan graph payloads into ExecutionDAGs
 ///
 /// The linker bridges the runtime and compiler:
-/// - Runtime calls linker with DSL code
+/// - Runtime calls linker with graph JSON payload
 /// - Linker delegates to compiler for parsing/validation
 /// - Linker returns validated DAG to runtime
 #[async_trait]
 pub trait InnerPlanLinker: Send + Sync {
-    /// Link inner plan DSL code into an ExecutionDAG
+    /// Link inner plan graph payload into an ExecutionDAG
     ///
     /// # Arguments
     ///
-    /// * `dsl_code` - The APxM DSL source code from the LLM
+    /// * `graph_payload` - The ApxmGraph JSON payload from the LLM
     /// * `source_name` - Name for error reporting (e.g., "inner_plan_<execution_id>")
     ///
     /// # Returns
@@ -35,7 +35,7 @@ pub trait InnerPlanLinker: Send + Sync {
     /// # Errors
     ///
     /// Returns RuntimeError::Compiler if parsing/validation fails
-    async fn link_inner_plan(&self, dsl_code: &str, source_name: &str) -> LinkResult;
+    async fn link_inner_plan(&self, graph_payload: &str, source_name: &str) -> LinkResult;
 
     /// Link a structured inner-plan codelet DAG into an ExecutionDAG.
     async fn link_codelet_dag(&self, dag: CodeletDag) -> LinkResult;
@@ -46,7 +46,7 @@ pub struct NoOpLinker;
 
 #[async_trait]
 impl InnerPlanLinker for NoOpLinker {
-    async fn link_inner_plan(&self, _dsl_code: &str, _source_name: &str) -> LinkResult {
+    async fn link_inner_plan(&self, _graph_payload: &str, _source_name: &str) -> LinkResult {
         Err(RuntimeError::State(
             "Inner plan linking not supported in this context".to_string(),
         ))

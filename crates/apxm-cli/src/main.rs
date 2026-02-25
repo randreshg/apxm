@@ -42,7 +42,7 @@ fn initialize_tracing(level: &Option<String>) {
 
 #[derive(Parser)]
 #[command(name = "apxm")]
-#[command(about = "APxM CLI (minimal) - compile and run AIS/MLIR", long_about = None)]
+#[command(about = "APxM CLI (minimal) - compile and run ApxmGraph inputs", long_about = None)]
 struct Cli {
     /// Optional config path (defaults to .apxm/config.toml or ~/.apxm/config.toml)
     #[arg(long)]
@@ -58,16 +58,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Compile DSL/MLIR to an artifact
+    /// Compile ApxmGraph JSON/binary to an artifact
     Compile {
-        /// Input file (.ais or .mlir)
+        /// Input graph file (.json or JSON-encoded binary)
         input: PathBuf,
-        /// Treat input as MLIR
-        #[arg(long)]
-        mlir: bool,
-        /// Treat input as ApxmGraph JSON/binary
-        #[arg(long)]
-        graph: bool,
         /// Output artifact path
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -78,20 +72,14 @@ enum Commands {
         #[arg(short = 'O', long = "opt-level", default_value = "1")]
         opt_level: u8,
     },
-    /// Compile and execute a DSL/MLIR file through the runtime
+    /// Compile and execute an ApxmGraph file through the runtime
     #[command(trailing_var_arg = true)]
     Execute {
-        /// Input file (.ais or .mlir)
+        /// Input graph file (.json or JSON-encoded binary)
         input: PathBuf,
         /// Arguments to pass to the entry flow
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
-        /// Treat input as MLIR
-        #[arg(long)]
-        mlir: bool,
-        /// Treat input as ApxmGraph JSON/binary
-        #[arg(long)]
-        graph: bool,
         /// Optimization level (0 = no optimizations, 1-3 = increasing optimization)
         /// -O0 disables FuseReasoning, -O1+ enables it
         #[arg(short = 'O', long = "opt-level", default_value = "1")]
@@ -144,31 +132,16 @@ async fn run_cli() -> Result<()> {
     match cli.command {
         Commands::Compile {
             input,
-            mlir,
-            graph,
             output,
             emit_diagnostics,
             opt_level,
-        } => compile_command(input, mlir, graph, output, emit_diagnostics, opt_level),
+        } => compile_command(input, output, emit_diagnostics, opt_level),
         Commands::Execute {
             input,
             args,
-            mlir,
-            graph,
             opt_level,
             emit_metrics,
-        } => {
-            execute_command(
-                input,
-                args,
-                mlir,
-                graph,
-                opt_level,
-                cli.config,
-                emit_metrics,
-            )
-            .await
-        }
+        } => execute_command(input, args, opt_level, cli.config, emit_metrics).await,
         Commands::Run {
             input,
             args,
@@ -289,19 +262,12 @@ fn command_available(cmd: &str) -> bool {
 #[cfg(feature = "driver")]
 fn compile_command(
     input: PathBuf,
-    mlir: bool,
-    graph: bool,
     output: Option<PathBuf>,
     emit_diagnostics: Option<PathBuf>,
     opt_level: u8,
 ) -> Result<()> {
+    use apxm_core::constants::diagnostics;
     use apxm_core::types::OptimizationLevel;
-
-    if graph && mlir {
-        return Err(anyhow::anyhow!(
-            "--graph and --mlir are mutually exclusive input modes"
-        ));
-    }
 
     let opt = match opt_level {
         0 => OptimizationLevel::O0,
@@ -310,76 +276,14 @@ fn compile_command(
         _ => OptimizationLevel::O3,
     };
 
-    if graph {
-        let compile_start = std::time::Instant::now();
-        let compiler = Compiler::with_opt_level(opt).context("Failed to initialize compiler")?;
-        let graph = compiler
-            .load_graph(&input)
-            .map_err(|e| anyhow::anyhow!("Failed to parse graph: {e}"))?;
-        let module = compiler
-            .compile_graph(&graph)
-            .map_err(|e| anyhow::anyhow!("Failed to compile graph: {e}"))?;
-        let compile_time = compile_start.elapsed();
-
-        let artifact_start = std::time::Instant::now();
-        let bytes = module
-            .generate_artifact_bytes()
-            .context("Failed to generate artifact")?;
-        let artifact_time = artifact_start.elapsed();
-
-        let out_path = output.unwrap_or_else(|| input.with_extension("apxmobj"));
-        std::fs::write(&out_path, &bytes)
-            .with_context(|| format!("Failed to write {}", out_path.display()))?;
-
-        if let Some(diag_path) = emit_diagnostics {
-            let artifact = apxm_artifact::Artifact::from_bytes(&bytes)
-                .map_err(|e| anyhow::anyhow!("Failed to parse artifact: {}", e))?;
-            let dag = artifact.dag();
-            let diagnostics = serde_json::json!({
-                "input": input.display().to_string(),
-                "mode": "graph",
-                "graph_name": graph.name,
-                "optimization_level": format!("O{}", opt_level),
-                "compilation_phases": {
-                    "total_ms": compile_time.as_secs_f64() * 1000.0,
-                    "artifact_gen_ms": artifact_time.as_secs_f64() * 1000.0
-                },
-                "dag_statistics": {
-                    "total_nodes": dag.nodes.len(),
-                    "entry_nodes": dag.entry_nodes.len(),
-                    "exit_nodes": dag.exit_nodes.len(),
-                    "total_edges": dag.edges.len()
-                },
-            });
-            std::fs::write(&diag_path, serde_json::to_string_pretty(&diagnostics)?).with_context(
-                || format!("Failed to write diagnostics to {}", diag_path.display()),
-            )?;
-            println!("Wrote diagnostics to {}", diag_path.display());
-        }
-
-        println!("Wrote graph artifact to {}", out_path.display());
-        println!(
-            "Compiled in {:.2}ms, artifact generated in {:.2}ms",
-            compile_time.as_secs_f64() * 1000.0,
-            artifact_time.as_secs_f64() * 1000.0
-        );
-        return Ok(());
-    }
-
-    // Read source for error display
-    let source = std::fs::read_to_string(&input)
-        .with_context(|| format!("Failed to read {}", input.display()))?;
-
     let compile_start = std::time::Instant::now();
     let compiler = Compiler::with_opt_level(opt).context("Failed to initialize compiler")?;
-    let module = match compiler.compile(&input, mlir) {
-        Ok(m) => m,
-        Err(err) => {
-            // Pretty-print compilation errors with source context
-            eprintln!("{}", format_driver_error(&err, &source));
-            return Err(anyhow::anyhow!("Compilation failed"));
-        }
-    };
+    let graph = compiler
+        .load_graph(&input)
+        .map_err(|e| anyhow::anyhow!("Failed to parse graph: {e}"))?;
+    let module = compiler
+        .compile_graph(&graph)
+        .map_err(|e| anyhow::anyhow!("Failed to compile graph: {e}"))?;
     let compile_time = compile_start.elapsed();
 
     let artifact_start = std::time::Instant::now();
@@ -400,6 +304,8 @@ fn compile_command(
 
         let diagnostics = serde_json::json!({
             "input": input.display().to_string(),
+            "mode": diagnostics::MODE_GRAPH,
+            "graph_name": graph.name,
             "optimization_level": format!("O{}", opt_level),
             "compilation_phases": {
                 "total_ms": compile_time.as_secs_f64() * 1000.0,
@@ -412,8 +318,8 @@ fn compile_command(
                 "total_edges": dag.edges.len()
             },
             "passes_applied": match opt_level {
-                0 => vec!["lower-to-async"],
-                _ => vec!["normalize", "scheduling", "fuse-ask-ops", "canonicalizer", "cse", "symbol-dce", "lower-to-async"]
+                0 => Vec::<&str>::new(),
+                _ => vec!["normalize", "build-prompt", "unconsumed-value-warning", "scheduling", "fuse-ask-ops", "canonicalizer", "cse", "symbol-dce"]
             }
         });
 
@@ -423,7 +329,7 @@ fn compile_command(
         println!("Wrote diagnostics to {}", diag_path.display());
     }
 
-    println!("Wrote artifact to {}", out_path.display());
+    println!("Wrote graph artifact to {}", out_path.display());
     println!(
         "Compiled in {:.2}ms, artifact generated in {:.2}ms",
         compile_time.as_secs_f64() * 1000.0,
@@ -436,27 +342,11 @@ fn compile_command(
 async fn execute_command(
     input: PathBuf,
     args: Vec<String>,
-    mlir: bool,
-    graph: bool,
     opt_level: u8,
     config: Option<PathBuf>,
     emit_metrics: Option<PathBuf>,
 ) -> Result<()> {
     use apxm_core::types::OptimizationLevel;
-
-    if graph && mlir {
-        return Err(anyhow::anyhow!(
-            "--graph and --mlir are mutually exclusive input modes"
-        ));
-    }
-
-    // Read source for error display
-    let source = if graph {
-        String::new()
-    } else {
-        std::fs::read_to_string(&input)
-            .with_context(|| format!("Failed to read {}", input.display()))?
-    };
 
     let apxm_config = load_config(config).context("Failed to load configuration")?;
     let opt = match opt_level {
@@ -470,15 +360,10 @@ async fn execute_command(
         .await
         .context("Failed to initialize runtime")?;
 
-    let result = match if graph {
-        linker.run_graph(&input, args).await
-    } else {
-        linker.run_with_args(&input, mlir, args).await
-    } {
+    let result = match linker.run_graph(&input, args).await {
         Ok(r) => r,
         Err(err) => {
-            // Pretty-print compilation/runtime errors with source context
-            eprintln!("{}", format_driver_error(&err, &source));
+            eprintln!("{}", err);
             return Err(anyhow::anyhow!("Execution failed"));
         }
     };
@@ -555,7 +440,7 @@ async fn run_command(
     // Validate file extension
     if input.extension().and_then(|e| e.to_str()) != Some("apxmobj") {
         return Err(anyhow::anyhow!(
-            "Expected .apxmobj artifact file. Use 'execute' command for .ais source files."
+            "Expected .apxmobj artifact file. Use 'execute' command for graph source files."
         ));
     }
 
@@ -732,19 +617,5 @@ fn load_config(config: Option<PathBuf>) -> Result<ApXmConfig> {
         }
         Err(ConfigError::HomeDirMissing) => Ok(ApXmConfig::default()),
         Err(err) => Err(anyhow::anyhow!(err)),
-    }
-}
-
-/// Format a driver error with pretty-printed source context.
-///
-/// This extracts the underlying compiler error and uses `pretty_print()` to
-/// display rustc-style error messages with line numbers and source snippets.
-#[cfg(feature = "driver")]
-fn format_driver_error(err: &apxm_driver::DriverError, source: &str) -> String {
-    use apxm_driver::DriverError;
-
-    match err {
-        DriverError::Compiler(compiler_err) => compiler_err.pretty_print(Some(source)),
-        other => format!("{other}"),
     }
 }

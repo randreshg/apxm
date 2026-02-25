@@ -138,6 +138,7 @@ impl Node {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constants::graph::attrs as graph_attrs;
 
     #[test]
     fn test_deserialization_with_missing_fields() {
@@ -157,7 +158,10 @@ mod tests {
     #[test]
     fn test_roundtrip_with_all_fields() {
         let mut node = Node::new(5, AISOperationType::QMem);
-        node.set_attribute("query".to_string(), Value::String("test".to_string()));
+        node.set_attribute(
+            graph_attrs::QUERY.to_string(),
+            Value::String("test".to_string()),
+        );
         node.add_input_token(100);
         node.add_output_token(200);
         node.metadata.priority = 10;
@@ -172,7 +176,10 @@ mod tests {
     #[test]
     fn test_validation() {
         let mut node = Node::new(1, AISOperationType::QMem);
-        node.set_attribute("query".to_string(), Value::String("test".to_string()));
+        node.set_attribute(
+            graph_attrs::QUERY.to_string(),
+            Value::String("test".to_string()),
+        );
         assert!(node.validate().is_ok());
 
         let node_invalid = Node::new(2, AISOperationType::QMem);

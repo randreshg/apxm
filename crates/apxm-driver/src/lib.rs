@@ -4,7 +4,7 @@
 //!
 //! - **`config`**: TOML-based configuration (`~/.apxm/config.toml`)
 //! - **`linker`**: High-level linker orchestrating compiler/runtime
-//! - **`compiler`**: Compiler wrapper for DSL/MLIR parsing
+//! - **`compiler`**: Compiler wrapper for ApxmGraph parsing and lowering
 //! - **`runtime`**: Runtime executor for DAG execution
 //!
 //! # Architecture

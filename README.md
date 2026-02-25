@@ -2,8 +2,9 @@
 
 APXM is a full toolchain for building autonomous agents:
 
-- **AIS DSL** for declaring memory, flows, handlers, and tool invocations
-- **Compiler** that lowers AIS → MLIR → executable artifacts
+- **ApxmGraph IR** as the canonical frontend format
+- **AIS DSL frontend** support via AST normalization to `ApxmGraph`
+- **Compiler** that lowers graph → AIS MLIR → executable artifacts
 - **Runtime** with scheduler, memory system, and LLM registry
 - **CLI** for compile/run workflows
 
@@ -28,7 +29,7 @@ apxm build
 apxm doctor
 
 # Run an example
-apxm execute examples/hello_world.ais
+apxm execute examples/hello_graph.json
 ```
 
 ## Prerequisites
@@ -47,9 +48,9 @@ apxm build                      # Build full project
 apxm build --compiler           # Build compiler only
 apxm build --runtime            # Build runtime only
 apxm build --no-trace           # Build without tracing (zero overhead)
-apxm execute <file.ais>         # Compile and run an AIS file
-apxm execute <file.ais> --trace debug  # Run with debug tracing
-apxm compile <file.ais> -o out.apxmobj # Compile to artifact
+apxm execute <file.json>         # Compile and run an ApxmGraph file
+apxm execute <file.json> --trace debug  # Run with debug tracing
+apxm compile <file.json> -o out.apxmobj # Compile to artifact
 apxm run <file.apxmobj>         # Run pre-compiled artifact
 apxm workloads list             # List benchmark workloads
 apxm workloads check            # Validate workloads compile
@@ -73,10 +74,10 @@ apxm build --no-trace   # Zero-overhead build (tracing compiled out)
 
 **Runtime control** (when built with tracing):
 ```bash
-apxm execute workflow.ais                  # Silent execution
-apxm execute workflow.ais --trace info     # High-level execution flow
-apxm execute workflow.ais --trace debug    # Detailed worker/operation info
-apxm execute workflow.ais --trace trace    # Full verbosity (tokens, LLM calls)
+apxm execute workflow.json                  # Silent execution
+apxm execute workflow.json --trace info     # High-level execution flow
+apxm execute workflow.json --trace debug    # Detailed worker/operation info
+apxm execute workflow.json --trace trace    # Full verbosity (tokens, LLM calls)
 ```
 
 Trace targets: `apxm::scheduler`, `apxm::ops`, `apxm::llm`, `apxm::tokens`, `apxm::dag`
@@ -93,15 +94,21 @@ APXM provides three core LLM operations with different reasoning characteristics
 | `think` | Extended thinking with token budget | `think("Analyze this problem", budget: 1000) -> analysis` |
 | `reason` | Structured reasoning with belief updates | `reason("Solve step by step", context) -> solution` |
 
-```ais
-// Simple ask - direct question and answer
-ask("Explain the domain background of " + topic) -> background
-
-// Think - extended reasoning with budget
-think("Analyze the implications", data, budget: 2000) -> analysis
-
-// Reason - structured with context operands
-reason("Execute step 1: ", steps) -> step1_result
+```json
+{
+  "name": "llm_ops",
+  "nodes": [
+    { "id": 1, "name": "ask", "op": "ASK", "attributes": { "template_str": "Explain the domain background of {0}" } },
+    { "id": 2, "name": "think", "op": "THINK", "attributes": { "template_str": "Analyze the implications", "budget": 2000 } },
+    { "id": 3, "name": "reason", "op": "REASON", "attributes": { "template_str": "Execute step 1: {0}" } }
+  ],
+  "edges": [
+    { "from": 1, "to": 2, "dependency": "Data" },
+    { "from": 2, "to": 3, "dependency": "Data" }
+  ],
+  "parameters": [{ "name": "topic", "type_name": "str" }],
+  "metadata": { "is_entry": true }
+}
 ```
 
 Context operands (comma-separated) are appended at runtime as:
@@ -121,10 +128,10 @@ The `+` operator merges tokens; use the comma form for context operands.
 
 ```bash
 # Write per-pass MLIR snapshots to the given directory.
-APXM_PRINT_IR_DIR=/tmp/apxm-ir apxm compiler compile file.ais -o output.apxmobj
+APXM_PRINT_IR_DIR=/tmp/apxm-ir apxm compiler compile file.json -o output.apxmobj
 
 # Optional: print a one-line trace of IR printing config.
-APXM_PRINT_IR_TRACE=1 APXM_PRINT_IR_DIR=/tmp/apxm-ir apxm compiler compile file.ais -o output.apxmobj
+APXM_PRINT_IR_TRACE=1 APXM_PRINT_IR_DIR=/tmp/apxm-ir apxm compiler compile file.json -o output.apxmobj
 ```
 
 ---
@@ -160,7 +167,7 @@ crates/
     apxm-backends # LLM and storage backends
     apxm-core     # Shared types
     apxm-runtime  # Execution engine
-examples/         # Sample AIS programs
+examples/         # Sample ApxmGraph programs
 docs/             # Documentation
 ```
 
@@ -170,4 +177,4 @@ docs/             # Documentation
 
 - [Getting Started](docs/GETTING_STARTED.md) - Installation, setup, and first steps
 - [AGENTS.md](docs/AGENTS.md) - CLI reference and AI agent guide
-- [Benchmark Workloads](papers/CF26/benchmarks/workloads/README.md) - DSL comparison benchmarks with examples
+- [Benchmark Workloads](papers/CF26/benchmarks/workloads/README.md) - workload benchmarks and examples

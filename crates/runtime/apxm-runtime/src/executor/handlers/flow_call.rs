@@ -6,6 +6,7 @@ use std::pin::Pin;
 use super::{ExecutionContext, Node, Result, Value, get_string_attribute};
 use crate::aam::TransitionLabel;
 use crate::executor::ExecutorEngine;
+use apxm_core::constants::graph::attrs as graph_attrs;
 use apxm_core::error::RuntimeError;
 
 /// Maximum recursion depth for flow calls to prevent stack overflow
@@ -36,10 +37,10 @@ pub fn execute<'a>(
 
 async fn execute_impl(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -> Result<Value> {
     // Get agent name
-    let agent_name = get_string_attribute(node, "agent_name")?;
+    let agent_name = get_string_attribute(node, graph_attrs::AGENT_NAME)?;
 
     // Get flow name
-    let flow_name = get_string_attribute(node, "flow_name")?;
+    let flow_name = get_string_attribute(node, graph_attrs::FLOW_NAME)?;
 
     tracing::info!(
         agent = %agent_name,
@@ -279,11 +280,13 @@ mod tests {
             metadata: NodeMetadata::default(),
         };
         node.attributes.insert(
-            "agent_name".to_string(),
+            graph_attrs::AGENT_NAME.to_string(),
             Value::String("TestAgent".to_string()),
         );
-        node.attributes
-            .insert("flow_name".to_string(), Value::String("greet".to_string()));
+        node.attributes.insert(
+            graph_attrs::FLOW_NAME.to_string(),
+            Value::String("greet".to_string()),
+        );
 
         let result = execute(&ctx, &node, vec![]).await.unwrap();
         assert_eq!(result, Value::String("hello from sub-flow".to_string()));
@@ -316,11 +319,11 @@ mod tests {
             metadata: NodeMetadata::default(),
         };
         node.attributes.insert(
-            "agent_name".to_string(),
+            graph_attrs::AGENT_NAME.to_string(),
             Value::String("NonExistent".to_string()),
         );
         node.attributes.insert(
-            "flow_name".to_string(),
+            graph_attrs::FLOW_NAME.to_string(),
             Value::String("missing".to_string()),
         );
 
@@ -369,11 +372,13 @@ mod tests {
             metadata: NodeMetadata::default(),
         };
         node.attributes.insert(
-            "agent_name".to_string(),
+            graph_attrs::AGENT_NAME.to_string(),
             Value::String("TestAgent".to_string()),
         );
-        node.attributes
-            .insert("flow_name".to_string(), Value::String("test".to_string()));
+        node.attributes.insert(
+            graph_attrs::FLOW_NAME.to_string(),
+            Value::String("test".to_string()),
+        );
 
         let result = execute(&ctx, &node, vec![]).await;
         assert!(result.is_err());

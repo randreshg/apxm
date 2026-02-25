@@ -11,6 +11,7 @@ use super::{
     ExecutionContext, Node, Result, Value, execute_llm_request, get_optional_string_attribute,
 };
 use apxm_backends::LLMRequest;
+use apxm_core::constants::graph::attrs as graph_attrs;
 use apxm_core::error::RuntimeError;
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
@@ -54,15 +55,15 @@ pub struct ReflectionOutput {
 /// ```
 pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -> Result<Value> {
     // Get prompt from attribute or use default
-    let prompt = get_optional_string_attribute(node, "prompt")?
+    let prompt = get_optional_string_attribute(node, graph_attrs::PROMPT)?
         .or_else(|| {
-            get_optional_string_attribute(node, "trace_id")
+            get_optional_string_attribute(node, graph_attrs::TRACE_ID)
                 .ok()
                 .flatten()
         })
         .unwrap_or_default();
 
-    let model = get_optional_string_attribute(node, "model")?;
+    let model = get_optional_string_attribute(node, graph_attrs::MODEL)?;
     let limit = node
         .attributes
         .get("history_limit")

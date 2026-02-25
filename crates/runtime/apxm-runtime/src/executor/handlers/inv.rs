@@ -6,6 +6,7 @@
 use super::{
     ExecutionContext, Node, Result, Value, get_optional_u64_attribute, get_string_attribute,
 };
+use apxm_core::constants::graph::attrs as graph_attrs;
 use std::collections::HashMap;
 
 /// Execute INV operation - Invoke a registered capability
@@ -38,7 +39,7 @@ use std::collections::HashMap;
 /// INV(capability="echo", timeout_ms=5000) -> result
 /// ```
 pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -> Result<Value> {
-    let capability_name = get_string_attribute(node, "capability")?;
+    let capability_name = get_string_attribute(node, graph_attrs::CAPABILITY)?;
     let timeout_ms = get_optional_u64_attribute(node, "timeout_ms")?.unwrap_or(30000);
 
     tracing::debug!(
@@ -55,7 +56,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     // First, check for params_json attribute (from InvOp MLIR)
     if let Some(params_json) = node
         .attributes
-        .get("params_json")
+        .get(graph_attrs::PARAMS_JSON)
         .and_then(|v| v.as_string())
     {
         // Parse JSON and extract key-value pairs
@@ -170,8 +171,10 @@ mod tests {
             metadata: NodeMetadata::default(),
         };
 
-        node.attributes
-            .insert("capability".to_string(), Value::String("echo".to_string()));
+        node.attributes.insert(
+            graph_attrs::CAPABILITY.to_string(),
+            Value::String("echo".to_string()),
+        );
         node.attributes.insert(
             "arg_message".to_string(),
             Value::String("Hello World".to_string()),
@@ -198,7 +201,7 @@ mod tests {
         };
 
         node.attributes.insert(
-            "capability".to_string(),
+            graph_attrs::CAPABILITY.to_string(),
             Value::String("nonexistent".to_string()),
         );
 
@@ -219,8 +222,10 @@ mod tests {
             metadata: NodeMetadata::default(),
         };
 
-        node.attributes
-            .insert("capability".to_string(), Value::String("echo".to_string()));
+        node.attributes.insert(
+            graph_attrs::CAPABILITY.to_string(),
+            Value::String("echo".to_string()),
+        );
         node.attributes.insert(
             "timeout_ms".to_string(),
             Value::Number(apxm_core::types::values::Number::Integer(5000)),

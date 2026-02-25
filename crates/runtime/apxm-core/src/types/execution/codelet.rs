@@ -31,6 +31,7 @@ use std::collections::{HashMap, VecDeque};
 use serde::{Deserialize, Serialize};
 
 use super::{DagMetadata, DependencyType, Edge, ExecutionDag, Node, NodeId};
+use crate::constants::graph::attrs as graph_attrs;
 use crate::error::runtime::RuntimeError;
 use crate::types::AISOperationType;
 
@@ -267,7 +268,7 @@ impl CodeletDag {
                 let node_id = codelet.id * 1000; // avoid collisions
                 let mut node = Node::new(node_id, AISOperationType::Ask);
                 node.set_attribute(
-                    "prompt".to_string(),
+                    graph_attrs::PROMPT.to_string(),
                     crate::types::Value::String(codelet.description.clone()),
                 );
                 node.metadata.priority = codelet.metadata.priority;
@@ -280,7 +281,7 @@ impl CodeletDag {
                     if dag.get_node(node_id).is_none() {
                         let mut node = Node::new(node_id, AISOperationType::Ask);
                         node.set_attribute(
-                            "prompt".to_string(),
+                            graph_attrs::PROMPT.to_string(),
                             crate::types::Value::String(codelet.description.clone()),
                         );
                         node.metadata.priority = codelet.metadata.priority;

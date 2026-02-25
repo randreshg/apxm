@@ -39,12 +39,12 @@ cargo test -p <crate>  # Single crate
 ## Running Examples
 
 ```bash
-apxm execute examples/hello.ais
-apxm compile examples/hello.ais -o hello.apxmobj
+apxm execute examples/hello_graph.json
+apxm compile examples/hello_graph.json -o hello.apxmobj
 apxm run hello.apxmobj
 ```
 
-Available examples: `hello.ais`, `multi_flow.ais`, `tool_use.ais`.
+Available examples: `hello_graph.json`, `multi_flow_graph.json`, `tool_use_graph.json`.
 
 ## Project Structure
 

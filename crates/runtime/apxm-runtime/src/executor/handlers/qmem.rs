@@ -7,11 +7,12 @@ use crate::{
     aam::{STAGED_BELIEF_PREFIX, TransitionLabel},
     memory::MemorySpace,
 };
+use apxm_core::constants::graph::attrs as graph_attrs;
 
 /// Execute QMEM operation - Query memory from specified tier
 pub async fn execute(ctx: &ExecutionContext, node: &Node, _inputs: Vec<Value>) -> Result<Value> {
-    let query = get_string_attribute(node, "query")?;
-    let memory_tier = get_optional_string_attribute(node, "memory_tier")?;
+    let query = get_string_attribute(node, graph_attrs::QUERY)?;
+    let memory_tier = get_optional_string_attribute(node, graph_attrs::MEMORY_TIER)?;
     let limit = node
         .attributes
         .get("limit")
@@ -120,10 +121,14 @@ mod tests {
             output_tokens: vec![],
             metadata: apxm_core::types::execution::NodeMetadata::default(),
         };
-        node.attributes
-            .insert("query".to_string(), Value::String("user".to_string()));
-        node.attributes
-            .insert("memory_tier".to_string(), Value::String("stm".to_string()));
+        node.attributes.insert(
+            graph_attrs::QUERY.to_string(),
+            Value::String("user".to_string()),
+        );
+        node.attributes.insert(
+            graph_attrs::MEMORY_TIER.to_string(),
+            Value::String("stm".to_string()),
+        );
 
         let result = execute(&ctx, &node, vec![]).await.unwrap();
 

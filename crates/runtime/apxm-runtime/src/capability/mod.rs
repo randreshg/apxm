@@ -118,7 +118,7 @@ impl CapabilitySystem {
     /// List all registered capability names
     ///
     /// This is useful for:
-    /// - Validating DSL before compilation
+    /// - Validating graph intent before compilation
     /// - Showing available capabilities to users
     /// - Passing to LLM for constrained generation
     pub fn list_capability_names(&self) -> Vec<String> {

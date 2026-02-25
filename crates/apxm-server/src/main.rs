@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use apxm_artifact::{Artifact, ArtifactMetadata};
+use apxm_artifact::Artifact;
+use apxm_compiler::{Context as CompilerContext, Pipeline as CompilerPipeline};
+use apxm_core::constants::graph::attrs as graph_attrs;
 use apxm_core::error::RuntimeError;
 use apxm_core::types::AISOperationType;
 use apxm_core::types::values::Value;
@@ -340,19 +342,21 @@ fn apply_runtime_attributes(
         }
         if let Some(budget) = token_budget {
             let budget = i64::try_from(budget).unwrap_or(i64::MAX);
-            node.attributes
-                .insert("token_budget".to_string(), Value::Number(budget.into()));
+            node.attributes.insert(
+                graph_attrs::TOKEN_BUDGET.to_string(),
+                Value::Number(budget.into()),
+            );
         }
         if let Some(schema) = output_schema.as_ref() {
             let schema_value = Value::try_from(schema.clone())
                 .map_err(|e| format!("invalid output_schema: {e}"))?;
             node.attributes
-                .insert("output_schema".to_string(), schema_value);
+                .insert(graph_attrs::OUTPUT_SCHEMA.to_string(), schema_value);
         }
         if let Some(retries) = max_schema_retries {
             let retries = i64::from(retries);
             node.attributes.insert(
-                "max_schema_retries".to_string(),
+                graph_attrs::MAX_SCHEMA_RETRIES.to_string(),
                 Value::Number(retries.into()),
             );
         }
@@ -361,13 +365,21 @@ fn apply_runtime_attributes(
 }
 
 fn graph_to_artifact(graph: ApxmGraph) -> Result<Artifact, ApiError> {
-    let dag = graph
-        .to_execution_dag()
-        .map_err(ApiError::bad_request_graph)?;
-    Ok(Artifact::new(
-        ArtifactMetadata::new(Some(graph.name), "apxm-server"),
-        vec![dag],
-    ))
+    let context = CompilerContext::new().map_err(|error| {
+        ApiError::internal_message(format!(
+            "failed to initialize APXM compiler context: {error}"
+        ))
+    })?;
+    let pipeline =
+        CompilerPipeline::with_opt_level(&context, apxm_core::types::OptimizationLevel::O1);
+    let module = pipeline.compile_graph(&graph).map_err(|error| {
+        ApiError::bad_request(format!("failed to compile graph '{}': {error}", graph.name))
+    })?;
+    let artifact_bytes = module
+        .generate_artifact_bytes()
+        .map_err(|error| ApiError::internal_message(format!("failed to emit artifact: {error}")))?;
+    Artifact::from_bytes(&artifact_bytes)
+        .map_err(|error| ApiError::internal_message(format!("failed to decode artifact: {error}")))
 }
 
 fn to_execute_response(result: apxm_runtime::RuntimeExecutionResult) -> ExecuteResponse {
@@ -419,10 +431,6 @@ impl ApiError {
         Self::bad_request(format!("invalid json: {error}"))
     }
 
-    fn bad_request_graph(error: apxm_graph::GraphError) -> Self {
-        Self::bad_request(format!("{error}"))
-    }
-
     fn runtime(error: RuntimeError) -> Self {
         error!(error = %error, "runtime error");
         Self {
@@ -435,6 +443,13 @@ impl ApiError {
         Self {
             status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             message: error.to_string(),
+        }
+    }
+
+    fn internal_message(message: impl Into<String>) -> Self {
+        Self {
+            status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            message: message.into(),
         }
     }
 }

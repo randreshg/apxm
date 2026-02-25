@@ -41,18 +41,18 @@ impl Compiler {
         self.opt_level
     }
 
-    /// Compile the provided file (DSL or MLIR) into a compiler module.
-    pub fn compile(&self, path: &Path, is_mlir: bool) -> Result<Module, DriverError> {
-        let source = fs::read_to_string(path)?;
-        let pipeline = Pipeline::with_opt_level(&self.context, self.opt_level);
-        if is_mlir || path.extension().map(|e| e == "mlir").unwrap_or(false) {
-            pipeline.compile(&source).map_err(DriverError::Compiler)
-        } else {
-            let filename = path.to_string_lossy().to_string();
-            pipeline
-                .compile_dsl(&source, &filename)
-                .map_err(DriverError::Compiler)
+    /// Compile a graph file into a compiler module.
+    pub fn compile(&self, path: &Path) -> Result<Module, DriverError> {
+        if path.extension().and_then(|ext| ext.to_str()) == Some("mlir")
+            || path.extension().and_then(|ext| ext.to_str()) == Some("ais")
+        {
+            return Err(DriverError::Driver(
+                "Graph-only compile path requires ApxmGraph JSON/binary input".to_string(),
+            ));
         }
+
+        let graph = self.load_graph(path)?;
+        self.compile_graph(&graph)
     }
 
     /// Compile an in-memory graph by lowering to MLIR and running optimizer passes.

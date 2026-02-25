@@ -5,11 +5,12 @@ use super::{
     get_string_attribute,
 };
 use crate::{aam::TransitionLabel, memory::MemorySpace};
+use apxm_core::constants::graph::attrs as graph_attrs;
 
 /// Execute UMEM operation - Store value in specified memory tier
 pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -> Result<Value> {
     let key = get_string_attribute(node, "key")?;
-    let memory_tier = get_optional_string_attribute(node, "memory_tier")?;
+    let memory_tier = get_optional_string_attribute(node, graph_attrs::MEMORY_TIER)?;
 
     // Get value from first input or attribute
     let value = if !inputs.is_empty() {
@@ -94,8 +95,10 @@ mod tests {
         };
         node.attributes
             .insert("key".to_string(), Value::String("test_key".to_string()));
-        node.attributes
-            .insert("memory_tier".to_string(), Value::String("stm".to_string()));
+        node.attributes.insert(
+            graph_attrs::MEMORY_TIER.to_string(),
+            Value::String("stm".to_string()),
+        );
 
         let input_value = Value::String("test_value".to_string());
         let result = execute(&ctx, &node, vec![input_value.clone()])

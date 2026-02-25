@@ -13,7 +13,7 @@ Orchestration layer bridging compiler and runtime.
 ## Responsibilities
 
 - Load config and materialize runtime/backends
-- Compile DSL/MLIR inputs via `apxm-compiler`
+- Compile ApxmGraph inputs via `apxm-compiler`
 - Execute artifacts via `apxm-runtime`
 
 ## How It Fits
@@ -62,7 +62,7 @@ let linker_config = LinkerConfig::from_apxm_config(config);
 let linker = Linker::new(linker_config).await?;
 
 // Compile and execute
-let result = linker.run(Path::new("program.ais"), false).await?;
+let result = linker.run(Path::new("program.json")).await?;
 println!("Result: {:?}", result);
 ```
 
@@ -116,7 +116,7 @@ use apxm_driver::runtime::CompilerInnerPlanLinker;
 
 // Used by runtime to compile inner plans on-the-fly
 let linker = CompilerInnerPlanLinker::new()?;
-let dag = linker.link_inner_plan(dsl_code, "inner_plan").await?;
+let dag = linker.link_inner_plan(graph_json, "inner_plan").await?;
 ```
 
 ## Dependencies

@@ -1,4 +1,5 @@
 use crate::{ApxmGraph, GraphError, GraphNode};
+use apxm_core::constants::graph::{attrs as graph_attrs, metadata as graph_meta};
 use apxm_core::types::AISOperationType;
 use apxm_core::types::{Number, Value};
 use std::collections::{BTreeSet, HashMap};
@@ -61,7 +62,7 @@ pub fn lower_to_mlir(graph: &ApxmGraph) -> Result<String, GraphError> {
 
     let is_entry = graph
         .metadata
-        .get("is_entry")
+        .get(graph_meta::IS_ENTRY)
         .and_then(Value::as_boolean)
         .unwrap_or(true);
 
@@ -254,13 +255,25 @@ fn emit_node(
         AISOperationType::ConstStr => {
             let value = get_string_attr(
                 &node.attributes,
-                &["value", "text", "const", "template_str", "prompt"],
+                &[
+                    "value",
+                    "text",
+                    "const",
+                    graph_attrs::TEMPLATE_STR,
+                    graph_attrs::PROMPT,
+                ],
             )
             .unwrap_or_default();
             let result = format!("%n{}", node.id);
             let attrs = extra_attr_dict(
                 &node.attributes,
-                &["value", "text", "const", "template_str", "prompt"],
+                &[
+                    "value",
+                    "text",
+                    "const",
+                    graph_attrs::TEMPLATE_STR,
+                    graph_attrs::PROMPT,
+                ],
             );
             state.emit(format!(
                 "    {result} = ais.const_str {}{} : !ais.token",
@@ -275,7 +288,10 @@ fn emit_node(
         AISOperationType::Ask => {
             let template = get_non_empty_template(&node.attributes);
             let result = format!("%n{}", node.id);
-            let attrs = extra_attr_dict(&node.attributes, &["template_str", "prompt"]);
+            let attrs = extra_attr_dict(
+                &node.attributes,
+                &[graph_attrs::TEMPLATE_STR, graph_attrs::PROMPT],
+            );
             let context = format_context_brackets(&inputs);
             state.emit(format!(
                 "    {result} = ais.ask {}{}{} : !ais.token",
@@ -291,7 +307,10 @@ fn emit_node(
         AISOperationType::Think => {
             let template = get_non_empty_template(&node.attributes);
             let result = format!("%n{}", node.id);
-            let attrs = extra_attr_dict(&node.attributes, &["template_str", "prompt"]);
+            let attrs = extra_attr_dict(
+                &node.attributes,
+                &[graph_attrs::TEMPLATE_STR, graph_attrs::PROMPT],
+            );
             let context = format_context_brackets(&inputs);
             state.emit(format!(
                 "    {result} = ais.think {}{}{} : !ais.token",
@@ -307,7 +326,10 @@ fn emit_node(
         AISOperationType::Reason => {
             let template = get_non_empty_template(&node.attributes);
             let result = format!("%n{}", node.id);
-            let attrs = extra_attr_dict(&node.attributes, &["template_str", "prompt"]);
+            let attrs = extra_attr_dict(
+                &node.attributes,
+                &[graph_attrs::TEMPLATE_STR, graph_attrs::PROMPT],
+            );
             let context = format_context_brackets(&inputs);
             state.emit(format!(
                 "    {result} = ais.reason {}{}{} : !ais.token",
@@ -321,24 +343,28 @@ fn emit_node(
             }))
         }
         AISOperationType::QMem => {
-            let query = get_string_attr(&node.attributes, &["query"]).unwrap_or_default();
+            let query =
+                get_string_attr(&node.attributes, &[graph_attrs::QUERY]).unwrap_or_default();
             let sid = get_string_attr(&node.attributes, &["sid", "stage", "scope"])
                 .unwrap_or_else(|| "default".to_string());
             let space = normalize_memory_space(
-                &get_string_attr(&node.attributes, &["space", "memory_tier"])
-                    .unwrap_or_else(|| "stm".to_string()),
+                &get_string_attr(
+                    &node.attributes,
+                    &[graph_attrs::SPACE, graph_attrs::MEMORY_TIER],
+                )
+                .unwrap_or_else(|| "stm".to_string()),
             );
             let limit = get_u64_attr(&node.attributes, "limit");
             let result = format!("%n{}", node.id);
             let attrs = extra_attr_dict(
                 &node.attributes,
                 &[
-                    "query",
+                    graph_attrs::QUERY,
                     "sid",
                     "stage",
                     "scope",
-                    "space",
-                    "memory_tier",
+                    graph_attrs::SPACE,
+                    graph_attrs::MEMORY_TIER,
                     "limit",
                 ],
             );
@@ -363,10 +389,16 @@ fn emit_node(
         }
         AISOperationType::UMem => {
             let space = normalize_memory_space(
-                &get_string_attr(&node.attributes, &["space", "memory_tier"])
-                    .unwrap_or_else(|| "stm".to_string()),
+                &get_string_attr(
+                    &node.attributes,
+                    &[graph_attrs::SPACE, graph_attrs::MEMORY_TIER],
+                )
+                .unwrap_or_else(|| "stm".to_string()),
             );
-            let attrs = extra_attr_dict(&node.attributes, &["space", "memory_tier"]);
+            let attrs = extra_attr_dict(
+                &node.attributes,
+                &[graph_attrs::SPACE, graph_attrs::MEMORY_TIER],
+            );
 
             let source = if let Some(input) = inputs.first() {
                 ensure_token(state, input.clone())?
@@ -383,11 +415,14 @@ fn emit_node(
             Ok(None)
         }
         AISOperationType::Inv => {
-            let capability = get_string_attr(&node.attributes, &["capability"])
+            let capability = get_string_attr(&node.attributes, &[graph_attrs::CAPABILITY])
                 .unwrap_or_else(|| "unknown_capability".to_string());
-            let params_json = get_string_attr(&node.attributes, &["params_json"])
+            let params_json = get_string_attr(&node.attributes, &[graph_attrs::PARAMS_JSON])
                 .unwrap_or_else(|| "{}".to_string());
-            let attrs = extra_attr_dict(&node.attributes, &["capability", "params_json"]);
+            let attrs = extra_attr_dict(
+                &node.attributes,
+                &[graph_attrs::CAPABILITY, graph_attrs::PARAMS_JSON],
+            );
             let result = format!("%n{}", node.id);
             state.emit(format!(
                 "    {result} = ais.inv {} ({}){} : !ais.token",
@@ -530,9 +565,9 @@ fn emit_node(
             Ok(None)
         }
         AISOperationType::Plan => {
-            let goal =
-                get_string_attr(&node.attributes, &["goal"]).unwrap_or_else(|| "goal".to_string());
-            let attrs = extra_attr_dict(&node.attributes, &["goal"]);
+            let goal = get_string_attr(&node.attributes, &[graph_attrs::GOAL])
+                .unwrap_or_else(|| "goal".to_string());
+            let attrs = extra_attr_dict(&node.attributes, &[graph_attrs::GOAL]);
             let result = format!("%n{}", node.id);
             let context = format_context_parens(&inputs);
 
@@ -548,9 +583,15 @@ fn emit_node(
             }))
         }
         AISOperationType::Reflect => {
-            let trace_id = get_string_attr(&node.attributes, &["trace_id", "trace"])
-                .unwrap_or_else(|| "trace".to_string());
-            let attrs = extra_attr_dict(&node.attributes, &["trace_id", "trace"]);
+            let trace_id = get_string_attr(
+                &node.attributes,
+                &[graph_attrs::TRACE_ID, graph_attrs::TRACE],
+            )
+            .unwrap_or_else(|| graph_attrs::TRACE.to_string());
+            let attrs = extra_attr_dict(
+                &node.attributes,
+                &[graph_attrs::TRACE_ID, graph_attrs::TRACE],
+            );
             let result = format!("%n{}", node.id);
             let context = format_context_parens(&inputs);
 
@@ -566,9 +607,15 @@ fn emit_node(
             }))
         }
         AISOperationType::Verify => {
-            let template = get_string_attr(&node.attributes, &["template_str", "prompt"])
-                .unwrap_or_else(|| "Verify claim against evidence".to_string());
-            let attrs = extra_attr_dict(&node.attributes, &["template_str", "prompt"]);
+            let template = get_string_attr(
+                &node.attributes,
+                &[graph_attrs::TEMPLATE_STR, graph_attrs::PROMPT],
+            )
+            .unwrap_or_else(|| "Verify claim against evidence".to_string());
+            let attrs = extra_attr_dict(
+                &node.attributes,
+                &[graph_attrs::TEMPLATE_STR, graph_attrs::PROMPT],
+            );
 
             let claim = if let Some(input) = inputs.first() {
                 input.clone()
@@ -711,9 +758,16 @@ fn format_type(value_type: &MlirValueType) -> String {
 }
 
 fn get_non_empty_template(attributes: &HashMap<String, Value>) -> String {
-    get_string_attr(attributes, &["template_str", "prompt", "template"])
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "{0}".to_string())
+    get_string_attr(
+        attributes,
+        &[
+            graph_attrs::TEMPLATE_STR,
+            graph_attrs::PROMPT,
+            graph_attrs::TEMPLATE,
+        ],
+    )
+    .filter(|value| !value.trim().is_empty())
+    .unwrap_or_else(|| "{0}".to_string())
 }
 
 fn get_string_attr(attributes: &HashMap<String, Value>, keys: &[&str]) -> Option<String> {
@@ -895,7 +949,7 @@ mod tests {
                     name: "ask".to_string(),
                     op: AISOperationType::Ask,
                     attributes: HashMap::from([(
-                        "template_str".to_string(),
+                        graph_attrs::TEMPLATE_STR.to_string(),
                         Value::String("Summarize {0}".to_string()),
                     )]),
                 },
@@ -926,12 +980,12 @@ mod tests {
                 op: AISOperationType::Ask,
                 attributes: HashMap::from([
                     (
-                        "template_str".to_string(),
+                        graph_attrs::TEMPLATE_STR.to_string(),
                         Value::String("Use tools".to_string()),
                     ),
-                    ("tools_enabled".to_string(), Value::Bool(true)),
+                    (graph_attrs::TOOLS_ENABLED.to_string(), Value::Bool(true)),
                     (
-                        "tools".to_string(),
+                        graph_attrs::TOOLS.to_string(),
                         Value::Array(vec![
                             Value::String("bash".to_string()),
                             Value::String("read".to_string()),

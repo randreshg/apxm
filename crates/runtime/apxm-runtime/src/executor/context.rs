@@ -19,7 +19,7 @@ use super::inner_plan_linker::{InnerPlanLinker, NoOpLinker};
 /// - Memory system (STM, LTM, Episodic)
 /// - LLM registry for reasoning operations
 /// - Capability system for tool invocation
-/// - Inner plan linker for compiling DSL during execution
+/// - Inner plan linker for compiling graph payloads during execution
 /// - DAG splicer for dynamic inner/outer plan unification
 /// - Flow registry for cross-agent flow calls
 /// - Instruction config for system prompts
@@ -38,7 +38,7 @@ pub struct ExecutionContext {
     pub capability_system: Arc<CapabilitySystem>,
     /// Agent Abstract Machine state handle
     pub aam: Aam,
-    /// Inner plan linker for compiling DSL from LLMs
+    /// Inner plan linker for compiling graph payloads from LLMs
     pub inner_plan_linker: Arc<dyn InnerPlanLinker>,
     /// DAG splicer for dynamic inner/outer plan unification
     pub dag_splicer: Arc<dyn DagSplicer>,

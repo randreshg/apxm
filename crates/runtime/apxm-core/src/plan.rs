@@ -11,7 +11,7 @@ use crate::types::execution::CodeletDag;
 /// Structured plan with steps, result summary, and optional inner plan
 ///
 /// This structure is used throughout the system:
-/// - In planning workflows that generate AIS subgraphs
+/// - In planning workflows that generate ApxmGraph subgraphs
 /// - In apxm-runtime PLAN operation for LLM-based planning
 /// - Supports multi-level planning with inner plan execution
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,9 +23,9 @@ pub struct Plan {
     /// Summary of what will be accomplished
     pub result: String,
 
-    /// Optional inner plan (DSL code to be compiled and executed)
+    /// Optional inner plan (graph payload to be compiled and executed)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub inner_plan: Option<InnerPlanDsl>,
+    pub inner_plan: Option<InnerPlanPayload>,
 }
 
 /// A single step in a plan
@@ -43,15 +43,15 @@ pub struct PlanStep {
     pub dependencies: Vec<String>,
 }
 
-/// Inner plan DSL code
+/// Inner plan payload
 ///
-/// Represents either APXM DSL code or a structured `CodeletDag` that should
+/// Represents either graph JSON or a structured `CodeletDag` that should
 /// be compiled and executed as part of multi-level planning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InnerPlanDsl {
-    /// Raw APXM DSL code.
+pub struct InnerPlanPayload {
+    /// Raw ApxmGraph JSON.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dsl: Option<String>,
+    pub graph: Option<String>,
     /// Optional structured codelet DAG.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codelet_dag: Option<CodeletDag>,
@@ -67,10 +67,10 @@ impl Plan {
         }
     }
 
-    /// Create a plan with inner plan DSL
-    pub fn with_inner_plan(mut self, dsl: String) -> Self {
-        self.inner_plan = Some(InnerPlanDsl {
-            dsl: Some(dsl),
+    /// Create a plan with an inner graph payload.
+    pub fn with_inner_graph(mut self, graph: String) -> Self {
+        self.inner_plan = Some(InnerPlanPayload {
+            graph: Some(graph),
             codelet_dag: None,
         });
         self
@@ -78,8 +78,8 @@ impl Plan {
 
     /// Create a plan with structured inner codelet DAG.
     pub fn with_inner_codelet_dag(mut self, codelet_dag: CodeletDag) -> Self {
-        self.inner_plan = Some(InnerPlanDsl {
-            dsl: None,
+        self.inner_plan = Some(InnerPlanPayload {
+            graph: None,
             codelet_dag: Some(codelet_dag),
         });
         self
@@ -89,17 +89,17 @@ impl Plan {
     pub fn has_inner_plan(&self) -> bool {
         self.inner_plan
             .as_ref()
-            .map(InnerPlanDsl::has_payload)
+            .map(InnerPlanPayload::has_payload)
             .unwrap_or(false)
     }
 }
 
-impl InnerPlanDsl {
-    /// Returns true when this inner plan contains either DSL or a codelet DAG.
+impl InnerPlanPayload {
+    /// Returns true when this inner plan contains either graph JSON or a codelet DAG.
     pub fn has_payload(&self) -> bool {
-        self.dsl
+        self.graph
             .as_ref()
-            .map(|dsl| !dsl.trim().is_empty())
+            .map(|graph| !graph.trim().is_empty())
             .unwrap_or(false)
             || self.codelet_dag.is_some()
     }
@@ -133,13 +133,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_plan_with_inner_dsl() {
-        let plan = Plan::new(vec![], "Test plan".to_string()).with_inner_plan(
-            "agent Test { on Message { user, text } => { return text; } }".to_string(),
+    fn test_plan_with_inner_graph() {
+        let plan = Plan::new(vec![], "Test plan".to_string()).with_inner_graph(
+            r#"{"name":"inner","nodes":[],"edges":[],"parameters":[],"metadata":{}}"#.to_string(),
         );
 
         assert!(plan.has_inner_plan());
-        assert!(plan.inner_plan.unwrap().dsl.is_some());
+        assert!(plan.inner_plan.unwrap().graph.is_some());
     }
 
     #[test]

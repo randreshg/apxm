@@ -6,6 +6,7 @@ description = "HTTP API wrapper for APXM runtime"
 
 [dependencies]
 apxm-artifact = { path = "../runtime/apxm-artifact" }
+apxm-compiler = { path = "../apxm-compiler" }
 apxm-core = { path = "../runtime/apxm-core" }
 apxm-graph = { path = "../apxm-graph" }
 apxm-runtime = { path = "../runtime/apxm-runtime", features = ["metrics"] }
