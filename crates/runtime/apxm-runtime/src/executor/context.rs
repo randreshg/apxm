@@ -6,6 +6,7 @@ use crate::{
 };
 use apxm_backends::LLMRegistry;
 use apxm_core::InstructionConfig;
+use apxm_core::types::Agent;
 use std::sync::Arc;
 
 use super::dag_splicer::{DagSplicer, NoOpSplicer};
@@ -43,6 +44,8 @@ pub struct ExecutionContext {
     pub dag_splicer: Arc<dyn DagSplicer>,
     /// Flow registry for cross-agent flow calls
     pub flow_registry: Arc<FlowRegistry>,
+    /// The currently active agent for this execution context.
+    pub current_agent: Option<Arc<Agent>>,
     /// System prompts for LLM operations (from config)
     pub instruction_config: InstructionConfig,
     /// Start time of execution (for timing)
@@ -75,6 +78,7 @@ impl ExecutionContext {
             inner_plan_linker: Arc::new(NoOpLinker),
             dag_splicer: Arc::new(NoOpSplicer),
             flow_registry: Arc::new(FlowRegistry::new()),
+            current_agent: None,
             instruction_config: InstructionConfig::default(),
             start_time: std::time::Instant::now(),
             metadata: std::collections::HashMap::new(),
@@ -104,6 +108,7 @@ impl ExecutionContext {
             inner_plan_linker,
             dag_splicer,
             flow_registry,
+            current_agent: None,
             instruction_config: InstructionConfig::default(),
             start_time: std::time::Instant::now(),
             metadata: std::collections::HashMap::new(),
@@ -142,6 +147,12 @@ impl ExecutionContext {
         self
     }
 
+    /// Associate this execution context with the current runtime agent.
+    pub fn with_agent(mut self, agent: Arc<Agent>) -> Self {
+        self.current_agent = Some(agent);
+        self
+    }
+
     /// Set a global token budget for the execution.
     pub fn with_token_budget(mut self, budget: Option<u64>) -> Self {
         self.token_budget = budget;
@@ -171,6 +182,7 @@ impl ExecutionContext {
             inner_plan_linker: Arc::clone(&self.inner_plan_linker),
             dag_splicer: Arc::clone(&self.dag_splicer),
             flow_registry: Arc::clone(&self.flow_registry),
+            current_agent: self.current_agent.as_ref().map(Arc::clone),
             instruction_config: self.instruction_config.clone(),
             start_time: std::time::Instant::now(),
             metadata: self.metadata.clone(),
@@ -209,6 +221,7 @@ mod tests {
 
         assert!(!ctx.execution_id.is_empty());
         assert!(ctx.session_id.is_none());
+        assert!(ctx.current_agent.is_none());
         assert!(ctx.metadata.is_empty());
     }
 
@@ -248,5 +261,10 @@ mod tests {
         assert_ne!(child.execution_id, parent.execution_id);
         // Should inherit session ID
         assert_eq!(child.session_id, parent.session_id);
+        // Should inherit current agent identity
+        assert_eq!(
+            child.current_agent.as_ref().map(|a| a.name.as_str()),
+            parent.current_agent.as_ref().map(|a| a.name.as_str())
+        );
     }
 }

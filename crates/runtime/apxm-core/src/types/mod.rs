@@ -19,8 +19,9 @@ pub use compiler::{
     OptimizationLevel, PipelineConfig, stage_rank,
 };
 pub use execution::{
-    Codelet, CodeletDag, CodeletId, CodeletMetadata, DagMetadata, DependencyType, Edge,
-    ExecutionDag, ExecutionStats, Node, NodeId, NodeMetadata, NodeStatus, OpStatus,
+    Agent, AgentFlow, AgentId, AgentMetadata, CapabilityDeclaration, Codelet, CodeletDag,
+    CodeletId, CodeletMetadata, DagMetadata, DependencyType, Edge, ExecutionDag, ExecutionStats,
+    MemoryDeclaration, Node, NodeId, NodeMetadata, NodeStatus, OpStatus,
 };
 pub use identifiers::{
     CapabilityName, CheckpointId, ExecutionId, GoalIdType, MessageId, NodeIdType, OpIdType,
@@ -45,6 +46,6 @@ pub use values::{Number, Token, TokenId, TokenStatus, Value};
 
 pub use config::InstructionConfig;
 pub use provider_spec::{
-    BuiltinProviderSpec, ProviderProtocol, ProviderSpec, BUILTIN_PROVIDERS,
+    BUILTIN_PROVIDERS, BuiltinProviderSpec, ProviderProtocol, ProviderSpec,
     resolve_builtin_provider, resolve_provider_spec,
 };

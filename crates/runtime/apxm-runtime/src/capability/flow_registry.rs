@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use apxm_core::types::ExecutionDag;
+use apxm_core::types::{Agent, ExecutionDag};
 use dashmap::DashMap;
 
 /// Registry for storing and retrieving compiled flow DAGs.
@@ -16,6 +16,8 @@ use dashmap::DashMap;
 pub struct FlowRegistry {
     /// Map of (agent_name, flow_name) -> compiled DAG
     flows: DashMap<(String, String), Arc<ExecutionDag>>,
+    /// Map of agent_name -> runtime agent
+    agents: DashMap<String, Arc<Agent>>,
 }
 
 impl FlowRegistry {
@@ -23,7 +25,47 @@ impl FlowRegistry {
     pub fn new() -> Self {
         Self {
             flows: DashMap::new(),
+            agents: DashMap::new(),
         }
+    }
+
+    /// Register an agent and all of its flows.
+    ///
+    /// This stores the full runtime `Agent` model and also populates the
+    /// legacy `(agent, flow) -> ExecutionDag` map for existing flow-call lookup.
+    pub fn register_agent(&self, agent: Agent) {
+        let agent_name = agent.name.clone();
+        let stale_keys: Vec<(String, String)> = self
+            .flows
+            .iter()
+            .filter(|entry| entry.key().0 == agent_name)
+            .map(|entry| entry.key().clone())
+            .collect();
+        for key in stale_keys {
+            self.flows.remove(&key);
+        }
+
+        let shared_agent = Arc::new(agent);
+        for flow in shared_agent.flows.values() {
+            self.flows.insert(
+                (agent_name.clone(), flow.name.clone()),
+                Arc::new(flow.execution_dag.clone()),
+            );
+        }
+        self.agents.insert(agent_name, shared_agent);
+    }
+
+    /// Get a runtime agent by name.
+    pub fn get_agent(&self, name: &str) -> Option<Arc<Agent>> {
+        self.agents.get(name).map(|agent| Arc::clone(&agent))
+    }
+
+    /// List all registered agent names.
+    pub fn list_agents(&self) -> Vec<String> {
+        self.agents
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect()
     }
 
     /// Register a flow in the registry.
@@ -77,6 +119,7 @@ impl FlowRegistry {
     /// Clear all registered flows.
     pub fn clear(&self) {
         self.flows.clear();
+        self.agents.clear();
     }
 
     /// Get the number of registered flows.
@@ -138,5 +181,76 @@ mod tests {
         assert_eq!(agent1_flows.len(), 2);
         assert!(agent1_flows.contains(&"flow1".to_string()));
         assert!(agent1_flows.contains(&"flow2".to_string()));
+    }
+
+    #[test]
+    fn test_register_agent_populates_agent_and_flow_maps() {
+        let registry = FlowRegistry::new();
+
+        let mut main_dag = ExecutionDag {
+            nodes: vec![],
+            edges: vec![],
+            entry_nodes: vec![],
+            exit_nodes: vec![],
+            metadata: Default::default(),
+        };
+        main_dag.metadata.name = Some("Research.main".to_string());
+        main_dag.metadata.is_entry = true;
+
+        let mut helper_dag = ExecutionDag {
+            nodes: vec![],
+            edges: vec![],
+            entry_nodes: vec![],
+            exit_nodes: vec![],
+            metadata: Default::default(),
+        };
+        helper_dag.metadata.name = Some("Research.helper".to_string());
+
+        let agent = Agent::new("Research")
+            .add_flow(apxm_core::types::AgentFlow {
+                name: "main".to_string(),
+                is_entry: true,
+                parameters: vec![],
+                codelet_dag: None,
+                execution_dag: main_dag,
+            })
+            .add_flow(apxm_core::types::AgentFlow {
+                name: "helper".to_string(),
+                is_entry: false,
+                parameters: vec![],
+                codelet_dag: None,
+                execution_dag: helper_dag,
+            });
+
+        registry.register_agent(agent);
+
+        assert!(registry.get_agent("Research").is_some());
+        assert!(registry.list_agents().contains(&"Research".to_string()));
+        assert!(registry.get_flow("Research", "main").is_some());
+        assert!(registry.get_flow("Research", "helper").is_some());
+    }
+
+    #[test]
+    fn test_get_flow_still_works_after_register_agent() {
+        let registry = FlowRegistry::new();
+        let dag = ExecutionDag {
+            nodes: vec![],
+            edges: vec![],
+            entry_nodes: vec![],
+            exit_nodes: vec![],
+            metadata: Default::default(),
+        };
+
+        let agent = Agent::new("Planner").add_flow(apxm_core::types::AgentFlow {
+            name: "route".to_string(),
+            is_entry: false,
+            parameters: vec![],
+            codelet_dag: None,
+            execution_dag: dag.clone(),
+        });
+        registry.register_agent(agent);
+
+        let retrieved = registry.get_flow("Planner", "route");
+        assert!(retrieved.is_some());
     }
 }

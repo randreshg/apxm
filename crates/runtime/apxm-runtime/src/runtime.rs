@@ -16,7 +16,7 @@ use apxm_core::log_info;
 use apxm_core::{
     error::RuntimeError,
     types::{
-        execution::{ExecutionDag, ExecutionStats},
+        execution::{Agent, AgentFlow, ExecutionDag, ExecutionStats},
         values::Value,
     },
 };
@@ -148,6 +148,7 @@ impl Runtime {
             inner_plan_linker: Arc::clone(&self.inner_plan_linker),
             dag_splicer: Arc::new(crate::executor::NoOpSplicer),
             flow_registry: Arc::clone(&self.flow_registry),
+            current_agent: None,
             instruction_config: self.instruction_config.clone(),
             start_time: std::time::Instant::now(),
             metadata: std::collections::HashMap::new(),
@@ -226,7 +227,7 @@ impl Runtime {
     ///
     /// This method:
     /// 1. Checks for an `@entry` DAG in the artifact
-    /// 2. Auto-registers all other flows in the FlowRegistry
+    /// 2. Reconstructs runtime agents and registers all flows in the FlowRegistry
     /// 3. Executes the @entry DAG
     ///
     /// # Errors
@@ -249,32 +250,27 @@ impl Runtime {
             ))
         })?;
 
-        // 2. Auto-register all non-entry flows
-        let num_registered = {
-            let mut count = 0;
-            for dag in artifact.flow_dags() {
-                if let Some(ref name) = dag.metadata.name {
-                    let (agent_name, flow_name) = parse_flow_name(name);
-                    log_info!(
-                        "runtime",
-                        agent = %agent_name,
-                        flow = %flow_name,
-                        "Auto-registering flow from artifact"
-                    );
-                    self.flow_registry
-                        .register_flow(&agent_name, &flow_name, dag.clone());
-                    count += 1;
-                }
-            }
-            count
-        };
+        // 2. Reconstruct and register runtime agents.
+        let agents = reconstruct_agents_from_artifact(&artifact);
+        let num_registered_agents = agents.len();
+        let num_registered_flows: usize = agents.iter().map(|agent| agent.flows.len()).sum();
+        for agent in agents {
+            log_info!(
+                "runtime",
+                agent = %agent.name,
+                flows = agent.flows.len(),
+                "Auto-registering agent from artifact"
+            );
+            self.flow_registry.register_agent(agent);
+        }
 
         log_info!(
             "runtime",
             name = entry_dag.metadata.name.as_deref().unwrap_or("<unnamed>"),
             num_flows = artifact.dags().len(),
-            "Executing @entry flow with {} registered flows",
-            num_registered
+            registered_agents = num_registered_agents,
+            "Executing @entry flow with {} registered flow(s)",
+            num_registered_flows
         );
 
         // 3. Execute @entry DAG
@@ -325,19 +321,15 @@ impl Runtime {
             )));
         }
 
-        // 3. Auto-register all non-entry flows
-        for dag in artifact.flow_dags() {
-            if let Some(ref name) = dag.metadata.name {
-                let (agent_name, flow_name) = parse_flow_name(name);
-                log_info!(
-                    "runtime",
-                    agent = %agent_name,
-                    flow = %flow_name,
-                    "Auto-registering flow from artifact"
-                );
-                self.flow_registry
-                    .register_flow(&agent_name, &flow_name, dag.clone());
-            }
+        // 3. Reconstruct and register runtime agents.
+        for agent in reconstruct_agents_from_artifact(&artifact) {
+            log_info!(
+                "runtime",
+                agent = %agent.name,
+                flows = agent.flows.len(),
+                "Auto-registering agent from artifact"
+            );
+            self.flow_registry.register_agent(agent);
         }
 
         // 4. Convert args to Values and execute with inputs
@@ -423,13 +415,9 @@ impl Runtime {
             )));
         }
 
-        // 3. Auto-register all non-entry flows
-        for dag in artifact.flow_dags() {
-            if let Some(ref name) = dag.metadata.name {
-                let (agent_name, flow_name) = parse_flow_name(name);
-                self.flow_registry
-                    .register_flow(&agent_name, &flow_name, dag.clone());
-            }
+        // 3. Reconstruct and register runtime agents.
+        for agent in reconstruct_agents_from_artifact(&artifact) {
+            self.flow_registry.register_agent(agent);
         }
 
         // 4. Convert args to Values and execute with inputs
@@ -503,12 +491,8 @@ impl Runtime {
             )));
         }
 
-        for dag in artifact.flow_dags() {
-            if let Some(ref name) = dag.metadata.name {
-                let (agent_name, flow_name) = parse_flow_name(name);
-                self.flow_registry
-                    .register_flow(&agent_name, &flow_name, dag.clone());
-            }
+        for agent in reconstruct_agents_from_artifact(&artifact) {
+            self.flow_registry.register_agent(agent);
         }
 
         let arg_values: Vec<Value> = args.into_iter().map(Value::String).collect();
@@ -618,6 +602,32 @@ impl Runtime {
     }
 }
 
+fn reconstruct_agents_from_artifact(artifact: &Artifact) -> Vec<Agent> {
+    let mut agents: HashMap<String, Agent> = HashMap::new();
+
+    for (index, dag) in artifact.dags().iter().enumerate() {
+        let fallback_name = format!("default.flow_{index}");
+        let dag_name = dag.metadata.name.as_deref().unwrap_or(&fallback_name);
+        let (agent_name, flow_name) = parse_flow_name(dag_name);
+
+        let flow = AgentFlow {
+            name: flow_name.clone(),
+            is_entry: dag.metadata.is_entry,
+            parameters: dag.metadata.parameters.clone(),
+            codelet_dag: None,
+            execution_dag: dag.clone(),
+        };
+
+        agents
+            .entry(agent_name.clone())
+            .or_insert_with(|| Agent::new(agent_name))
+            .flows
+            .insert(flow_name, flow);
+    }
+
+    agents.into_values().collect()
+}
+
 /// Parse flow name in "Agent.flow" format
 fn parse_flow_name(name: &str) -> (String, String) {
     if let Some((agent, flow)) = name.split_once('.') {
@@ -630,6 +640,7 @@ fn parse_flow_name(name: &str) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use apxm_artifact::ArtifactMetadata;
     use apxm_core::types::{
         execution::{Node, NodeMetadata},
         operations::AISOperationType,
@@ -703,5 +714,45 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, Some(Value::String("test_value".to_string())));
+    }
+
+    #[test]
+    fn test_reconstruct_agents_from_artifact_groups_flows() {
+        let mut research_main = ExecutionDag::new();
+        research_main.metadata.name = Some("Research.main".to_string());
+        research_main.metadata.is_entry = true;
+
+        let mut research_lookup = ExecutionDag::new();
+        research_lookup.metadata.name = Some("Research.lookup".to_string());
+
+        let mut writer_compose = ExecutionDag::new();
+        writer_compose.metadata.name = Some("Writer.compose".to_string());
+
+        let artifact = Artifact::new(
+            ArtifactMetadata::new(Some("multi-agent".to_string()), "test"),
+            vec![research_main, research_lookup, writer_compose],
+        );
+
+        let mut agents = reconstruct_agents_from_artifact(&artifact);
+        agents.sort_by(|a, b| a.name.cmp(&b.name));
+
+        assert_eq!(agents.len(), 2);
+
+        let research = agents
+            .iter()
+            .find(|agent| agent.name == "Research")
+            .expect("Research agent should be present");
+        assert!(research.get_flow("main").is_some());
+        assert!(research.get_flow("lookup").is_some());
+        assert_eq!(
+            research.entry_flow().map(|flow| flow.name.as_str()),
+            Some("main")
+        );
+
+        let writer = agents
+            .iter()
+            .find(|agent| agent.name == "Writer")
+            .expect("Writer agent should be present");
+        assert!(writer.get_flow("compose").is_some());
     }
 }

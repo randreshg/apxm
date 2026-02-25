@@ -131,8 +131,10 @@ async fn execute_impl(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -
         "Found flow in registry, executing sub-DAG"
     );
 
+    let target_agent = ctx.flow_registry.get_agent(&agent_name);
+
     // Create a child context for the sub-flow execution
-    let child_ctx = ctx
+    let mut child_ctx = ctx
         .child()
         .with_metadata("parent_execution_id".to_string(), ctx.execution_id.clone())
         .with_metadata(
@@ -141,6 +143,9 @@ async fn execute_impl(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -
         )
         .with_metadata("target_agent".to_string(), agent_name.clone())
         .with_metadata("target_flow".to_string(), flow_name.clone());
+    if let Some(agent) = target_agent {
+        child_ctx = child_ctx.with_agent(agent);
+    }
 
     // Inject input arguments into the sub-DAG entry nodes
     // The inputs are provided to the first operations in the sub-DAG

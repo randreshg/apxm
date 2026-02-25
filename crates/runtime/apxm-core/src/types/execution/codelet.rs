@@ -54,9 +54,6 @@ pub struct CodeletMetadata {
     /// Optional JSON Schema describing the expected output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_output_schema: Option<String>,
-    /// Name of the agent responsible for executing this codelet.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_name: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -85,7 +82,7 @@ pub struct Codelet {
     pub nodes: Vec<NodeId>,
     /// Codelets that must complete before this one fires.
     pub depends_on: Vec<CodeletId>,
-    /// Scheduling and agent metadata.
+    /// Scheduling and output metadata.
     pub metadata: CodeletMetadata,
 }
 
@@ -123,12 +120,6 @@ impl Codelet {
     /// Sets the expected output JSON Schema.
     pub fn with_expected_output_schema(mut self, schema: impl Into<String>) -> Self {
         self.metadata.expected_output_schema = Some(schema.into());
-        self
-    }
-
-    /// Assigns an agent to execute this codelet.
-    pub fn with_agent(mut self, agent_name: impl Into<String>) -> Self {
-        self.metadata.agent_name = Some(agent_name.into());
         self
     }
 }
@@ -359,14 +350,12 @@ mod tests {
     #[test]
     fn codelet_builder() {
         let c = Codelet::new(1, "research", "Research a topic")
-            .with_agent("researcher")
             .with_priority(10)
             .with_expected_output_schema(r#"{"type":"object"}"#)
             .add_dependency(0);
 
         assert_eq!(c.id, 1);
         assert_eq!(c.name, "research");
-        assert_eq!(c.metadata.agent_name.as_deref(), Some("researcher"));
         assert_eq!(c.metadata.priority, 10);
         assert_eq!(c.depends_on, vec![0]);
     }

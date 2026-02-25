@@ -28,6 +28,10 @@ Production-ready execution engine for APXM programs.
 ┌─────────────────────────────────────────────────────────────┐
 │                       Runtime                               │
 ├─────────────────────────────────────────────────────────────┤
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │                Runtime Agents (Agent/Flow)            │  │
+│  └──────────────────────────┬────────────────────────────┘  │
+│                             │                               │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │  │   Scheduler  │  │   Executor   │  │  Capability Sys  │  │
 │  │  (Dataflow)  │  │   (DAG)      │  │   (Tools/APIs)   │  │
@@ -47,6 +51,7 @@ Production-ready execution engine for APXM programs.
 
 - `Runtime` - Main runtime instance
 - `RuntimeConfig` - Configuration for memory, scheduling
+- `Agent` / `AgentFlow` - Runtime agent + flow hierarchy model
 - `ExecutionDag` - Directed acyclic graph of operations
 - `CapabilitySystem` - Registry for tools and APIs
 - `MemorySystem` - STM/LTM/Episodic memory management
@@ -103,6 +108,10 @@ runtime.capability_system().register(
 // List available capabilities
 let names = runtime.capability_system().list_capability_names();
 ```
+
+For multi-flow artifacts, runtime agent registration uses
+`FlowRegistry::register_agent(agent)` which stores the full runtime `Agent`
+object and also backfills legacy `(agent, flow)` DAG lookups for `flow_call`.
 
 ## Scheduler
 

@@ -6,7 +6,7 @@ Core types and utilities for APXM.
 
 `apxm-core` provides foundational types used across all APXM crates:
 - **Error types** - Structured error handling
-- **Execution types** - DAG, Node, Edge, Token
+- **Execution types** - Agent, Flow, DAG, Node, Edge, Token
 - **Compiler types** - Pass metadata, optimization levels
 - **Utilities** - Logging, paths, build helpers
 
@@ -26,19 +26,22 @@ definitions so the compiler, driver, and runtime speak the same language.
 ### Execution Types
 
 ```rust
-use apxm_core::types::execution::{ExecutionDag, Node, Edge, DependencyType};
-use apxm_core::types::values::{Token, TokenStatus, Value};
+use apxm_core::types::execution::{Agent, AgentFlow, ExecutionDag};
 
-// Create a DAG
-let mut dag = ExecutionDag::new("my_module");
+let mut dag = ExecutionDag::new();
+dag.metadata.name = Some("Research.main".to_string());
+dag.metadata.is_entry = true;
 
-// Add nodes
-let node = Node::new("node_1", AISOperationType::Ask);
-dag.add_node(node)?;
+let main_flow = AgentFlow {
+    name: "main".to_string(),
+    is_entry: true,
+    parameters: vec![],
+    codelet_dag: None,
+    execution_dag: dag,
+};
 
-// Add edges
-let edge = Edge::new("node_1", "node_2", DependencyType::Data);
-dag.add_edge(edge)?;
+let agent = Agent::new("Research").add_flow(main_flow);
+assert!(agent.entry_flow().is_some());
 ```
 
 ### Error Types
@@ -77,7 +80,8 @@ apxm-core/src/
 │   ├── builder.rs      # Error builder pattern
 │   └── codes.rs        # Error codes
 ├── types/
-│   ├── execution/      # DAG, Node, Edge
+│   ├── execution/      # Agent, Flow, DAG, Node, Edge
+│   │   ├── agent.rs
 │   ├── values/         # Token, Value
 │   ├── compiler/       # Pass metadata
 │   ├── operations/     # AIS operation types
