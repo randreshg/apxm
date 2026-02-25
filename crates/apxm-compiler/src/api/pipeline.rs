@@ -41,6 +41,7 @@ impl<'ctx> Pipeline<'ctx> {
     }
 
     pub fn compile_dsl(&self, source: &str, filename: &str) -> Result<Module> {
+        // Canonical frontend path: DSL AST -> ApxmGraph -> AIS MLIR.
         let module = Module::parse_dsl(self.context, source, filename)?;
         self.process_module(module)
     }
