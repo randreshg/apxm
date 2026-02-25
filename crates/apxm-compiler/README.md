@@ -8,11 +8,11 @@ MLIR-based compiler for the Agent Instruction Set (AIS) dialect.
 - **Rust FFI layer** (`src/`) - Safe Rust wrappers around C++ MLIR code
 - **C++/MLIR dialect** (`mlir/`) - AIS dialect definition, passes, and code generation
 
-The compiler parses AIS DSL, transforms it through optimization passes, and generates executable artifacts.
+The compiler normalizes frontend inputs into canonical `ApxmGraph`, lowers to AIS MLIR, applies optimization passes, and generates executable artifacts.
 
 ## Responsibilities
 
-- Parse AIS DSL or MLIR into an MLIR module
+- Parse AIS DSL or graph JSON into a canonical graph/module
 - Run the pass pipeline (normalize, schedule, fuse, lower)
 - Emit artifacts or Rust source for execution
 
@@ -43,7 +43,7 @@ by `apxm-driver`. Operation metadata is shared via `apxm-ais`.
 
 ## DSL Front End
 
-The AIS DSL front end (lexer, parser, AST, MLIRGen) is documented in
+The AIS DSL front end (lexer, parser, AST, GraphGen) is documented in
 `crates/apxm-compiler/dsl/README.md`.
 
 ## TableGen Source

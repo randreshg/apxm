@@ -5,18 +5,19 @@ This folder documents the AIS DSL front end in the MLIR compiler.
 ## Responsibilities
 
 - Lex and parse AIS DSL into an AST
-- Lower the AST into AIS MLIR via MLIRGen
+- Lower the AST into canonical `ApxmGraph` JSON
+- Lower canonical graph into AIS MLIR via `apxm-graph`
 
 ## Flow
 
 ```
-AIS DSL → Lexer → Parser → AST → MLIRGen → AIS MLIR Module
+AIS DSL → Lexer → Parser → AST → GraphGen → ApxmGraph → AIS MLIR Module
 ```
 
 ## Key Entry Points
 
 - DSL C API: `crates/apxm-compiler/mlir/lib/CAPI/DSL.cpp`
-- DSL parse hook: `apxm_parse_dsl*` (FFI entry used by `Module::parse_dsl`)
+- DSL graph hook: `apxm_parse_dsl*_to_graph_json` (FFI entry used by `Module::parse_dsl`)
 
 ## Components
 
@@ -26,13 +27,14 @@ AIS DSL → Lexer → Parser → AST → MLIRGen → AIS MLIR Module
 - **Parser**: recursive-descent parsing into AST nodes
   - `crates/apxm-compiler/mlir/lib/Parser/Parsers/`
   - AST types: `crates/apxm-compiler/mlir/include/ais/Parser/AST/`
-- **MLIRGen**: lowers AST into the AIS MLIR dialect
-  - `crates/apxm-compiler/mlir/lib/Parser/MLIR/MLIRGen*.cpp`
-  - Header: `crates/apxm-compiler/mlir/include/ais/Parser/MLIR/MLIRGen.h`
+- **GraphGen**: lowers AST into canonical `ApxmGraph` JSON
+  - `crates/apxm-compiler/mlir/lib/Parser/Graph/GraphGen.cpp`
+  - Header: `crates/apxm-compiler/mlir/include/ais/Parser/Graph/GraphGen.h`
+- **MLIRGen**: legacy direct AST-to-MLIR path kept for C API compatibility
 
 ## How It Fits
 
 - Operation metadata is defined in Rust (`apxm-ais`), exported to TableGen,
   and used by the MLIR dialect and runtime validators.
-- The front end produces MLIR modules that then flow through the pass pipeline
-  and code generation to artifacts or Rust output.
+- The frontend canonical form is always `ApxmGraph`; MLIR lowering and pass
+  optimization run after graph normalization.
