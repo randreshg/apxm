@@ -296,4 +296,107 @@ mod tests {
         assert_eq!(graph.nodes[1].op, AISOperationType::Think);
         assert_eq!(graph.nodes[2].op, AISOperationType::Ask);
     }
+
+    #[test]
+    fn dsl_structured_control_if_parallel_switch_lowers_through_graph() {
+        let context = Context::new().expect("create context");
+        let source = r#"
+            agent Router {
+                @entry flow main(style: str) -> str {
+                    if (style) {
+                        ask("formal style selected") -> branch_result
+                    } else {
+                        ask("casual style selected") -> branch_result
+                    }
+
+                    parallel {
+                        think("parallel branch A")
+                        think("parallel branch B")
+                    }
+
+                    switch style {
+                        case "formal" => ask("Use formal tone")
+                        case "casual" => ask("Use casual tone")
+                        default => ask("Use neutral tone")
+                    } -> routed
+
+                    ask("Final: " + routed) -> output
+                    return output
+                }
+            }
+        "#;
+
+        let graph =
+            Module::parse_dsl_graph(&context, source, "structured.ais").expect("graph parse");
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.op == AISOperationType::BranchOnValue)
+        );
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.op == AISOperationType::WaitAll)
+        );
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.op == AISOperationType::Switch)
+        );
+
+        let module = Module::parse_dsl(&context, source, "structured.ais").expect("dsl parse");
+        let mlir = module.to_string().expect("module stringify");
+        assert!(mlir.contains("ais.branch_on_value"));
+        assert!(mlir.contains("ais.wait_all"));
+        assert!(mlir.contains("ais.switch"));
+    }
+
+    #[test]
+    fn dsl_structured_control_loop_try_catch_lowers_through_graph() {
+        let context = Context::new().expect("create context");
+        let source = r#"
+            agent Controller {
+                @entry flow main(items: str) -> str {
+                    loop(item in items) {
+                        ask("Inspect item: " + item)
+                    }
+
+                    try {
+                        return ask("primary path")
+                    } catch {
+                        return ask("recovery path")
+                    }
+                }
+            }
+        "#;
+
+        let graph = Module::parse_dsl_graph(&context, source, "loop_try.ais").expect("graph parse");
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.op == AISOperationType::LoopStart)
+        );
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.op == AISOperationType::LoopEnd)
+        );
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.op == AISOperationType::TryCatch)
+        );
+
+        let module = Module::parse_dsl(&context, source, "loop_try.ais").expect("dsl parse");
+        let mlir = module.to_string().expect("module stringify");
+        assert!(mlir.contains("ais.loop_start"));
+        assert!(mlir.contains("ais.loop_end"));
+        assert!(mlir.contains("ais.try_catch"));
+    }
 }

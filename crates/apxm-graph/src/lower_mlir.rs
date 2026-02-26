@@ -445,11 +445,14 @@ fn emit_node(
                 condition = ensure_token(state, condition)?;
             }
 
-            let true_label = get_string_attr(&node.attributes, &["true_label"])
+            let true_label = get_string_attr(&node.attributes, &[graph_attrs::TRUE_LABEL])
                 .unwrap_or_else(|| "true".to_string());
-            let false_label = get_string_attr(&node.attributes, &["false_label"])
+            let false_label = get_string_attr(&node.attributes, &[graph_attrs::FALSE_LABEL])
                 .unwrap_or_else(|| "false".to_string());
-            let attrs = extra_attr_dict(&node.attributes, &["true_label", "false_label"]);
+            let attrs = extra_attr_dict(
+                &node.attributes,
+                &[graph_attrs::TRUE_LABEL, graph_attrs::FALSE_LABEL],
+            );
 
             state.emit(format!(
                 "    ais.branch_on_value {}, {}, {}{} : {}",
@@ -467,13 +470,13 @@ fn emit_node(
             } else {
                 emit_const_token(state, "switch")
             };
-            let labels = get_string_array_attr(&node.attributes, "case_labels");
+            let labels = get_string_array_attr(&node.attributes, graph_attrs::CASE_LABELS);
             let case_labels = if labels.is_empty() {
                 vec!["default_case".to_string()]
             } else {
                 labels
             };
-            let attrs = extra_attr_dict(&node.attributes, &["case_labels"]);
+            let attrs = extra_attr_dict(&node.attributes, &[graph_attrs::CASE_LABELS]);
             let result = format!("%n{}", node.id);
 
             state.emit(format!(
@@ -497,6 +500,96 @@ fn emit_node(
                 state.emit("        } -> !ais.token");
             } else {
                 state.emit(format!("        }} -> !ais.token{}", attrs));
+            }
+
+            Ok(Some(MlirValueRef {
+                ssa: result,
+                ty: MlirValueType::Token,
+            }))
+        }
+        AISOperationType::LoopStart => {
+            let mut count = if let Some(input) = inputs.first() {
+                input.clone()
+            } else {
+                emit_const_token(state, "loop")
+            };
+            if matches!(count.ty, MlirValueType::Goal) {
+                count = ensure_token(state, count)?;
+            }
+
+            let label = get_string_attr(&node.attributes, &[graph_attrs::LABEL])
+                .unwrap_or_else(|| "loop".to_string());
+            let attrs = extra_attr_dict(&node.attributes, &[graph_attrs::LABEL]);
+            let result = format!("%n{}", node.id);
+
+            state.emit(format!(
+                "    {result} = ais.loop_start {} as {}{} : {} -> !ais.token",
+                count.ssa,
+                quote_string(&label),
+                attrs,
+                format_type(&count.ty)
+            ));
+            Ok(Some(MlirValueRef {
+                ssa: result,
+                ty: MlirValueType::Token,
+            }))
+        }
+        AISOperationType::LoopEnd => {
+            let source = if let Some(input) = inputs.first() {
+                ensure_token(state, input.clone())?
+            } else {
+                emit_const_token(state, "loop_state")
+            };
+            let attrs = extra_attr_dict(&node.attributes, &[]);
+            let result = format!("%n{}", node.id);
+
+            state.emit(format!(
+                "    {result} = ais.loop_end {}{} : !ais.token -> !ais.token",
+                source.ssa, attrs
+            ));
+            Ok(Some(MlirValueRef {
+                ssa: result,
+                ty: MlirValueType::Token,
+            }))
+        }
+        AISOperationType::TryCatch => {
+            let try_label = get_string_attr(&node.attributes, &[graph_attrs::TRY_LABEL])
+                .unwrap_or_else(|| "try_block".to_string());
+            let catch_label = get_string_attr(&node.attributes, &[graph_attrs::CATCH_LABEL])
+                .unwrap_or_else(|| "catch_block".to_string());
+            let attrs = extra_attr_dict(
+                &node.attributes,
+                &[graph_attrs::TRY_LABEL, graph_attrs::CATCH_LABEL],
+            );
+
+            state.emit(format!(
+                "    ais.try_catch {} -> {}{}",
+                quote_string(&try_label),
+                quote_string(&catch_label),
+                attrs
+            ));
+            Ok(None)
+        }
+        AISOperationType::Err => {
+            let template = get_string_attr(&node.attributes, &[graph_attrs::RECOVERY_TEMPLATE])
+                .unwrap_or_else(|| "Recover from error".to_string());
+            let attrs = extra_attr_dict(&node.attributes, &[graph_attrs::RECOVERY_TEMPLATE]);
+            let result = format!("%n{}", node.id);
+
+            if let Some(input) = inputs.first() {
+                let token = ensure_token(state, input.clone())?;
+                state.emit(format!(
+                    "    {result} = ais.err {} : !ais.token with {}{} -> !ais.token",
+                    token.ssa,
+                    quote_string(&template),
+                    attrs
+                ));
+            } else {
+                state.emit(format!(
+                    "    {result} = ais.err with {}{} -> !ais.token",
+                    quote_string(&template),
+                    attrs
+                ));
             }
 
             Ok(Some(MlirValueRef {
@@ -1037,5 +1130,92 @@ mod tests {
         assert!(mlir.contains("ais.switch %n1 : !ais.token"));
         assert!(mlir.contains("case \"default_case\""));
         assert!(mlir.contains("default {"));
+    }
+
+    #[test]
+    fn lowers_loop_and_try_catch_control_ops() {
+        let graph = ApxmGraph {
+            name: "control".to_string(),
+            nodes: vec![
+                GraphNode {
+                    id: 1,
+                    name: "seed".to_string(),
+                    op: AISOperationType::ConstStr,
+                    attributes: HashMap::from([(
+                        "value".to_string(),
+                        Value::String("items".to_string()),
+                    )]),
+                },
+                GraphNode {
+                    id: 2,
+                    name: "loop_start".to_string(),
+                    op: AISOperationType::LoopStart,
+                    attributes: HashMap::from([(
+                        graph_attrs::LABEL.to_string(),
+                        Value::String("loop_items".to_string()),
+                    )]),
+                },
+                GraphNode {
+                    id: 3,
+                    name: "loop_end".to_string(),
+                    op: AISOperationType::LoopEnd,
+                    attributes: HashMap::new(),
+                },
+                GraphNode {
+                    id: 4,
+                    name: "try_catch".to_string(),
+                    op: AISOperationType::TryCatch,
+                    attributes: HashMap::from([
+                        (
+                            graph_attrs::TRY_LABEL.to_string(),
+                            Value::String("try_a".to_string()),
+                        ),
+                        (
+                            graph_attrs::CATCH_LABEL.to_string(),
+                            Value::String("catch_a".to_string()),
+                        ),
+                    ]),
+                },
+                GraphNode {
+                    id: 5,
+                    name: "err".to_string(),
+                    op: AISOperationType::Err,
+                    attributes: HashMap::from([(
+                        graph_attrs::RECOVERY_TEMPLATE.to_string(),
+                        Value::String("fallback".to_string()),
+                    )]),
+                },
+            ],
+            edges: vec![
+                crate::GraphEdge {
+                    from: 1,
+                    to: 2,
+                    dependency: DependencyType::Data,
+                },
+                crate::GraphEdge {
+                    from: 2,
+                    to: 3,
+                    dependency: DependencyType::Control,
+                },
+                crate::GraphEdge {
+                    from: 3,
+                    to: 4,
+                    dependency: DependencyType::Control,
+                },
+                crate::GraphEdge {
+                    from: 4,
+                    to: 5,
+                    dependency: DependencyType::Control,
+                },
+            ],
+            parameters: vec![],
+            metadata: HashMap::new(),
+        };
+
+        let mlir = lower_to_mlir(&graph).expect("graph lowers to mlir");
+        assert!(mlir.contains("ais.loop_start %n1 as \"loop_items\" : !ais.token -> !ais.token"));
+        assert!(mlir.contains("ais.loop_end %n2 : !ais.token -> !ais.token"));
+        assert!(mlir.contains("ais.try_catch \"try_a\" -> \"catch_a\""));
+        assert!(mlir.contains("ais.err %n4 : !ais.token with \"fallback\" -> !ais.token"));
     }
 }

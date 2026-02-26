@@ -58,6 +58,13 @@ constexpr llvm::StringLiteral GOAL = "goal";
 constexpr llvm::StringLiteral TRACE_ID = "trace_id";
 constexpr llvm::StringLiteral AGENT_NAME = "agent_name";
 constexpr llvm::StringLiteral FLOW_NAME = "flow_name";
+constexpr llvm::StringLiteral TRUE_LABEL = "true_label";
+constexpr llvm::StringLiteral FALSE_LABEL = "false_label";
+constexpr llvm::StringLiteral CASE_LABELS = "case_labels";
+constexpr llvm::StringLiteral LABEL = "label";
+constexpr llvm::StringLiteral TRY_LABEL = "try_label";
+constexpr llvm::StringLiteral CATCH_LABEL = "catch_label";
+constexpr llvm::StringLiteral RECOVERY_TEMPLATE = "recovery_template";
 } // namespace graph_attrs
 
 namespace graph_ops {
@@ -71,8 +78,14 @@ constexpr llvm::StringLiteral INV = "INV";
 constexpr llvm::StringLiteral PLAN = "PLAN";
 constexpr llvm::StringLiteral REFLECT = "REFLECT";
 constexpr llvm::StringLiteral VERIFY = "VERIFY";
+constexpr llvm::StringLiteral BRANCH_ON_VALUE = "BRANCH_ON_VALUE";
+constexpr llvm::StringLiteral LOOP_START = "LOOP_START";
+constexpr llvm::StringLiteral LOOP_END = "LOOP_END";
+constexpr llvm::StringLiteral SWITCH = "SWITCH";
 constexpr llvm::StringLiteral MERGE = "MERGE";
 constexpr llvm::StringLiteral WAIT_ALL = "WAIT_ALL";
+constexpr llvm::StringLiteral TRY_CATCH = "TRY_CATCH";
+constexpr llvm::StringLiteral ERR = "ERR";
 } // namespace graph_ops
 
 struct ValueRef {
@@ -880,15 +893,355 @@ private:
     return std::nullopt;
   }
 
-  bool lowerStatement(const Stmt *stmt, FlowContext &ctx,
-                      std::optional<ValueRef> &flowReturn) {
-    if (llvm::isa<IfStmt>(stmt) || llvm::isa<ParallelStmt>(stmt) || llvm::isa<LoopStmt>(stmt) ||
-        llvm::isa<TryCatchStmt>(stmt) || llvm::isa<SwitchStmt>(stmt)) {
-      fail(stmt->getLocation(),
-           "structured-control statements are not yet supported by canonical graph lowering");
+  static bool sameValueRef(const ValueRef &lhs, const ValueRef &rhs) {
+    if (lhs.kind != rhs.kind)
+      return false;
+    if (lhs.kind == ValueRef::Kind::Node)
+      return lhs.nodeId == rhs.nodeId;
+    return lhs.paramName == rhs.paramName;
+  }
+
+  std::optional<ValueRef> flowExitValue(const FlowContext &ctx,
+                                        const std::optional<ValueRef> &flowReturn) const {
+    if (flowReturn)
+      return flowReturn;
+    if (ctx.lastNode)
+      return ValueRef::node(*ctx.lastNode);
+    return std::nullopt;
+  }
+
+  bool lowerStatementList(llvm::ArrayRef<std::unique_ptr<Stmt>> statements, FlowContext &ctx,
+                          std::optional<ValueRef> &flowReturn) {
+    for (const auto &stmt : statements) {
+      if (!lowerStatement(stmt.get(), ctx, flowReturn))
+        return false;
+      if (flowReturn)
+        break;
+    }
+    return true;
+  }
+
+  bool mergeBranchVariables(const FlowContext &baseCtx, const FlowContext &thenCtx,
+                            const FlowContext &elseCtx, FlowContext &outCtx) {
+    llvm::SmallVector<std::pair<std::string, ValueRef>, 8> baseVars;
+    baseVars.reserve(baseCtx.vars.size());
+    for (const auto &baseVar : baseCtx.vars) {
+      baseVars.emplace_back(baseVar.getKey().str(), baseVar.getValue());
+    }
+
+    for (const auto &baseVar : baseVars) {
+      llvm::StringRef name = baseVar.first;
+      auto thenIt = thenCtx.vars.find(name);
+      auto elseIt = elseCtx.vars.find(name);
+      if (thenIt == thenCtx.vars.end() || elseIt == elseCtx.vars.end())
+        continue;
+
+      if (sameValueRef(thenIt->second, elseIt->second)) {
+        outCtx.vars[name] = thenIt->second;
+        continue;
+      }
+
+      uint64_t mergeId = addNode(name, graph_ops::MERGE, {});
+      if (!attachDependencies(mergeId, llvm::SmallVector<ValueRef, 2>{thenIt->second, elseIt->second},
+                              outCtx)) {
+        return false;
+      }
+      outCtx.vars[name] = ValueRef::node(mergeId);
+    }
+    return true;
+  }
+
+  bool lowerIfStmt(const IfStmt *ifStmt, FlowContext &ctx, std::optional<ValueRef> &flowReturn) {
+    auto condition = lowerExprToValue(ifStmt->getCondition(), ctx, "if_condition");
+    if (!condition)
+      return false;
+
+    std::string trueLabel = llvm::formatv("if_true_{0}", nextNodeId).str();
+    std::string falseLabel = llvm::formatv("if_false_{0}", nextNodeId).str();
+    llvm::json::Object branchAttrs;
+    branchAttrs[graph_attrs::TRUE_LABEL.str()] = trueLabel;
+    branchAttrs[graph_attrs::FALSE_LABEL.str()] = falseLabel;
+
+    uint64_t branchNode = addNode("if_branch", graph_ops::BRANCH_ON_VALUE, std::move(branchAttrs));
+    if (!attachDependencies(branchNode, llvm::SmallVector<ValueRef, 1>{*condition}, ctx))
+      return false;
+
+    FlowContext baseCtx = ctx;
+    FlowContext thenCtx = ctx;
+    std::optional<ValueRef> thenReturn;
+    if (!lowerStatementList(ifStmt->getThenStmts(), thenCtx, thenReturn))
+      return false;
+
+    FlowContext elseCtx = ctx;
+    std::optional<ValueRef> elseReturn;
+    if (!ifStmt->getElseStmts().empty()) {
+      if (!lowerStatementList(ifStmt->getElseStmts(), elseCtx, elseReturn))
+        return false;
+    }
+
+    if (thenReturn && elseReturn) {
+      uint64_t mergeReturn = addNode("if_return", graph_ops::MERGE, {});
+      if (!attachDependencies(mergeReturn, llvm::SmallVector<ValueRef, 2>{*thenReturn, *elseReturn},
+                              ctx)) {
+        return false;
+      }
+      flowReturn = ValueRef::node(mergeReturn);
+      return true;
+    }
+
+    llvm::SmallVector<ValueRef, 2> joinRefs;
+    if (!thenReturn) {
+      auto thenExit = flowExitValue(thenCtx, thenReturn);
+      if (thenExit)
+        joinRefs.push_back(*thenExit);
+    }
+    if (!elseReturn) {
+      auto elseExit = flowExitValue(elseCtx, elseReturn);
+      if (elseExit)
+        joinRefs.push_back(*elseExit);
+    }
+
+    if (joinRefs.size() > 1) {
+      uint64_t joinNode = addNode("if_join", graph_ops::WAIT_ALL, {});
+      if (!attachDependencies(joinNode, joinRefs, ctx))
+        return false;
+    } else if (joinRefs.size() == 1 && joinRefs.front().kind == ValueRef::Kind::Node) {
+      ctx.lastNode = joinRefs.front().nodeId;
+    }
+
+    return mergeBranchVariables(baseCtx, thenCtx, elseCtx, ctx);
+  }
+
+  bool lowerParallelStmt(const ParallelStmt *parallelStmt, FlowContext &ctx,
+                         std::optional<ValueRef> &flowReturn) {
+    llvm::SmallVector<ValueRef, 4> branchResults;
+    llvm::SmallVector<ValueRef, 4> returnedValues;
+
+    for (const auto &stmt : parallelStmt->getBody()) {
+      FlowContext branchCtx = ctx;
+      std::optional<ValueRef> branchReturn;
+      if (!lowerStatement(stmt.get(), branchCtx, branchReturn))
+        return false;
+
+      if (branchReturn) {
+        returnedValues.push_back(*branchReturn);
+      } else if (auto branchExit = flowExitValue(branchCtx, branchReturn)) {
+        branchResults.push_back(*branchExit);
+      }
+    }
+
+    if (!returnedValues.empty() && returnedValues.size() != parallelStmt->getBody().size()) {
+      fail(parallelStmt->getLocation(),
+           "return inside parallel requires every branch to return a value");
       return false;
     }
 
+    if (!returnedValues.empty()) {
+      uint64_t mergedReturn = addNode("parallel_return", graph_ops::MERGE, {});
+      if (!attachDependencies(mergedReturn, returnedValues, ctx))
+        return false;
+      flowReturn = ValueRef::node(mergedReturn);
+      return true;
+    }
+
+    if (branchResults.empty())
+      return true;
+
+    if (branchResults.size() == 1 && branchResults.front().kind == ValueRef::Kind::Node) {
+      ctx.lastNode = branchResults.front().nodeId;
+      return true;
+    }
+
+    uint64_t waitNode = addNode("parallel_join", graph_ops::WAIT_ALL, {});
+    return attachDependencies(waitNode, branchResults, ctx);
+  }
+
+  bool lowerLoopStmt(const LoopStmt *loopStmt, FlowContext &ctx,
+                     std::optional<ValueRef> &flowReturn) {
+    auto collection = lowerExprToValue(loopStmt->getCollection(), ctx, "loop_collection");
+    if (!collection)
+      return false;
+
+    llvm::json::Object attrs;
+    attrs[graph_attrs::LABEL.str()] =
+        llvm::formatv("loop_{0}_{1}", loopStmt->getVarName(), nextNodeId).str();
+    uint64_t loopStart = addNode("loop_start", graph_ops::LOOP_START, std::move(attrs));
+    if (!attachDependencies(loopStart, llvm::SmallVector<ValueRef, 1>{*collection}, ctx))
+      return false;
+
+    auto oldBinding = ctx.vars.find(loopStmt->getVarName());
+    std::optional<ValueRef> previousValue;
+    if (oldBinding != ctx.vars.end())
+      previousValue = oldBinding->second;
+
+    FlowContext bodyCtx = ctx;
+    bodyCtx.vars[loopStmt->getVarName()] = ValueRef::node(loopStart);
+
+    std::optional<ValueRef> bodyReturn;
+    if (!lowerStatementList(loopStmt->getBody(), bodyCtx, bodyReturn))
+      return false;
+
+    if (bodyReturn) {
+      flowReturn = *bodyReturn;
+      return true;
+    }
+
+    ValueRef loopState = ValueRef::node(loopStart);
+    if (bodyCtx.lastNode)
+      loopState = ValueRef::node(*bodyCtx.lastNode);
+
+    uint64_t loopEnd = addNode("loop_end", graph_ops::LOOP_END, {});
+    if (!attachDependencies(loopEnd, llvm::SmallVector<ValueRef, 1>{loopState}, ctx))
+      return false;
+
+    if (previousValue) {
+      ctx.vars[loopStmt->getVarName()] = *previousValue;
+    } else {
+      ctx.vars.erase(loopStmt->getVarName());
+    }
+
+    return true;
+  }
+
+  bool lowerTryCatchStmt(const TryCatchStmt *tryCatchStmt, FlowContext &ctx,
+                         std::optional<ValueRef> &flowReturn) {
+    llvm::json::Object attrs;
+    attrs[graph_attrs::TRY_LABEL.str()] = llvm::formatv("try_{0}", nextNodeId).str();
+    attrs[graph_attrs::CATCH_LABEL.str()] = llvm::formatv("catch_{0}", nextNodeId).str();
+
+    uint64_t marker = addNode("try_catch", graph_ops::TRY_CATCH, std::move(attrs));
+    if (!attachDependencies(marker, {}, ctx))
+      return false;
+
+    FlowContext baseCtx = ctx;
+    FlowContext tryCtx = ctx;
+    std::optional<ValueRef> tryReturn;
+    if (!lowerStatementList(tryCatchStmt->getTryBody(), tryCtx, tryReturn))
+      return false;
+
+    FlowContext catchCtx = ctx;
+    std::optional<ValueRef> catchReturn;
+    if (!lowerStatementList(tryCatchStmt->getCatchBody(), catchCtx, catchReturn))
+      return false;
+
+    if (tryReturn && catchReturn) {
+      uint64_t mergedReturn = addNode("try_catch_return", graph_ops::MERGE, {});
+      if (!attachDependencies(mergedReturn, llvm::SmallVector<ValueRef, 2>{*tryReturn, *catchReturn},
+                              ctx)) {
+        return false;
+      }
+      flowReturn = ValueRef::node(mergedReturn);
+      return true;
+    }
+
+    llvm::SmallVector<ValueRef, 2> branchRefs;
+    if (auto tryExit = flowExitValue(tryCtx, tryReturn))
+      branchRefs.push_back(*tryExit);
+    if (auto catchExit = flowExitValue(catchCtx, catchReturn))
+      branchRefs.push_back(*catchExit);
+
+    llvm::json::Object errAttrs;
+    errAttrs[graph_attrs::RECOVERY_TEMPLATE.str()] = "try_catch_recovery";
+    uint64_t errNode = addNode("try_catch_join", graph_ops::ERR, std::move(errAttrs));
+    if (!attachDependencies(errNode, branchRefs, ctx))
+      return false;
+
+    return mergeBranchVariables(baseCtx, tryCtx, catchCtx, ctx);
+  }
+
+  bool lowerSwitchStmt(const SwitchStmt *switchStmt, FlowContext &ctx,
+                       std::optional<ValueRef> &flowReturn) {
+    auto discriminant = lowerExprToValue(switchStmt->getDiscriminant(), ctx, "switch_discriminant");
+    if (!discriminant)
+      return false;
+
+    llvm::json::Array caseLabels;
+    caseLabels.reserve(switchStmt->getCases().size());
+    for (const auto &caseItem : switchStmt->getCases()) {
+      caseLabels.push_back(caseItem.label);
+    }
+
+    llvm::json::Object attrs;
+    attrs[graph_attrs::CASE_LABELS.str()] = std::move(caseLabels);
+    uint64_t switchNode = addNode("switch", graph_ops::SWITCH, std::move(attrs));
+    if (!attachDependencies(switchNode, llvm::SmallVector<ValueRef, 1>{*discriminant}, ctx))
+      return false;
+
+    llvm::SmallVector<ValueRef, 4> caseExits;
+    llvm::SmallVector<ValueRef, 4> caseReturns;
+    llvm::SmallVector<ValueRef, 4> switchValues;
+
+    for (const auto &caseItem : switchStmt->getCases()) {
+      FlowContext caseCtx = ctx;
+      std::optional<ValueRef> caseReturn;
+      if (!lowerStatementList(caseItem.body, caseCtx, caseReturn))
+        return false;
+
+      if (caseReturn) {
+        caseReturns.push_back(*caseReturn);
+      } else if (auto caseExit = flowExitValue(caseCtx, caseReturn)) {
+        caseExits.push_back(*caseExit);
+      }
+
+      if (switchStmt->hasResultBinding()) {
+        auto caseValue = flowExitValue(caseCtx, caseReturn);
+        if (!caseValue) {
+          fail(switchStmt->getLocation(),
+               "switch result binding requires each case to produce a value");
+          return false;
+        }
+        switchValues.push_back(*caseValue);
+      }
+    }
+
+    FlowContext defaultCtx = ctx;
+    std::optional<ValueRef> defaultReturn;
+    if (!lowerStatementList(switchStmt->getDefaultBody(), defaultCtx, defaultReturn))
+      return false;
+
+    if (defaultReturn) {
+      caseReturns.push_back(*defaultReturn);
+    } else if (auto defaultExit = flowExitValue(defaultCtx, defaultReturn)) {
+      caseExits.push_back(*defaultExit);
+    }
+
+    if (switchStmt->hasResultBinding()) {
+      auto defaultValue = flowExitValue(defaultCtx, defaultReturn);
+      if (!defaultValue) {
+        fail(switchStmt->getLocation(),
+             "switch result binding requires default branch to produce a value");
+        return false;
+      }
+      switchValues.push_back(*defaultValue);
+
+      uint64_t mergeNode = addNode(switchStmt->getResultBinding(), graph_ops::MERGE, {});
+      if (!attachDependencies(mergeNode, switchValues, ctx))
+        return false;
+      ctx.vars[switchStmt->getResultBinding()] = ValueRef::node(mergeNode);
+    }
+
+    const size_t totalBranches = switchStmt->getCases().size() + 1;
+    if (caseReturns.size() == totalBranches) {
+      uint64_t mergeReturn = addNode("switch_return", graph_ops::MERGE, {});
+      if (!attachDependencies(mergeReturn, caseReturns, ctx))
+        return false;
+      flowReturn = ValueRef::node(mergeReturn);
+      return true;
+    }
+
+    if (caseExits.size() > 1) {
+      uint64_t joinNode = addNode("switch_join", graph_ops::WAIT_ALL, {});
+      if (!attachDependencies(joinNode, caseExits, ctx))
+        return false;
+    } else if (caseExits.size() == 1 && caseExits.front().kind == ValueRef::Kind::Node) {
+      ctx.lastNode = caseExits.front().nodeId;
+    }
+
+    return true;
+  }
+
+  bool lowerStatement(const Stmt *stmt, FlowContext &ctx,
+                      std::optional<ValueRef> &flowReturn) {
     return llvm::TypeSwitch<const Stmt *, bool>(stmt)
         .Case<LetStmt>([&](auto *letStmt) {
           auto value = lowerExprToValue(letStmt->getInitExpr(), ctx, letStmt->getVarName());
@@ -907,6 +1260,17 @@ private:
           flowReturn = *value;
           return true;
         })
+        .Case<IfStmt>([&](auto *ifStmt) { return lowerIfStmt(ifStmt, ctx, flowReturn); })
+        .Case<ParallelStmt>([&](auto *parallelStmt) {
+          return lowerParallelStmt(parallelStmt, ctx, flowReturn);
+        })
+        .Case<LoopStmt>([&](auto *loopStmt) { return lowerLoopStmt(loopStmt, ctx, flowReturn); })
+        .Case<TryCatchStmt>([&](auto *tryCatchStmt) {
+          return lowerTryCatchStmt(tryCatchStmt, ctx, flowReturn);
+        })
+        .Case<SwitchStmt>([&](auto *switchStmt) {
+          return lowerSwitchStmt(switchStmt, ctx, flowReturn);
+        })
         .Default([&](auto *) {
           fail(stmt->getLocation(), "unsupported statement in graph lowering");
           return false;
@@ -915,12 +1279,8 @@ private:
 
   bool lowerFlowBody(const FlowDecl *flow, FlowContext &ctx,
                      std::optional<ValueRef> &flowReturn) {
-    for (const auto &stmt : flow->getBody()) {
-      if (!lowerStatement(stmt.get(), ctx, flowReturn))
-        return false;
-      if (flowReturn)
-        break;
-    }
+    if (!lowerStatementList(flow->getBody(), ctx, flowReturn))
+      return false;
 
     if (!flowReturn && ctx.lastNode) {
       flowReturn = ValueRef::node(*ctx.lastNode);

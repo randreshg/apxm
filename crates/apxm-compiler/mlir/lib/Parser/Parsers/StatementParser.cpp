@@ -141,12 +141,13 @@ std::unique_ptr<Stmt> StatementParser::parseParallelStmt() {
   Location loc = getCurrentLocation();
   if (!expect(TokenKind::kw_parallel)) return nullptr;
 
-  if (!expect(TokenKind::l_brace)) return nullptr;
+  if (!peek(TokenKind::l_brace)) {
+    emitError(getCurrentLocation(), "Expected '{' to start parallel block");
+    return nullptr;
+  }
 
   llvm::SmallVector<std::unique_ptr<Stmt>, 4> body;
   if (!parseStatementBlock(body)) return nullptr;
-
-  if (!expect(TokenKind::r_brace)) return nullptr;
 
   return std::make_unique<ParallelStmt>(loc, body);
 }
@@ -181,19 +182,23 @@ std::unique_ptr<Stmt> StatementParser::parseTryCatchStmt() {
   Location loc = getCurrentLocation();
   if (!expect(TokenKind::kw_try)) return nullptr;
 
-  if (!expect(TokenKind::l_brace)) return nullptr;
+  if (!peek(TokenKind::l_brace)) {
+    emitError(getCurrentLocation(), "Expected '{' to start try block");
+    return nullptr;
+  }
 
   llvm::SmallVector<std::unique_ptr<Stmt>, 4> tryBody;
   if (!parseStatementBlock(tryBody)) return nullptr;
 
   if (!expect(TokenKind::kw_catch)) return nullptr;
 
-  if (!expect(TokenKind::l_brace)) return nullptr;
+  if (!peek(TokenKind::l_brace)) {
+    emitError(getCurrentLocation(), "Expected '{' to start catch block");
+    return nullptr;
+  }
 
   llvm::SmallVector<std::unique_ptr<Stmt>, 4> catchBody;
   if (!parseStatementBlock(catchBody)) return nullptr;
-
-  if (!expect(TokenKind::r_brace)) return nullptr;
 
   return std::make_unique<TryCatchStmt>(loc, tryBody, catchBody);
 }

@@ -50,6 +50,13 @@ pub mod graph {
         pub const GOAL: &str = "goal";
         pub const TRACE_ID: &str = "trace_id";
         pub const TRACE: &str = "trace";
+        pub const TRUE_LABEL: &str = "true_label";
+        pub const FALSE_LABEL: &str = "false_label";
+        pub const CASE_LABELS: &str = "case_labels";
+        pub const LABEL: &str = "label";
+        pub const TRY_LABEL: &str = "try_label";
+        pub const CATCH_LABEL: &str = "catch_label";
+        pub const RECOVERY_TEMPLATE: &str = "recovery_template";
         pub const TOOLS_ENABLED: &str = "tools_enabled";
         pub const TOOLS: &str = "tools";
     }

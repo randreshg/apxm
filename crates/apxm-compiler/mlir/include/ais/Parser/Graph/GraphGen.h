@@ -23,8 +23,7 @@ struct GraphGenError {
 /// Graph canonicalization pass for DSL frontend.
 ///
 /// This pass walks DSL AST declarations/statements and emits canonical
-/// ApxmGraph JSON. It currently targets flow-style DAG programs and reports
-/// diagnostics for unsupported structured-control constructs.
+/// ApxmGraph JSON for downstream lowering and optimization.
 class GraphGen {
 public:
   explicit GraphGen(llvm::SourceMgr &sourceMgr);
