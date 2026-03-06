@@ -80,6 +80,13 @@ impl OperationDispatcher {
             // Communication operations
             AISOperationType::Communicate => communicate::execute(ctx, node, inputs).await,
 
+            // Phase 1 ISA extensions (UPDATE_GOAL, GUARD, CLAIM, PAUSE, RESUME)
+            AISOperationType::UpdateGoal => update_goal::execute(ctx, node, inputs).await,
+            AISOperationType::Guard => guard::execute(ctx, node, inputs).await,
+            AISOperationType::Claim => claim::execute(ctx, node, inputs).await,
+            AISOperationType::Pause => pause::execute(ctx, node, inputs).await,
+            AISOperationType::Resume => resume::execute(ctx, node, inputs).await,
+
             // Literal operations
             AISOperationType::ConstStr => const_str::execute(ctx, node, inputs).await,
 

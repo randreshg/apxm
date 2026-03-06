@@ -12,11 +12,13 @@ pub mod traits;
 
 pub mod anthropic;
 pub mod google;
+pub mod mock;
 pub mod ollama;
 pub mod openai;
 
 pub use anthropic::{AnthropicBackend, AnthropicModel};
 pub use google::{GoogleBackend, GoogleModel};
+pub use mock::{MockLLMBackend, MockResponse, RecordedCall};
 pub use ollama::{OllamaBackend, OllamaModel};
 pub use openai::{OpenAIBackend, OpenAIModel};
 pub use request::{GenerationConfig, LLMRequest, RequestBuilder, ToolChoice, ToolDefinition};

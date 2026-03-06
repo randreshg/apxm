@@ -17,15 +17,41 @@ const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
 
 /// OpenAI LLM backend.
+///
+/// Supports any OpenAI-compatible API including on-premises endpoints.
+/// Extra headers (e.g. `Ocp-Apim-Subscription-Key`) can be injected via the
+/// `extra_headers` config key:
+///
+/// ```toml
+/// [[llm_backends]]
+/// name = "apxm"
+/// provider = "openai"
+/// model = "gpt-4o-mini"   # or your model name
+/// api_key = "dummy"
+/// base_url = "https://your-openai-compatible-gateway/v1"
+///
+/// [llm_backends.extra_headers]
+/// Ocp-Apim-Subscription-Key = "env:OCP_APIM_KEY"
+/// user = "env:USERNAME"
+/// ```
 pub struct OpenAIBackend {
     api_key: String,
     model: String,
     base_url: String,
+    /// Additional HTTP headers injected on every request.
+    extra_headers: Vec<(String, String)>,
     client: reqwest::Client,
 }
 
 impl OpenAIBackend {
     /// Create a new OpenAI backend.
+    ///
+    /// The optional `config` value may contain:
+    /// - `model` – override the default model name
+    /// - `base_url` – override the API base URL (enables on-premises / Azure / OpenRouter endpoints)
+    /// - `extra_headers` – a JSON object whose keys/values become HTTP headers on every
+    ///   request.  Values prefixed with `"env:"` are resolved from environment variables
+    ///   at backend-creation time (e.g. `"env:USERNAME"` → current OS user).
     pub async fn new(api_key: &str, config: Option<serde_json::Value>) -> Result<Self> {
         let model = config
             .as_ref()
@@ -41,10 +67,32 @@ impl OpenAIBackend {
             .unwrap_or(DEFAULT_BASE_URL)
             .to_string();
 
+        // Parse optional extra_headers from config.
+        // Values prefixed with "env:" are read from environment variables.
+        let extra_headers: Vec<(String, String)> = config
+            .as_ref()
+            .and_then(|c| c.get("extra_headers"))
+            .and_then(|h| h.as_object())
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(k, v)| {
+                        let raw = v.as_str()?;
+                        let resolved = if let Some(var_name) = raw.strip_prefix("env:") {
+                            std::env::var(var_name).unwrap_or_else(|_| raw.to_string())
+                        } else {
+                            raw.to_string()
+                        };
+                        Some((k.clone(), resolved))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Ok(OpenAIBackend {
             api_key: api_key.to_string(),
             model,
             base_url,
+            extra_headers,
             client: reqwest::Client::new(),
         })
     }
@@ -134,10 +182,22 @@ impl OpenAIBackend {
     }
 
     /// Parse OpenAI API response.
+    ///
+    /// Some OpenAI-compatible APIs (e.g. on-premises reasoning models) return
+    /// `content: null` and place the generated text in a `reasoning` field instead.
+    /// We fall back to `reasoning` when `content` is absent so those endpoints work
+    /// transparently.
     fn parse_response(&self, response: OpenAIResponse) -> Result<LLMResponse> {
         let choice = response.choices.first().context("No choices in response")?;
 
-        let content = choice.message.content.clone().unwrap_or_default();
+        // Prefer `content`; fall back to `reasoning` for on-premises reasoning models.
+        let content = choice
+            .message
+            .content
+            .clone()
+            .filter(|s| !s.is_empty())
+            .or_else(|| choice.message.reasoning.clone())
+            .unwrap_or_default();
 
         // Parse tool calls if present
         let tool_calls: Vec<ToolCall> = choice
@@ -189,11 +249,18 @@ impl LLMBackend for OpenAIBackend {
             "Sending request to OpenAI"
         );
 
-        let response = self
+        let mut req_builder = self
             .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
+            .header("Content-Type", "application/json");
+
+        // Inject extra headers (e.g. on-premises Ocp-Apim-Subscription-Key)
+        for (name, value) in &self.extra_headers {
+            req_builder = req_builder.header(name.as_str(), value.as_str());
+        }
+
+        let response = req_builder
             .json(&body)
             .send()
             .await
@@ -227,15 +294,30 @@ impl LLMBackend for OpenAIBackend {
     async fn health_check(&self) -> Result<()> {
         let url = format!("{}/models", self.base_url);
 
-        let response = self
+        let mut req_builder = self
             .client
             .get(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Authorization", format!("Bearer {}", self.api_key));
+
+        for (name, value) in &self.extra_headers {
+            req_builder = req_builder.header(name.as_str(), value.as_str());
+        }
+
+        let response = req_builder
             .send()
             .await
             .context("Failed to connect to OpenAI")?;
 
         if !response.status().is_success() {
+            // Some compatible APIs (e.g. on-premises endpoints) don't expose /models —
+            // treat 404 as "connected but endpoint absent" rather than a hard failure.
+            if response.status() == reqwest::StatusCode::NOT_FOUND {
+                tracing::debug!(
+                    url = %url,
+                    "OpenAI-compatible endpoint does not expose /models — treating as healthy"
+                );
+                return Ok(());
+            }
             anyhow::bail!("OpenAI health check failed: {}", response.status());
         }
 
@@ -280,6 +362,9 @@ struct Choice {
 struct Message {
     #[serde(default)]
     content: Option<String>,
+    /// On-premises reasoning models return generated text here when content is null.
+    #[serde(default)]
+    reasoning: Option<String>,
     #[serde(default)]
     tool_calls: Option<Vec<OpenAIToolCall>>,
 }
@@ -313,6 +398,7 @@ mod tests {
             api_key: "test".to_string(),
             model: "gpt-4".to_string(),
             base_url: DEFAULT_BASE_URL.to_string(),
+            extra_headers: vec![],
             client: reqwest::Client::new(),
         };
 
@@ -331,6 +417,7 @@ mod tests {
             api_key: "test".to_string(),
             model: "gpt-4-turbo".to_string(),
             base_url: DEFAULT_BASE_URL.to_string(),
+            extra_headers: vec![],
             client: reqwest::Client::new(),
         };
 
@@ -351,6 +438,7 @@ mod tests {
             api_key: "test".to_string(),
             model: "gpt-4".to_string(),
             base_url: DEFAULT_BASE_URL.to_string(),
+            extra_headers: vec![],
             client: reqwest::Client::new(),
         };
 
@@ -399,6 +487,7 @@ mod tests {
             api_key: "test".to_string(),
             model: "gpt-4".to_string(),
             base_url: DEFAULT_BASE_URL.to_string(),
+            extra_headers: vec![],
             client: reqwest::Client::new(),
         };
 
