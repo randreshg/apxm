@@ -1,0 +1,134 @@
+name: APXM CI
+
+on:
+  push:
+    branches: [main, "feature/**", "sprint-*"]
+  pull_request:
+    branches: [main]
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ─── Lint + Format ──────────────────────────────────────────────────────────
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (no compiler)
+        run: cargo clippy --workspace --exclude apxm-compiler --all-features -- -D warnings
+
+  # ─── Unit Tests ─────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run unit tests (no compiler)
+        run: cargo test --workspace --exclude apxm-compiler --lib --bins
+
+  # ─── Integration Tests ──────────────────────────────────────────────────────
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run integration tests
+        run: cargo test --workspace --exclude apxm-compiler --test '*' -- --test-threads=4
+
+  # ─── Mock Backend Tests ─────────────────────────────────────────────────────
+  mock-backend-tests:
+    name: Mock Backend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run mock backend unit tests
+        run: cargo test --package apxm-backends -- mock --nocapture
+
+  # ─── Server API Tests ───────────────────────────────────────────────────────
+  server-tests:
+    name: Server API Tests (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python test dependencies
+        run: pip install pytest requests
+
+      - name: Build apxm-server
+        run: cargo build --package apxm-server --exclude apxm-compiler
+
+      - name: Run Python server tests
+        env:
+          APXM_MOCK_BACKEND: "1"
+        run: pytest tests/test_server.py -v --timeout=30
+        continue-on-error: true  # Server tests may require LLVM on CI
+
+  # ─── Compiler Tests (needs LLVM) ────────────────────────────────────────────
+  compiler-tests:
+    name: Compiler Tests (LLVM)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install LLVM 18
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "18"
+
+      - name: Run all tests including compiler
+        env:
+          LLVM_SYS_180_PREFIX: ${{ env.LLVM_PATH }}
+          MLIR_SYS_180_PREFIX: ${{ env.LLVM_PATH }}
+        run: cargo test --workspace --all-features
+
+  # ─── Build Check ────────────────────────────────────────────────────────────
+  build-check:
+    name: Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check all crates build (no compiler)
+        run: cargo check --workspace --exclude apxm-compiler
+
+  # ─── Security Audit ─────────────────────────────────────────────────────────
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
