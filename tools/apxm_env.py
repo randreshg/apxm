@@ -1,8 +1,7 @@
 """
 APXM Environment Utilities
 
-Shared environment detection and setup utilities used by both apxm_cli.py
-and benchmark runner scripts.
+Shared environment detection and setup utilities used by the APXM CLI.
 
 This module provides:
 - get_conda_prefix() - Find the apxm conda environment
@@ -26,6 +25,7 @@ def get_conda_prefix() -> Optional[Path]:
     1. CONDA_PREFIX environment variable (if it's the apxm env or has MLIR)
     2. Query conda for environment list
     3. Query mamba for environment list
+    4. Probe common installation paths (~/miniforge3, ~/mambaforge, etc.)
 
     Returns:
         Path to the conda environment, or None if not found.
@@ -66,6 +66,19 @@ def get_conda_prefix() -> Optional[Path]:
     except (subprocess.CalledProcessError, json.JSONDecodeError, FileNotFoundError):
         pass
 
+    # 4. Probe common installation paths
+    home = Path.home()
+    common_paths = [
+        home / "miniforge3" / "envs" / "apxm",
+        home / "mambaforge" / "envs" / "apxm",
+        home / "miniconda3" / "envs" / "apxm",
+        home / "anaconda3" / "envs" / "apxm",
+        Path("/opt/conda/envs/apxm"),
+    ]
+    for candidate in common_paths:
+        if (candidate / "lib" / "cmake" / "mlir").exists():
+            return candidate
+
     return None
 
 
@@ -88,8 +101,10 @@ def setup_mlir_environment(conda_prefix: Path, target_dir: Optional[Path] = None
 
     # Set CONDA_PREFIX to the correct environment (critical for Rust runtime)
     env["CONDA_PREFIX"] = str(conda_prefix)
-    env["MLIR_DIR"] = str(conda_prefix / "lib" / "cmake" / "mlir")
-    env["LLVM_DIR"] = str(conda_prefix / "lib" / "cmake" / "llvm")
+    if "MLIR_DIR" not in env:
+        env["MLIR_DIR"] = str(conda_prefix / "lib" / "cmake" / "mlir")
+    if "LLVM_DIR" not in env:
+        env["LLVM_DIR"] = str(conda_prefix / "lib" / "cmake" / "llvm")
 
     if target_dir:
         # Add both release/ and release/lib/ for dylib lookup
@@ -151,14 +166,15 @@ class ApxmConfig:
         )
 
     @property
+    def config_dir(self) -> Path:
+        """Path to the ~/.apxm configuration directory."""
+        home = Path.home()
+        return home / ".apxm"
+
+    @property
     def compiler_bin(self) -> Path:
         """Path to the compiled apxm binary."""
         return self.target_dir / "release" / "apxm"
-
-    @property
-    def workloads_dir(self) -> Path:
-        """Path to benchmark workloads."""
-        return self.apxm_dir / "papers" / "cf26" / "benchmarks" / "workloads"
 
     def get_mlir_env(self) -> dict[str, str]:
         """Get environment variables for MLIR compilation/execution."""

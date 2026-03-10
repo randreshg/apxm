@@ -303,26 +303,40 @@ fn generate_bindings(
     if env::var("LIBCLANG_PATH").is_err() {
         // On Windows, conda-forge puts libclang-*.dll in bin/, not lib/.
         let candidates = [mlir_prefix.join("bin"), mlir_prefix.join("lib")];
-        let libclang_names = ["libclang.dll", "libclang-13.dll", "libclang-14.dll",
-                               "libclang-15.dll", "libclang-16.dll", "libclang-17.dll",
-                               "libclang-18.dll", "libclang-19.dll", "libclang-20.dll",
-                               "libclang-21.dll", "libclang-22.dll",
-                               "libclang.so", "libclang.dylib"];
-        let found = candidates.iter().find(|dir| {
-            dir.exists() && libclang_names.iter().any(|name| dir.join(name).exists())
-        });
+        let libclang_names = [
+            "libclang.dll",
+            "libclang-13.dll",
+            "libclang-14.dll",
+            "libclang-15.dll",
+            "libclang-16.dll",
+            "libclang-17.dll",
+            "libclang-18.dll",
+            "libclang-19.dll",
+            "libclang-20.dll",
+            "libclang-21.dll",
+            "libclang-22.dll",
+            "libclang.so",
+            "libclang.dylib",
+        ];
+        let found = candidates
+            .iter()
+            .find(|dir| dir.exists() && libclang_names.iter().any(|name| dir.join(name).exists()));
         if let Some(dir) = found {
             log_info!(
                 "apxm-compiler-build",
                 "Setting LIBCLANG_PATH for bindgen: {}",
                 dir.display()
             );
-            unsafe { env::set_var("LIBCLANG_PATH", dir); }
+            unsafe {
+                env::set_var("LIBCLANG_PATH", dir);
+            }
         } else {
             // Fall back to prefix/lib even if we couldn't confirm a file there
             let clang_lib_path = mlir_prefix.join("lib");
             if clang_lib_path.exists() {
-                unsafe { env::set_var("LIBCLANG_PATH", &clang_lib_path); }
+                unsafe {
+                    env::set_var("LIBCLANG_PATH", &clang_lib_path);
+                }
             }
         }
     }

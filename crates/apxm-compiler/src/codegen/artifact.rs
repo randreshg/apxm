@@ -119,9 +119,8 @@ pub fn parse_wire_dag(bytes: &[u8]) -> Result<ExecutionDag, CompilerError> {
 
 fn read_node(reader: &mut BinaryReader) -> Result<Node, CompilerError> {
     let id = reader.read_u64()?;
-    let op_index = reader.read_u32()? as usize;
-    let op_type = OP_KIND_MAP
-        .get(op_index)
+    let op_index = reader.read_u32()?;
+    let op_type = AISOperationType::from_wire_index(op_index)
         .ok_or_else(|| invalid_input_error(format!("Unknown operation kind index {op_index}")))?;
 
     let attr_count = reader.read_u64()? as usize;
@@ -154,7 +153,7 @@ fn read_node(reader: &mut BinaryReader) -> Result<Node, CompilerError> {
 
     Ok(Node {
         id,
-        op_type: *op_type,
+        op_type,
         attributes,
         input_tokens,
         output_tokens,
@@ -259,34 +258,3 @@ impl<'a> BinaryReader<'a> {
         })
     }
 }
-
-/// Maps compiler OperationKind indices to AISOperationType.
-/// Must match the enum in ArtifactEmitter.cpp:
-///   Inv=0, Ask=1, QMem=2, ..., Print=22, Think=23, Reason=24
-const OP_KIND_MAP: [AISOperationType; 25] = [
-    AISOperationType::Inv,           // 0
-    AISOperationType::Ask,           // 1 (was Rsn)
-    AISOperationType::QMem,          // 2
-    AISOperationType::UMem,          // 3
-    AISOperationType::Plan,          // 4
-    AISOperationType::WaitAll,       // 5
-    AISOperationType::Merge,         // 6
-    AISOperationType::Fence,         // 7
-    AISOperationType::Exc,           // 8
-    AISOperationType::Communicate,   // 9
-    AISOperationType::Reflect,       // 10
-    AISOperationType::Verify,        // 11
-    AISOperationType::Err,           // 12
-    AISOperationType::Return,        // 13
-    AISOperationType::Jump,          // 14
-    AISOperationType::BranchOnValue, // 15
-    AISOperationType::LoopStart,     // 16
-    AISOperationType::LoopEnd,       // 17
-    AISOperationType::TryCatch,      // 18
-    AISOperationType::ConstStr,      // 19
-    AISOperationType::Switch,        // 20
-    AISOperationType::FlowCall,      // 21
-    AISOperationType::Print,         // 22
-    AISOperationType::Think,         // 23
-    AISOperationType::Reason,        // 24
-];

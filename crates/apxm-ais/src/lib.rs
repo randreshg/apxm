@@ -9,7 +9,7 @@
 //! ```text
 //!                     ┌─────────────┐
 //!                     │   apxm-ais  │  ← Single Source of Truth
-//!                     │  (21 ops)   │
+//!                     │  (31 ops)   │
 //!                     └──────┬──────┘
 //!                            │
 //!               ┌────────────┼────────────┐
@@ -19,19 +19,20 @@
 //!       └───────────────┘    │    └───────────────┘
 //! ```
 //!
-//! ## Operations (21 total)
+//! ## Operations (31 total)
 //!
 //! | Category | Operations |
 //! |----------|------------|
 //! | Metadata | AGENT |
 //! | Memory | QMEM, UMEM |
-//! | Reasoning | RSN, PLAN, REFLECT, VERIFY |
-//! | Tools | INV, EXC |
-//! | Control Flow | JUMP, BRANCH_ON_VALUE, LOOP_START, LOOP_END, RETURN |
+//! | LLM/Reasoning | ASK, THINK, REASON, PLAN, REFLECT, VERIFY |
+//! | Tools | INV, EXC, PRINT |
+//! | Control Flow | JUMP, BRANCH_ON_VALUE, LOOP_START, LOOP_END, RETURN, SWITCH, FLOW_CALL |
 //! | Synchronization | MERGE, FENCE, WAIT_ALL |
 //! | Error Handling | TRY_CATCH, ERR |
 //! | Communication | COMMUNICATE |
-//! | Internal | CONST_STR |
+//! | Goal/State | UPDATE_GOAL, GUARD, CLAIM, PAUSE, RESUME |
+//! | Internal | CONST_STR, YIELD |
 
 pub mod aam;
 pub mod memory;

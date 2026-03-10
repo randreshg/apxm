@@ -5,21 +5,21 @@
 pub enum OperationCategory {
     /// Metadata operations: AGENT
     Metadata,
-    /// Memory operations: QMEM, UMEM
+    /// Memory operations: QMEM, UMEM, UPDATE_GOAL
     Memory,
-    /// Reasoning operations: RSN, PLAN, REFLECT, VERIFY
+    /// Reasoning operations: ASK, THINK, REASON, PLAN, REFLECT, VERIFY
     Reasoning,
-    /// Tool operations: INV, EXC
+    /// Tool operations: INV, EXC, PRINT
     Tools,
-    /// Control flow operations: JUMP, BRANCH_ON_VALUE, LOOP_START, LOOP_END, RETURN
+    /// Control flow operations: JUMP, BRANCH_ON_VALUE, LOOP_START, LOOP_END, RETURN, SWITCH, FLOW_CALL, GUARD, RESUME
     ControlFlow,
     /// Synchronization operations: MERGE, FENCE, WAIT_ALL
     Synchronization,
     /// Error handling operations: TRY_CATCH, ERR
     ErrorHandling,
-    /// Communication operations: COMMUNICATE
+    /// Communication operations: COMMUNICATE, CLAIM, PAUSE
     Communication,
-    /// Internal operations: CONST_STR
+    /// Internal operations: CONST_STR, YIELD
     Internal,
 }
 

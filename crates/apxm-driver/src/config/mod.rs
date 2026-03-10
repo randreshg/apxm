@@ -87,6 +87,19 @@ pub struct LlmBackendConfig {
     /// Arbitrary backend options.
     #[serde(default)]
     pub options: HashMap<String, String>,
+
+    /// Additional HTTP headers sent with every LLM request.
+    /// Values prefixed with `env:` are resolved from environment variables
+    /// at backend construction time.
+    ///
+    /// # Example
+    /// ```toml
+    /// [llm_backends.extra_headers]
+    /// Ocp-Apim-Subscription-Key = "env:OCP_APIM_KEY"
+    /// user = "env:USER"
+    /// ```
+    #[serde(default)]
+    pub extra_headers: HashMap<String, String>,
 }
 
 impl Default for LlmBackendConfig {
@@ -98,6 +111,7 @@ impl Default for LlmBackendConfig {
             api_key: None,
             endpoint: None,
             options: HashMap::new(),
+            extra_headers: HashMap::new(),
         }
     }
 }

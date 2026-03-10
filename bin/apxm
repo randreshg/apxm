@@ -1,96 +1,158 @@
 #!/bin/bash
-# APXM CLI - Delegates to Python CLI
-#
-# Setup: export PATH="$PATH:$HOME/path/to/apxm/bin"
-# Usage: apxm doctor | apxm build | apxm execute workflow.json
+
+# APXM CLI wrapper
+# Auto-detects conda environment and sets up MLIR/LLVM paths.
+
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-PYTHON_CLI="${REPO_ROOT}/tools/apxm_cli.py"
-CACHE_FILE="${SCRIPT_DIR}/.python-cache"
+APXM_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON_CLI="${SCRIPT_DIR}/apxm_cli.py"
 
-find_conda_apxm_env() {
-    for cmd in mamba conda; do
-        if command -v $cmd &>/dev/null; then
-            local env_path
-            env_path=$($cmd info --envs 2>/dev/null | grep "^apxm " | awk '{print $NF}')
-            if [[ -n "$env_path" && -d "$env_path" ]]; then
-                echo "$env_path"
-                return 0
-            fi
+# ── Find the apxm conda environment ──────────────────────────────────────────
+
+find_conda_prefix() {
+    # 1. Already activated and correct
+    if [[ -n "${CONDA_PREFIX:-}" ]]; then
+        local env_name
+        env_name="$(basename "$CONDA_PREFIX")"
+        if [[ "$env_name" == "apxm" ]] || [[ -d "$CONDA_PREFIX/lib/cmake/mlir" ]]; then
+            echo "$CONDA_PREFIX"
+            return 0
+        fi
+    fi
+
+    # 2. Query conda/mamba for the apxm environment
+    local conda_cmd=""
+    if command -v mamba >/dev/null 2>&1; then
+        conda_cmd="mamba"
+    elif command -v conda >/dev/null 2>&1; then
+        conda_cmd="conda"
+    fi
+
+    if [[ -n "$conda_cmd" ]]; then
+        local env_path
+        env_path=$("$conda_cmd" info --envs 2>/dev/null | grep -E '^\s*apxm\s' | awk '{print $NF}' || true)
+        if [[ -n "$env_path" ]] && [[ -d "$env_path" ]]; then
+            echo "$env_path"
+            return 0
+        fi
+        # Try JSON format
+        env_path=$("$conda_cmd" info --envs --json 2>/dev/null | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for p in data.get('envs', []):
+    if p.endswith('/apxm'):
+        print(p)
+        break
+" 2>/dev/null || true)
+        if [[ -n "$env_path" ]] && [[ -d "$env_path" ]]; then
+            echo "$env_path"
+            return 0
+        fi
+    fi
+
+    # 3. Common locations
+    for candidate in \
+        "$HOME/miniforge3/envs/apxm" \
+        "$HOME/mambaforge/envs/apxm" \
+        "$HOME/miniconda3/envs/apxm" \
+        "$HOME/anaconda3/envs/apxm" \
+        "/opt/conda/envs/apxm"; do
+        if [[ -d "$candidate/lib/cmake/mlir" ]]; then
+            echo "$candidate"
+            return 0
         fi
     done
+
     return 1
 }
 
-# `activate` needs to print shell exports; the Python CLI wrapper does not expose it.
-if [[ "$1" == "activate" ]]; then
-    APXM_ENV=$(find_conda_apxm_env) || {
-        echo "Error: conda environment 'apxm' not found."
-        echo "Create it first: mamba env create -f environment.yaml"
-        exit 1
-    }
+# ── Find a suitable Python interpreter ────────────────────────────────────────
 
-    echo "export CONDA_PREFIX=${APXM_ENV}"
-    echo "export MLIR_DIR=${APXM_ENV}/lib/cmake/mlir"
-    echo "export LLVM_DIR=${APXM_ENV}/lib/cmake/llvm"
-    echo "export MLIR_PREFIX=${APXM_ENV}"
-    echo "export LLVM_PREFIX=${APXM_ENV}"
-    echo "export PATH=${APXM_ENV}/bin:\$PATH"
-    if [[ "$(uname -s)" == "Darwin" ]]; then
-        echo "export DYLD_LIBRARY_PATH=${APXM_ENV}/lib:\${DYLD_LIBRARY_PATH}"
-    else
-        echo "export LD_LIBRARY_PATH=${APXM_ENV}/lib:\${LD_LIBRARY_PATH}"
-    fi
-    exit 0
-fi
+has_required_deps() {
+    "$1" -c "import typer, rich" 2>/dev/null
+}
 
-# Try cached Python path first (fast path)
-if [[ -f "$CACHE_FILE" ]]; then
-    CACHED_PYTHON=$(cat "$CACHE_FILE")
-    if [[ -x "$CACHED_PYTHON" ]] && "$CACHED_PYTHON" -c "import typer, rich" 2>/dev/null; then
-        exec "$CACHED_PYTHON" "$PYTHON_CLI" "$@"
-    fi
-    rm -f "$CACHE_FILE"  # Invalid cache
-fi
-
-# Find Python with required dependencies
 find_python() {
-    # Try conda/mamba apxm environment first (preferred)
-    for cmd in mamba conda; do
-        if command -v $cmd &>/dev/null; then
-            local env_path=$($cmd info --envs 2>/dev/null | grep "^apxm " | awk '{print $NF}')
-            if [[ -n "$env_path" && -x "$env_path/bin/python" ]]; then
-                if "$env_path/bin/python" -c "import typer, rich" 2>/dev/null; then
-                    echo "$env_path/bin/python"
-                    return 0
-                fi
-            fi
+    local conda_prefix="${1:-}"
+    local candidates=()
+
+    # Prefer the conda env's Python
+    if [[ -n "$conda_prefix" ]] && [[ -x "$conda_prefix/bin/python3" ]]; then
+        candidates+=("$conda_prefix/bin/python3")
+    fi
+
+    # Virtual env
+    if [[ -n "${VIRTUAL_ENV:-}" ]] && [[ -x "${VIRTUAL_ENV}/bin/python3" ]]; then
+        candidates+=("${VIRTUAL_ENV}/bin/python3")
+    fi
+
+    # Local .venv
+    if [[ -x "${SCRIPT_DIR}/.venv/bin/python3" ]]; then
+        candidates+=("${SCRIPT_DIR}/.venv/bin/python3")
+    fi
+
+    # System Python
+    if command -v python3 >/dev/null 2>&1; then
+        candidates+=("$(command -v python3)")
+    fi
+
+    for candidate in "${candidates[@]}"; do
+        if [[ -x "$candidate" ]] && has_required_deps "$candidate"; then
+            echo "$candidate"
+            return 0
         fi
     done
-
-    # Fallback to system python3
-    if python3 -c "import typer, rich" 2>/dev/null; then
-        echo "python3"
-        return 0
-    fi
 
     return 1
 }
 
-# Verify CLI exists
-[[ -f "$PYTHON_CLI" ]] || { echo "Error: CLI not found at $PYTHON_CLI"; exit 1; }
+# ── Setup environment ─────────────────────────────────────────────────────────
 
-# Find Python and cache it
-PYTHON=$(find_python) || {
-    echo "Error: Python environment not found."
-    echo ""
-    echo "Create the conda environment first:"
-    echo "  mamba env create -f environment.yaml"
-    exit 1
+setup_env() {
+    local conda_prefix="$1"
+
+    export CONDA_PREFIX="$conda_prefix"
+    export MLIR_DIR="$conda_prefix/lib/cmake/mlir"
+    export LLVM_DIR="$conda_prefix/lib/cmake/llvm"
+
+    # Library paths for runtime linking
+    local lib_paths="$conda_prefix/lib"
+    if [[ -d "$APXM_DIR/target/release/lib" ]]; then
+        lib_paths="$APXM_DIR/target/release/lib:$lib_paths"
+    fi
+    if [[ -d "$APXM_DIR/target/release" ]]; then
+        lib_paths="$APXM_DIR/target/release:$lib_paths"
+    fi
+
+    case "$(uname -s)" in
+        Darwin)
+            export DYLD_LIBRARY_PATH="${lib_paths}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+            ;;
+        *)
+            export LD_LIBRARY_PATH="${lib_paths}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            ;;
+    esac
 }
 
-# Cache for next time (only if it's an absolute path)
-[[ "$PYTHON" == /* ]] && echo "$PYTHON" > "$CACHE_FILE"
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+if [[ ! -f "$PYTHON_CLI" ]]; then
+    echo "Error: apxm_cli.py not found at $PYTHON_CLI"
+    exit 1
+fi
+
+CONDA_PREFIX_FOUND=""
+if CONDA_PREFIX_FOUND="$(find_conda_prefix)"; then
+    setup_env "$CONDA_PREFIX_FOUND"
+fi
+
+PYTHON=""
+if ! PYTHON="$(find_python "$CONDA_PREFIX_FOUND")"; then
+    echo "Error: No Python interpreter with typer and rich found."
+    echo "Install with: conda activate apxm  (or pip install typer rich)"
+    exit 1
+fi
 
 exec "$PYTHON" "$PYTHON_CLI" "$@"

@@ -100,7 +100,10 @@ impl Linker {
         let artifact = Artifact::from_bytes(&artifact_bytes)
             .map_err(|e| DriverError::Runtime(RuntimeError::State(e.to_string())))?;
 
-        if let Err(err) = artifact.dag().validate() {
+        let dag = artifact.dag().ok_or_else(|| {
+            DriverError::Runtime(RuntimeError::State("Artifact contains no DAGs".to_string()))
+        })?;
+        if let Err(err) = dag.validate() {
             return Err(DriverError::Runtime(RuntimeError::State(format!(
                 "Artifact DAG validation failed: {}",
                 err
@@ -111,7 +114,40 @@ impl Linker {
 
     /// Compile the user file and execute the generated artifact through the runtime.
     pub async fn run(&self, input: &Path) -> Result<LinkResult, DriverError> {
-        log_info!("driver", "Compiling graph {}", input.display(),);
+        self.run_impl(input, None).await
+    }
+
+    /// Compile the user file and execute with provided arguments for entry flow parameters.
+    pub async fn run_with_args(
+        &self,
+        input: &Path,
+        args: Vec<String>,
+    ) -> Result<LinkResult, DriverError> {
+        self.run_impl(input, Some(args)).await
+    }
+
+    /// Shared implementation for `run` and `run_with_args`.
+    ///
+    /// When `args` is `None` the runtime uses `execute_artifact_auto` which
+    /// enforces the `@entry` flow requirement without argument validation.
+    /// When `args` is `Some(_)` the runtime validates that the argument count
+    /// matches the entry flow's parameter count before execution.
+    async fn run_impl(
+        &self,
+        input: &Path,
+        args: Option<Vec<String>>,
+    ) -> Result<LinkResult, DriverError> {
+        if let Some(ref a) = args {
+            log_info!(
+                "driver",
+                "Compiling graph {} with {} args",
+                input.display(),
+                a.len()
+            );
+        } else {
+            log_info!("driver", "Compiling graph {}", input.display());
+        }
+
         #[cfg(feature = "metrics")]
         let compile_start = std::time::Instant::now();
         let module = self.compiler.compile(input)?;
@@ -132,7 +168,10 @@ impl Linker {
         // of letting the runtime watchdog detect a deadlock later.
         #[cfg(feature = "metrics")]
         let validation_start = std::time::Instant::now();
-        if let Err(e) = artifact.dag().validate() {
+        let dag = artifact.dag().ok_or_else(|| {
+            DriverError::Runtime(RuntimeError::State("Artifact contains no DAGs".to_string()))
+        })?;
+        if let Err(e) = dag.validate() {
             return Err(DriverError::Runtime(RuntimeError::State(format!(
                 "Artifact DAG validation failed: {}",
                 e
@@ -143,69 +182,14 @@ impl Linker {
 
         #[cfg(feature = "metrics")]
         let runtime_start = std::time::Instant::now();
-        // Use execute_artifact_auto to enforce @entry flow requirement
-        let execution = self.runtime.execute_artifact_auto(artifact.clone()).await?;
-        #[cfg(feature = "metrics")]
-        let runtime_time = runtime_start.elapsed();
-
-        Ok(LinkResult {
-            module: Some(module),
-            artifact,
-            execution,
-            #[cfg(feature = "metrics")]
-            metrics: LinkMetrics {
-                compile_time,
-                artifact_time,
-                validation_time,
-                runtime_time,
-            },
-        })
-    }
-
-    /// Compile the user file and execute with provided arguments for entry flow parameters.
-    pub async fn run_with_args(
-        &self,
-        input: &Path,
-        args: Vec<String>,
-    ) -> Result<LinkResult, DriverError> {
-        log_info!(
-            "driver",
-            "Compiling graph {} with {} args",
-            input.display(),
-            args.len()
-        );
-        #[cfg(feature = "metrics")]
-        let compile_start = std::time::Instant::now();
-        let module = self.compiler.compile(input)?;
-        #[cfg(feature = "metrics")]
-        let compile_time = compile_start.elapsed();
-
-        #[cfg(feature = "metrics")]
-        let artifact_start = std::time::Instant::now();
-        let artifact_bytes = module.generate_artifact_bytes()?;
-        #[cfg(feature = "metrics")]
-        let artifact_time = artifact_start.elapsed();
-
-        let artifact = Artifact::from_bytes(&artifact_bytes)
-            .map_err(|e| DriverError::Runtime(RuntimeError::State(e.to_string())))?;
-
-        #[cfg(feature = "metrics")]
-        let validation_start = std::time::Instant::now();
-        if let Err(e) = artifact.dag().validate() {
-            return Err(DriverError::Runtime(RuntimeError::State(format!(
-                "Artifact DAG validation failed: {}",
-                e
-            ))));
-        }
-        #[cfg(feature = "metrics")]
-        let validation_time = validation_start.elapsed();
-
-        #[cfg(feature = "metrics")]
-        let runtime_start = std::time::Instant::now();
-        let execution = self
-            .runtime
-            .execute_artifact_with_args(artifact.clone(), args)
-            .await?;
+        let execution = match args {
+            Some(a) => {
+                self.runtime
+                    .execute_artifact_with_args(artifact.clone(), a)
+                    .await?
+            }
+            None => self.runtime.execute_artifact_auto(artifact.clone()).await?,
+        };
         #[cfg(feature = "metrics")]
         let runtime_time = runtime_start.elapsed();
 

@@ -7,13 +7,14 @@ description = "APxM Driver - Configuration, linker, and orchestration for compil
 
 [dependencies]
 # Core dependencies
-apxm-core = { path = "../runtime/apxm-core" }
+apxm-core = { path = "../apxm-core" }
 apxm-compiler = { path = "../apxm-compiler" }
-apxm-runtime = { path = "../runtime/apxm-runtime" }
-apxm-artifact = { path = "../runtime/apxm-artifact" }
-apxm-backends = { path = "../runtime/apxm-backends" }
+apxm-runtime = { path = "../apxm-runtime" }
+apxm-artifact = { path = "../apxm-artifact" }
+apxm-backends = { path = "../apxm-backends" }
 apxm-tools = { path = "../apxm-tools" }
 apxm-graph = { path = "../apxm-graph" }
+apxm-credentials = { path = "../apxm-credentials" }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

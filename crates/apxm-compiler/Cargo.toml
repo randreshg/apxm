@@ -9,8 +9,8 @@ apxm-ais = { version = "0.0.1", path = "../apxm-ais" }
 apxm-graph = { version = "0.0.1", path = "../apxm-graph" }
 
 # core (will be phased out)
-apxm-core = { version = "0.0.1", path = "../runtime/apxm-core" }
-apxm-artifact = { version = "0.1.0", path = "../runtime/apxm-artifact" }
+apxm-core = { version = "0.0.1", path = "../apxm-core" }
+apxm-artifact = { version = "0.1.0", path = "../apxm-artifact" }
 
 # FFI
 libc = "0.2.178"
@@ -34,7 +34,7 @@ mlir = []
 
 [build-dependencies]
 anyhow = "1.0.100"
-apxm-core = { version = "0.0.1", path = "../runtime/apxm-core" }
+apxm-core = { version = "0.0.1", path = "../apxm-core" }
 apxm-ais = { version = "0.0.1", path = "../apxm-ais" }
 bindgen = "0.72.1"
 tracing = "0.1.43"

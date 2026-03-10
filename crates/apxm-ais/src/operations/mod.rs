@@ -1,7 +1,7 @@
 //! AIS Operations - Single Source of Truth
 //!
-//! This module contains the complete specification for all 21 AIS operations
-//! (19 public + 1 metadata + 1 internal). Both the compiler and runtime use
+//! This module contains the complete specification for all 31 AIS operations
+//! (28 public + 1 metadata + 2 internal). Both the compiler and runtime use
 //! these definitions to ensure consistent semantics.
 //!
 //! The `tablegen` submodule generates MLIR TableGen files from these definitions,
@@ -23,11 +23,14 @@ pub use metadata::{
     AGENT,
     ASK,
     BRANCH_ON_VALUE,
+    CLAIM,
     COMMUNICATE,
     CONST_STR,
     ERR,
     EXC,
     FENCE,
+    FLOW_CALL,
+    GUARD,
     INV,
     JUMP,
     LOOP_END,
@@ -35,15 +38,21 @@ pub use metadata::{
     MERGE,
     OperationEmit,
     OperationMetadata,
+    PAUSE,
     PLAN,
+    PRINT,
     QMEM,
     REASON,
     REFLECT,
+    RESUME,
     RETURN,
+    SWITCH,
     THINK,
     TRY_CATCH,
     UMEM,
+    UPDATE_GOAL,
     VERIFY,
     WAIT_ALL,
+    YIELD,
     get_operation_metadata,
 };

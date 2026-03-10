@@ -1,7 +1,7 @@
 //! AIS Operation Definitions - Single Source of Truth
 //!
-//! This module contains the complete specification for all 21 AIS operations
-//! (19 public + 1 metadata + 1 internal). Both the compiler and runtime use
+//! This module contains the complete specification for all 31 AIS operations
+//! (28 public + 1 metadata + 2 internal). Both the compiler and runtime use
 //! these definitions to ensure consistent semantics.
 
 use super::category::OperationCategory;
@@ -14,10 +14,10 @@ use std::fmt;
 
 /// Represents all AIS operation types.
 ///
-/// This enum is the canonical list of operations (21 total):
+/// This enum is the canonical list of operations (31 total):
 /// - 1 metadata operation (AgentOp)
-/// - 19 public operations
-/// - 1 internal operation (ConstStr)
+/// - 28 public operations
+/// - 2 internal operations (ConstStr, Yield)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AISOperationType {
@@ -197,7 +197,7 @@ impl AISOperationType {
         }
     }
 
-    /// Returns true if this is a public AIS operation (part of the 19).
+    /// Returns true if this is a public AIS operation (part of the 28).
     pub fn is_public(&self) -> bool {
         !matches!(
             self,
@@ -215,7 +215,7 @@ impl AISOperationType {
         matches!(self, AISOperationType::ConstStr | AISOperationType::Yield)
     }
 
-    /// Get all public operation types (22 operations).
+    /// Get all public operation types (28 operations).
     pub fn public_operations() -> &'static [AISOperationType] {
         &[
             AISOperationType::QMem,
@@ -250,7 +250,45 @@ impl AISOperationType {
         ]
     }
 
-    /// Get all operation types (31 total: 26 original + 5 phase-1 extensions).
+    /// Maps a wire-format operation kind index (u32) to an `AISOperationType`.
+    ///
+    /// This is the **single source of truth** for the u32→AISOperationType mapping
+    /// used by both the compiler artifact parser and the runtime sub-DAG parser.
+    /// Must stay in sync with the C++ `OperationKind` enum in `ArtifactEmitter.cpp`:
+    ///   Inv=0, Ask=1, QMem=2, ..., Print=22, Think=23, Reason=24
+    pub fn from_wire_index(index: u32) -> Option<AISOperationType> {
+        /// Wire-format operation kind table. Index = OperationKind from ArtifactEmitter.cpp.
+        const WIRE_OP_KIND_MAP: [AISOperationType; 25] = [
+            AISOperationType::Inv,           // 0
+            AISOperationType::Ask,           // 1
+            AISOperationType::QMem,          // 2
+            AISOperationType::UMem,          // 3
+            AISOperationType::Plan,          // 4
+            AISOperationType::WaitAll,       // 5
+            AISOperationType::Merge,         // 6
+            AISOperationType::Fence,         // 7
+            AISOperationType::Exc,           // 8
+            AISOperationType::Communicate,   // 9
+            AISOperationType::Reflect,       // 10
+            AISOperationType::Verify,        // 11
+            AISOperationType::Err,           // 12
+            AISOperationType::Return,        // 13
+            AISOperationType::Jump,          // 14
+            AISOperationType::BranchOnValue, // 15
+            AISOperationType::LoopStart,     // 16
+            AISOperationType::LoopEnd,       // 17
+            AISOperationType::TryCatch,      // 18
+            AISOperationType::ConstStr,      // 19
+            AISOperationType::Switch,        // 20
+            AISOperationType::FlowCall,      // 21
+            AISOperationType::Print,         // 22
+            AISOperationType::Think,         // 23
+            AISOperationType::Reason,        // 24
+        ];
+        WIRE_OP_KIND_MAP.get(index as usize).copied()
+    }
+
+    /// Get all operation types (32 total: 27 original + 5 phase-1 extensions).
     pub fn all_operations() -> &'static [AISOperationType] {
         &[
             AISOperationType::Agent,
@@ -264,6 +302,7 @@ impl AISOperationType {
             AISOperationType::Verify,
             AISOperationType::Inv,
             AISOperationType::Exc,
+            AISOperationType::Print,
             AISOperationType::Jump,
             AISOperationType::BranchOnValue,
             AISOperationType::LoopStart,
@@ -396,10 +435,10 @@ pub static METADATA_OPERATIONS: &[OperationSpec] = &[OperationSpec {
 }];
 
 // ============================================================================
-// Operation Registry: 19 Public Operations
+// Operation Registry: 28 Public Operations
 // ============================================================================
 
-/// All 19 public AIS operations with complete metadata.
+/// All 29 public AIS operations with complete metadata.
 pub static AIS_OPERATIONS: &[OperationSpec] = &[
     // ========== Memory Operations (2) ==========
     OperationSpec {
@@ -448,7 +487,7 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         op_type: AISOperationType::Think,
         name: "Think",
         category: OperationCategory::Reasoning,
-        description: "Extended thinking with budget_tokens - HIGH latency",
+        description: "Extended thinking with token_budget - HIGH latency",
         fields: &[
             OperationField::required("template_str", "Prompt template for deep reasoning"),
             OperationField::optional("budget", "Token budget for extended thinking"),
@@ -514,7 +553,7 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         min_inputs: 0,
         produces_output: true,
     },
-    // ========== Tool Operations (2) ==========
+    // ========== Tool Operations (3) ==========
     OperationSpec {
         op_type: AISOperationType::Inv,
         name: "InvokeTool",
@@ -537,6 +576,16 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
             OperationField::required("code", "Code to execute"),
             OperationField::optional("sandbox_config", "Sandbox configuration"),
         ],
+        needs_submission: true,
+        min_inputs: 0,
+        produces_output: true,
+    },
+    OperationSpec {
+        op_type: AISOperationType::Print,
+        name: "PrintOutput",
+        category: OperationCategory::Tools,
+        description: "Print output to stdout for debugging or user display",
+        fields: &[OperationField::required("message", "Message to print")],
         needs_submission: true,
         min_inputs: 0,
         produces_output: true,
@@ -714,7 +763,10 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         category: OperationCategory::Memory,
         description: "Modify AAM goals at runtime: set, remove, or clear",
         fields: &[
-            OperationField::required("goal_id", "Goal identifier (used as description key for upsert/remove)"),
+            OperationField::required(
+                "goal_id",
+                "Goal identifier (used as description key for upsert/remove)",
+            ),
             OperationField::optional("action", "Action to perform: set (default), remove, clear"),
             OperationField::optional("priority", "Goal priority (u32, default: 1)"),
         ],
@@ -728,7 +780,10 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         category: OperationCategory::ControlFlow,
         description: "Enforce preconditions: halt or skip based on condition",
         fields: &[
-            OperationField::required("condition", "Condition expression: '> 0.8', '!= null', 'not_empty', etc."),
+            OperationField::required(
+                "condition",
+                "Condition expression: '> 0.8', '!= null', 'not_empty', etc.",
+            ),
             OperationField::optional("error_message", "Message on failure"),
             OperationField::optional("on_fail", "Failure mode: halt (default) or skip"),
         ],
@@ -758,10 +813,16 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         description: "Suspend execution pending human-in-the-loop review via checkpoint",
         fields: &[
             OperationField::required("message", "Human-readable message explaining the pause"),
-            OperationField::optional("checkpoint_id", "Stable checkpoint ID (auto-generated if omitted)"),
+            OperationField::optional(
+                "checkpoint_id",
+                "Stable checkpoint ID (auto-generated if omitted)",
+            ),
             OperationField::optional("timeout_ms", "Max wait in ms (0 = indefinite, default: 0)"),
             OperationField::optional("poll_interval_ms", "Polling interval in ms (default: 2000)"),
-            OperationField::optional("notification_url", "Webhook URL to notify on pause creation"),
+            OperationField::optional(
+                "notification_url",
+                "Webhook URL to notify on pause creation",
+            ),
             OperationField::optional("server_url", "Override APXM_SERVER_URL env var"),
         ],
         needs_submission: true,
@@ -775,8 +836,14 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         description: "Resume a suspended PAUSE checkpoint; polls server until human resumes; returns human_input",
         fields: &[
             OperationField::required("checkpoint", "Checkpoint ID to resume from"),
-            OperationField::optional("poll_max_attempts", "Max polling attempts (default 60 × 5s = 5 min)"),
-            OperationField::optional("poll_interval_ms", "Interval between polls in ms (default 5000)"),
+            OperationField::optional(
+                "poll_max_attempts",
+                "Max polling attempts (default 60 × 5s = 5 min)",
+            ),
+            OperationField::optional(
+                "poll_interval_ms",
+                "Interval between polls in ms (default 5000)",
+            ),
             OperationField::optional("server_url", "Override APXM_SERVER_URL env var"),
         ],
         needs_submission: true,
@@ -901,8 +968,8 @@ mod tests {
         );
         assert_eq!(
             AIS_OPERATIONS.len(),
-            28,
-            "Expected 28 public AIS operations (23 original + 5 phase-1 extensions)"
+            29,
+            "Expected 29 public AIS operations (24 original + 5 phase-1 extensions)"
         );
         assert_eq!(
             INTERNAL_OPERATIONS.len(),
@@ -911,8 +978,8 @@ mod tests {
         );
         assert_eq!(
             AISOperationType::all_operations().len(),
-            31,
-            "Expected 31 total operations (26 original + 5 phase-1 extensions)"
+            32,
+            "Expected 32 total operations (27 original + 5 phase-1 extensions)"
         );
     }
 
@@ -950,5 +1017,73 @@ mod tests {
         assert_eq!(AISOperationType::Reason.mlir_mnemonic(), "reason");
         assert_eq!(AISOperationType::QMem.mlir_mnemonic(), "qmem");
         assert_eq!(AISOperationType::WaitAll.mlir_mnemonic(), "wait_all");
+    }
+
+    #[test]
+    fn test_from_wire_index() {
+        // Spot-check key indices matching ArtifactEmitter.cpp OperationKind
+        assert_eq!(
+            AISOperationType::from_wire_index(0),
+            Some(AISOperationType::Inv)
+        );
+        assert_eq!(
+            AISOperationType::from_wire_index(1),
+            Some(AISOperationType::Ask)
+        );
+        assert_eq!(
+            AISOperationType::from_wire_index(19),
+            Some(AISOperationType::ConstStr)
+        );
+        assert_eq!(
+            AISOperationType::from_wire_index(20),
+            Some(AISOperationType::Switch)
+        );
+        assert_eq!(
+            AISOperationType::from_wire_index(24),
+            Some(AISOperationType::Reason)
+        );
+        // Out-of-range returns None
+        assert_eq!(AISOperationType::from_wire_index(25), None);
+        assert_eq!(AISOperationType::from_wire_index(u32::MAX), None);
+    }
+
+    #[test]
+    fn test_wire_index_round_trip_coverage() {
+        let mut seen = std::collections::HashSet::new();
+        for i in 0u32..25 {
+            let op = AISOperationType::from_wire_index(i);
+            assert!(
+                op.is_some(),
+                "from_wire_index({i}) returned None — gap in wire mapping"
+            );
+            let op = op.unwrap();
+            assert!(
+                seen.insert(op),
+                "from_wire_index({i}) returned duplicate {op:?}"
+            );
+        }
+        assert_eq!(
+            seen.len(),
+            25,
+            "Expected 25 distinct wire-indexed operations"
+        );
+        assert_eq!(
+            AISOperationType::from_wire_index(25),
+            None,
+            "Index 25 should be out of range"
+        );
+    }
+
+    #[test]
+    fn test_wire_indexed_ops_subset_of_all_ops() {
+        let all_ops: std::collections::HashSet<AISOperationType> =
+            AISOperationType::all_operations().iter().copied().collect();
+        for i in 0u32..25 {
+            let op = AISOperationType::from_wire_index(i).unwrap();
+            assert!(
+                all_ops.contains(&op),
+                "Wire-indexed op {op:?} (index {i}) is not in all_operations()"
+            );
+        }
     }
 }

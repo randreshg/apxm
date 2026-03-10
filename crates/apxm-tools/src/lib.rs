@@ -1,3 +1,8 @@
+//! Built-in tool and capability implementations for APXM agents.
+//!
+//! Provides `BashCapability`, `ReadCapability`, `WriteCapability`, and
+//! `SearchWebCapability` that agents can invoke during workflow execution.
+
 pub mod bash;
 pub mod read;
 pub mod web_search;

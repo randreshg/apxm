@@ -570,7 +570,7 @@ mod tests {
         assert!(output.contains("#ifndef APXM_AIS_OPS_GENERATED"));
         assert!(output.contains("GENERATED from Rust"));
 
-        // Check all 21 operations are present
+        // Check all operations are present
         for op_type in AISOperationType::all_operations() {
             let name = to_tablegen_name(*op_type);
             assert!(

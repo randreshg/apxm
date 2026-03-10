@@ -131,7 +131,7 @@ pub static THINK: OperationMetadata = OperationMetadata {
             description: "Prompt template for thinking",
         },
         OperationField {
-            name: "budget_tokens",
+            name: "token_budget",
             required: false,
             description: "Token budget for extended thinking",
         },

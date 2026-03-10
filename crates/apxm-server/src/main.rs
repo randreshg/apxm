@@ -32,8 +32,8 @@ use apxm_artifact::Artifact;
 use apxm_compiler::{Context as CompilerContext, Pipeline as CompilerPipeline};
 use apxm_core::constants::graph::attrs as graph_attrs;
 use apxm_core::error::RuntimeError;
-use apxm_core::types::{AISOperationType, DependencyType};
 use apxm_core::types::values::Value;
+use apxm_core::types::{AISOperationType, DependencyType};
 use apxm_graph::{ApxmGraph, GraphEdge, GraphNode};
 use apxm_runtime::capability::executor::{CapabilityExecutor, CapabilityResult};
 use apxm_runtime::capability::metadata::CapabilityMetadata;
@@ -436,14 +436,22 @@ struct McpResponseError {
 
 impl McpResponse {
     fn ok(id: JsonValue, result: JsonValue) -> Self {
-        Self { jsonrpc: "2.0".to_string(), id, result: Some(result), error: None }
+        Self {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(result),
+            error: None,
+        }
     }
     fn err(id: JsonValue, code: i32, message: impl Into<String>) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
             id,
             result: None,
-            error: Some(McpResponseError { code, message: message.into() }),
+            error: Some(McpResponseError {
+                code,
+                message: message.into(),
+            }),
         }
     }
 }
@@ -620,9 +628,9 @@ fn build_app(state: AppState) -> Router {
         .route("/v1/checkpoints/:id/resume", post(resume_checkpoint))
         // A2A v0.3 — AgentCard discovery + REST task lifecycle
         .route("/.well-known/agent.json", get(agent_card))
-        .route("/a2a", post(a2a_jsonrpc))                      // legacy JSON-RPC compat
-        .route("/a2a/tasks/send", post(a2a_send_task))         // REST: submit task + execute
-        .route("/a2a/tasks/:id", get(a2a_get_task))            // REST: poll task result
+        .route("/a2a", post(a2a_jsonrpc)) // legacy JSON-RPC compat
+        .route("/a2a/tasks/send", post(a2a_send_task)) // REST: submit task + execute
+        .route("/a2a/tasks/:id", get(a2a_get_task)) // REST: poll task result
         // MCP 2025-11-05 — JSON-RPC tools endpoint
         .route("/v1/mcp", post(mcp_jsonrpc))
         .with_state(state)
@@ -688,11 +696,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn health(State(state): State<AppState>) -> Json<JsonValue> {
-    let uptime_secs = state
-        .start_time
-        .elapsed()
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let uptime_secs = state.start_time.elapsed().map(|d| d.as_secs()).unwrap_or(0);
     Json(serde_json::json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
@@ -1398,10 +1402,11 @@ async fn a2a_send_task(
         .join("\n");
 
     if user_text.is_empty() {
-        let mut record = state.a2a_tasks.get_mut(&req.id).unwrap();
-        record.state = A2aState::Failed;
-        record.error_message = Some("No text content in message".to_string());
-        record.completed_at_ms = Some(now_ms());
+        if let Some(mut record) = state.a2a_tasks.get_mut(&req.id) {
+            record.state = A2aState::Failed;
+            record.error_message = Some("No text content in message".to_string());
+            record.completed_at_ms = Some(now_ms());
+        }
         return (
             axum::http::StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
@@ -1433,7 +1438,11 @@ async fn a2a_send_task(
                 )]),
             },
         ],
-        edges: vec![GraphEdge { from: 1, to: 2, dependency: DependencyType::Data }],
+        edges: vec![GraphEdge {
+            from: 1,
+            to: 2,
+            dependency: DependencyType::Data,
+        }],
         parameters: vec![],
         metadata: HashMap::new(),
     };
@@ -1441,10 +1450,11 @@ async fn a2a_send_task(
     let artifact = match graph_to_artifact(graph) {
         Ok(a) => a,
         Err(e) => {
-            let mut record = state.a2a_tasks.get_mut(&req.id).unwrap();
-            record.state = A2aState::Failed;
-            record.error_message = Some(e.message.clone());
-            record.completed_at_ms = Some(now_ms());
+            if let Some(mut record) = state.a2a_tasks.get_mut(&req.id) {
+                record.state = A2aState::Failed;
+                record.error_message = Some(e.message.clone());
+                record.completed_at_ms = Some(now_ms());
+            }
             return (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"id": req.id, "status": {"state": "failed"}, "error": {"message": e.message}})),
@@ -1452,15 +1462,22 @@ async fn a2a_send_task(
         }
     };
 
-    match state.runtime.execute_artifact_with_session(artifact, vec![], None).await {
+    match state
+        .runtime
+        .execute_artifact_with_session(artifact, vec![], None)
+        .await
+    {
         Ok(result) => {
             let resp = to_execute_response(result);
-            let output = resp.content.clone()
+            let output = resp
+                .content
+                .clone()
                 .unwrap_or_else(|| serde_json::to_string(&resp.results).unwrap_or_default());
-            let mut record = state.a2a_tasks.get_mut(&req.id).unwrap();
-            record.state = A2aState::Completed;
-            record.output_text = Some(output.clone());
-            record.completed_at_ms = Some(now_ms());
+            if let Some(mut record) = state.a2a_tasks.get_mut(&req.id) {
+                record.state = A2aState::Completed;
+                record.output_text = Some(output.clone());
+                record.completed_at_ms = Some(now_ms());
+            }
             Json(serde_json::json!({
                 "id": req.id,
                 "status": {"state": "completed"},
@@ -1468,10 +1485,11 @@ async fn a2a_send_task(
             })).into_response()
         }
         Err(e) => {
-            let mut record = state.a2a_tasks.get_mut(&req.id).unwrap();
-            record.state = A2aState::Failed;
-            record.error_message = Some(e.to_string());
-            record.completed_at_ms = Some(now_ms());
+            if let Some(mut record) = state.a2a_tasks.get_mut(&req.id) {
+                record.state = A2aState::Failed;
+                record.error_message = Some(e.to_string());
+                record.completed_at_ms = Some(now_ms());
+            }
             (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"id": req.id, "status": {"state": "failed"}, "error": {"message": e.to_string()}})),
@@ -1481,18 +1499,15 @@ async fn a2a_send_task(
 }
 
 /// `GET /a2a/tasks/:id` — return status and result of a previously submitted A2A task.
-async fn a2a_get_task(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
+async fn a2a_get_task(State(state): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
     match state.a2a_tasks.get(&id) {
         Some(record) => {
             let state_str = match record.state {
                 A2aState::Submitted => "submitted",
-                A2aState::Working   => "working",
+                A2aState::Working => "working",
                 A2aState::Completed => "completed",
-                A2aState::Failed    => "failed",
-                A2aState::Canceled  => "canceled",
+                A2aState::Failed => "failed",
+                A2aState::Canceled => "canceled",
             };
             let mut body = serde_json::json!({"id": record.id, "status": {"state": state_str}});
             if let Some(ref text) = record.output_text {
@@ -1506,7 +1521,8 @@ async fn a2a_get_task(
         None => (
             axum::http::StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": format!("Task '{}' not found", id)})),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 

@@ -1,15 +1,24 @@
+//! APXM command-line interface.
+//!
+//! Provides the `apxm` binary with subcommands for building, compiling,
+//! running agent workflows, environment setup (`install`, `doctor`), and
+//! LLM credential management (`register`).
+
 use std::path::PathBuf;
 
 #[cfg(feature = "driver")]
 use anyhow::Context;
 use anyhow::Result;
 use apxm_core::utils::build::MlirEnvReport;
+use apxm_credentials::CredentialStore;
+use apxm_credentials::credential::Credential;
 #[cfg(feature = "driver")]
 use apxm_driver::compiler::Compiler;
 #[cfg(feature = "driver")]
 use apxm_driver::{ApXmConfig, ConfigError, Linker, LinkerConfig};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
+use std::collections::BTreeMap;
 use std::env;
 
 /// Initialize the tracing subscriber based on the --trace flag.
@@ -109,6 +118,56 @@ enum Commands {
     },
     /// Install or update the conda environment from environment.yaml
     Install,
+    /// Manage LLM provider credentials
+    Register {
+        #[command(subcommand)]
+        action: RegisterAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum RegisterAction {
+    /// Register a new LLM provider credential
+    Add {
+        /// Credential name (e.g., "my-openai")
+        name: String,
+        /// Provider type (openai, anthropic, google, openrouter, ollama)
+        #[arg(long)]
+        provider: String,
+        /// API key (omit to enter interactively)
+        #[arg(long)]
+        api_key: Option<String>,
+        /// Base URL override
+        #[arg(long)]
+        base_url: Option<String>,
+        /// Default model
+        #[arg(long)]
+        model: Option<String>,
+        /// Extra headers as key=value pairs
+        #[arg(long, value_parser = parse_header)]
+        header: Vec<(String, String)>,
+    },
+    /// List registered credentials
+    List,
+    /// Remove a credential
+    Remove {
+        /// Name of the credential to remove
+        name: String,
+    },
+    /// Validate a credential by making a test API call
+    Test {
+        /// Name of the credential to test (omit to test all)
+        name: Option<String>,
+    },
+    /// Generate config.toml entries from registered credentials
+    GenerateConfig,
+}
+
+fn parse_header(s: &str) -> Result<(String, String), String> {
+    let pos = s
+        .find('=')
+        .ok_or_else(|| format!("invalid header: no '=' found in '{s}'"))?;
+    Ok((s[..pos].to_string(), s[pos + 1..].to_string()))
 }
 
 #[cfg(feature = "driver")]
@@ -119,7 +178,8 @@ async fn main() -> Result<()> {
 
 #[cfg(not(feature = "driver"))]
 fn main() -> Result<()> {
-    run_cli_no_driver()
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(run_cli_no_driver())
 }
 
 #[cfg(feature = "driver")]
@@ -150,16 +210,18 @@ async fn run_cli() -> Result<()> {
         Commands::Doctor => doctor_command(cli.config),
         Commands::Activate { shell } => activate_command(&shell),
         Commands::Install => install_command(),
+        Commands::Register { action } => register_command(action).await,
     }
 }
 
 #[cfg(not(feature = "driver"))]
-fn run_cli_no_driver() -> Result<()> {
+async fn run_cli_no_driver() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Doctor => doctor_command(cli.config),
         Commands::Activate { shell } => activate_command(&shell),
         Commands::Install => install_command(),
+        Commands::Register { action } => register_command(action).await,
         _ => Err(anyhow::anyhow!(
             "Command requires the `driver` feature. Re-run with: cargo run -p apxm-cli --features driver -- <command>"
         )),
@@ -167,9 +229,9 @@ fn run_cli_no_driver() -> Result<()> {
 }
 
 fn activate_command(shell: &str) -> Result<()> {
-    let prefix = env::var("CONDA_PREFIX")
-        .map(PathBuf::from)
-        .map_err(|_| anyhow::anyhow!("CONDA_PREFIX not set. Activate your env first."))?;
+    let prefix = detect_conda_prefix().ok_or_else(|| {
+        anyhow::anyhow!("Could not detect conda prefix. Activate your env or install it first.")
+    })?;
 
     match shell {
         "sh" | "bash" | "zsh" => {
@@ -300,7 +362,9 @@ fn compile_command(
     if let Some(diag_path) = emit_diagnostics {
         let artifact = apxm_artifact::Artifact::from_bytes(&bytes)
             .map_err(|e| anyhow::anyhow!("Failed to parse artifact: {}", e))?;
-        let dag = artifact.dag();
+        let dag = artifact
+            .dag()
+            .ok_or_else(|| anyhow::anyhow!("Artifact contains no DAGs"))?;
 
         let diagnostics = serde_json::json!({
             "input": input.display().to_string(),
@@ -485,6 +549,125 @@ async fn run_command(
     Ok(())
 }
 
+async fn register_command(action: RegisterAction) -> Result<()> {
+    let store = CredentialStore::open().map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    match action {
+        RegisterAction::Add {
+            name,
+            provider,
+            api_key,
+            base_url,
+            model,
+            header,
+        } => {
+            let api_key = match api_key {
+                Some(key) => Some(key),
+                None if provider != "ollama" => {
+                    eprint!("Enter API key for {name}: ");
+                    let key = rpassword::read_password()
+                        .map_err(|e| anyhow::anyhow!("Failed to read API key: {e}"))?;
+                    if key.is_empty() { None } else { Some(key) }
+                }
+                None => None,
+            };
+
+            let headers: BTreeMap<String, String> = header.into_iter().collect();
+
+            let cred = Credential {
+                provider: provider.clone(),
+                api_key,
+                base_url,
+                model,
+                headers,
+            };
+
+            store.add(&name, cred).map_err(|e| anyhow::anyhow!("{e}"))?;
+
+            print_section_header("Credential Registered");
+            print_status_line("Name", Status::Ok, &name);
+            print_status_line("Provider", Status::Ok, &provider);
+            print_status_line("Store", Status::Ok, &store.path().display().to_string());
+        }
+        RegisterAction::List => {
+            let creds = store.list().map_err(|e| anyhow::anyhow!("{e}"))?;
+            if creds.is_empty() {
+                println!("No credentials registered.");
+                println!("Add one with: apxm register add <name> --provider <provider>");
+                return Ok(());
+            }
+
+            print_section_header("Registered Credentials");
+            for (name, summary) in &creds {
+                let key_display = summary.masked_key.as_deref().unwrap_or("<none>");
+                println!(
+                    "  {:<16} {:<12} key={}{}{}",
+                    name.bold(),
+                    summary.provider,
+                    key_display,
+                    summary
+                        .model
+                        .as_ref()
+                        .map(|m| format!("  model={m}"))
+                        .unwrap_or_default(),
+                    if summary.header_count > 0 {
+                        format!("  +{} headers", summary.header_count)
+                    } else {
+                        String::new()
+                    }
+                );
+            }
+            println!();
+            println!("Store: {}", store.path().display());
+        }
+        RegisterAction::Remove { name } => {
+            store.remove(&name).map_err(|e| anyhow::anyhow!("{e}"))?;
+            print_section_header("Credential Removed");
+            print_status_line(&name, Status::Ok, "removed");
+        }
+        RegisterAction::Test { name } => {
+            let creds_to_test: Vec<(String, Credential)> = match name {
+                Some(ref n) => {
+                    let cred = store
+                        .get(n)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?
+                        .ok_or_else(|| anyhow::anyhow!("Credential '{n}' not found"))?;
+                    vec![(n.clone(), cred)]
+                }
+                None => store.list_all().map_err(|e| anyhow::anyhow!("{e}"))?,
+            };
+
+            if creds_to_test.is_empty() {
+                println!("No credentials to test.");
+                return Ok(());
+            }
+
+            print_section_header("Testing Credentials");
+            let mut all_ok = true;
+            for (cname, cred) in &creds_to_test {
+                match apxm_credentials::validate::validate_credential(cname, cred).await {
+                    Ok(msg) => print_status_line(cname, Status::Ok, &msg),
+                    Err(e) => {
+                        print_status_line(cname, Status::Error, &e.to_string());
+                        all_ok = false;
+                    }
+                }
+            }
+            if !all_ok {
+                return Err(anyhow::anyhow!("Some credentials failed validation"));
+            }
+        }
+        RegisterAction::GenerateConfig => {
+            let config = store
+                .generate_config()
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("{config}");
+        }
+    }
+
+    Ok(())
+}
+
 fn doctor_command(config: Option<PathBuf>) -> Result<()> {
     let report = MlirEnvReport::detect();
     print_section_header("MLIR Doctor");
@@ -508,8 +691,68 @@ fn doctor_command(config: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+/// Auto-detect the conda prefix for the `apxm` environment.
+///
+/// Resolution order:
+/// 1. `CONDA_PREFIX` env var (if it points to an apxm env or contains lib/cmake/mlir)
+/// 2. `conda info --envs --json` output (looks for an env named "apxm")
+/// 3. Common paths: ~/miniforge3/envs/apxm, ~/mambaforge/envs/apxm, ~/miniconda3/envs/apxm
+fn detect_conda_prefix() -> Option<PathBuf> {
+    // 1. Check CONDA_PREFIX env var
+    if let Ok(prefix) = env::var("CONDA_PREFIX") {
+        let p = PathBuf::from(&prefix);
+        if p.is_dir() {
+            // Accept if it looks like an apxm env or has MLIR cmake files
+            let name_ok = p.file_name().map(|n| n == "apxm").unwrap_or(false);
+            let mlir_ok = p.join("lib/cmake/mlir").is_dir();
+            if name_ok || mlir_ok {
+                return Some(p);
+            }
+            // Even if it doesn't match our heuristics, honour the explicit env var
+            return Some(p);
+        }
+    }
+
+    // 2. Try `conda info --envs --json`
+    if let Ok(output) = std::process::Command::new("conda")
+        .args(["info", "--envs", "--json"])
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(text) = String::from_utf8(output.stdout) {
+                // Minimal JSON parsing: look for paths ending in /apxm
+                for line in text.lines() {
+                    let trimmed = line.trim().trim_matches('"').trim_end_matches(',');
+                    let candidate = PathBuf::from(trimmed);
+                    if candidate.file_name().map(|n| n == "apxm").unwrap_or(false)
+                        && candidate.is_dir()
+                    {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Check common paths
+    if let Some(home) = dirs::home_dir() {
+        let candidates = [
+            home.join("miniforge3/envs/apxm"),
+            home.join("mambaforge/envs/apxm"),
+            home.join("miniconda3/envs/apxm"),
+        ];
+        for candidate in &candidates {
+            if candidate.is_dir() {
+                return Some(candidate.clone());
+            }
+        }
+    }
+
+    None
+}
+
 fn print_minimal_mlir_status() {
-    let conda_prefix = env::var("CONDA_PREFIX").ok().map(PathBuf::from);
+    let conda_prefix = detect_conda_prefix();
     let conda_bin = conda_prefix.as_ref().map(|p| p.join("bin"));
     let mlir_tblgen = conda_bin.as_ref().map(|p| p.join("mlir-tblgen"));
     let mlir_cmake = conda_prefix.as_ref().map(|p| p.join("lib/cmake/mlir"));
@@ -572,21 +815,18 @@ fn print_minimal_mlir_status() {
 }
 
 fn print_section_header(title: &str) {
-    let line = "==============================".dimmed();
-    println!("{}", line);
-    println!("{}", title.bold());
-    println!("{}", line);
+    println!();
+    println!("  {}", title.bold().cyan());
+    println!("  {}", "\u{2500}".repeat(title.len()).dimmed());
 }
 
 fn print_subsection_header(title: &str) {
-    let line = "------------------------------".dimmed();
-    println!("{}", line);
-    println!("{}", title.bold());
-    println!("{}", line);
+    println!();
+    println!("  {}", title.bold());
 }
 
 fn print_hint(message: &str) {
-    println!("Hint: {}", message);
+    println!("  {} {}", "\u{2139}".cyan(), message);
 }
 
 enum Status {
@@ -595,11 +835,11 @@ enum Status {
 }
 
 fn print_status_line(label: &str, status: Status, value: &str) {
-    let status_str = match status {
-        Status::Ok => "OK".green().bold(),
-        Status::Error => "MISSING".red().bold(),
+    let (icon, status_str) = match status {
+        Status::Ok => ("\u{2713}".green(), "OK".green().bold()),
+        Status::Error => ("\u{2717}".red(), "MISSING".red().bold()),
     };
-    println!("{:<14} [{}] {}", label.bold(), status_str, value);
+    println!("  {} {:<14} [{}] {}", icon, label.bold(), status_str, value);
 }
 
 #[cfg(feature = "driver")]

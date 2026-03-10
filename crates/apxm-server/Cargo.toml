@@ -5,11 +5,11 @@ edition = "2024"
 description = "HTTP API wrapper for APXM runtime"
 
 [dependencies]
-apxm-artifact = { path = "../runtime/apxm-artifact" }
+apxm-artifact = { path = "../apxm-artifact" }
 apxm-compiler = { path = "../apxm-compiler" }
-apxm-core = { path = "../runtime/apxm-core" }
+apxm-core = { path = "../apxm-core" }
 apxm-graph = { path = "../apxm-graph" }
-apxm-runtime = { path = "../runtime/apxm-runtime", features = ["metrics"] }
+apxm-runtime = { path = "../apxm-runtime", features = ["metrics"] }
 
 anyhow = "1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
