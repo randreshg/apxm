@@ -12,25 +12,24 @@ APXM is a full toolchain for building autonomous agents:
 
 ## Quick Start
 
+**New installation:**
 ```bash
-# Clone with sniff submodule
 git clone --recursive https://github.com/randreshg/apxm
 cd apxm
-
-# Install sniff (environment detection)
 pip install -e external/sniff
-
-# Run automated installer (handles conda, rust, build, PATH)
 python3 tools/apxm_cli.py install
-
-# Restart shell or source config
-source ~/.bashrc  # or ~/.zshrc
-
-# Verify installation
+source ~/.bashrc  # or ~/.zshrc - restart shell
 apxm doctor
+```
 
-# Run an example
-apxm execute examples/hello_graph.json
+**Already cloned? Just add the submodule:**
+```bash
+cd apxm
+git submodule update --init --recursive
+pip install -e external/sniff
+python3 tools/apxm_cli.py install
+source ~/.bashrc  # or ~/.zshrc - restart shell
+apxm doctor
 ```
 
 **What the installer does:**
