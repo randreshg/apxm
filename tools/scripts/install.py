@@ -17,6 +17,7 @@ from sniff import (
     print_step,
     print_success,
     print_warning,
+    spinner,
 )
 
 from . import get_config, messages as msg
@@ -120,18 +121,27 @@ def register_commands(app: Typer) -> None:
                     print_warning(msg.MSG_CONDA_ENV_NOT_FOUND_WILL_CREATE)
                     missing.append(msg.MSG_CONDA_ENV_NOT_FOUND_RUN_INSTALL)
             else:
-                print_info(msg.MSG_CONDA_CREATING)
-                result = subprocess.run(
-                    [conda_cmd, "env", "create", "-f", str(env_yaml)],
-                    capture_output=False,
-                )
-                if result.returncode != 0:
+                # Try create first (with spinner for better UX)
+                with spinner("Creating conda environment..."):
                     result = subprocess.run(
-                        [conda_cmd, "env", "update", "-f", str(env_yaml), "-n", "apxm"],
-                        capture_output=False,
+                        [conda_cmd, "env", "create", "-f", str(env_yaml)],
+                        capture_output=True,
+                        text=True,
                     )
+
+                if result.returncode != 0:
+                    # Create failed, try update instead
+                    with spinner("Updating conda environment..."):
+                        result = subprocess.run(
+                            [conda_cmd, "env", "update", "-f", str(env_yaml), "-n", "apxm"],
+                            capture_output=True,
+                            text=True,
+                        )
                     if result.returncode != 0:
                         print_error(msg.MSG_CONDA_CREATE_FAILED.format(cmd=conda_cmd))
+                        # Show error output for debugging
+                        if result.stderr:
+                            print_info(f"Error: {result.stderr[:200]}")
                         missing.append(msg.MSG_CONDA_ENV_CREATE_FAILED)
                     else:
                         print_success(msg.MSG_CONDA_ENV_UPDATED)
@@ -153,11 +163,12 @@ def register_commands(app: Typer) -> None:
                     if "nightly" in result.stdout:
                         print_success(msg.MSG_RUST_NIGHTLY_INSTALLED)
                     else:
-                        print_warning(msg.MSG_RUST_NIGHTLY_INSTALLING)
-                        subprocess.run(
-                            ["rustup", "toolchain", "install", "nightly"],
-                            capture_output=False, timeout=300,
-                        )
+                        with spinner("Installing Rust nightly toolchain..."):
+                            subprocess.run(
+                                ["rustup", "toolchain", "install", "nightly"],
+                                capture_output=True, timeout=300,
+                            )
+                        print_success("Rust nightly installed")
                 except (subprocess.TimeoutExpired, OSError) as e:
                     print_warning(msg.MSG_RUST_CHECK_FAILED.format(error=e))
             else:
@@ -178,15 +189,16 @@ def register_commands(app: Typer) -> None:
             print_error(msg.MSG_RUSTUP_NOT_FOUND)
             missing.append("rustup")
             if not check and auto:
-                print_info(msg.MSG_RUSTUP_INSTALLING)
                 try:
-                    subprocess.run(
-                        [
-                            "sh", "-c",
-                            "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly",
-                        ],
-                        capture_output=False, timeout=300,
-                    )
+                    with spinner("Installing rustup and Rust nightly..."):
+                        subprocess.run(
+                            [
+                                "sh", "-c",
+                                "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly",
+                            ],
+                            capture_output=True, timeout=300,
+                        )
+                    print_success("Rustup installed")
                 except (subprocess.TimeoutExpired, OSError) as e:
                     print_error(msg.MSG_RUSTUP_INSTALL_FAILED.format(error=e))
         print_blank()
@@ -211,6 +223,7 @@ def register_commands(app: Typer) -> None:
                 missing.append(msg.MSG_BUILD_CONDA_ACTIVATE)
             else:
                 env = setup_mlir_environment(conda_prefix, config.target_dir)
+                print_info("Building APXM (this may take a few minutes)...")
                 result = subprocess.run(
                     [
                         "cargo", "build",
