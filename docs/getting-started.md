@@ -24,14 +24,15 @@ Before installing APXM, you'll need:
    - Miniforge includes both `conda` and the faster `mamba` package manager
    - Download from: https://github.com/conda-forge/miniforge
 
-2. **Git** - for cloning the repository
+2. **Git** -- for cloning the repository
 
-3. **Basic build tools** - Most Linux/macOS systems include these:
-   - CMake ≥ 3.20
-   - Make
-   - pkg-config
+3. **CMake** >= 3.20 -- required for MLIR/LLVM builds
 
-**Note:** You do NOT need to install Rust beforehand - the APXM installer can set it up automatically.
+4. **Ninja** (optional but recommended) -- faster parallel builds
+
+**Note:** You do NOT need to install Rust beforehand -- the APXM installer can set it up automatically.
+
+After cloning, run `apxm doctor` to verify all prerequisites. The doctor command uses [sniff](https://github.com/randres/sniff) to detect your platform, check dependency versions, and report exactly what's missing with specific install instructions for your OS and package manager.
 
 ### Installing Miniforge
 
@@ -57,43 +58,105 @@ source ~/.bashrc  # or ~/.zshrc for zsh users
 
 ## Installation
 
-### Automated Installation (Recommended)
+### Quick Start (3 commands)
 
-The easiest way to install APXM is using the automated installer:
+The fastest way to get APXM running:
 
 ```bash
-# 1. Clone the repository
+# 1. Clone and enter the repository
 git clone https://github.com/randreshg/apxm
 cd apxm
 
-# 2. Add the APXM launcher to your PATH
-export PATH="$PATH:$(pwd)/tools"
+# 2. Run automated installation (handles everything)
+python3 tools/apxm_cli.py install
 
-# 3. Run the automated installer
-apxm install
+# 3. Restart your shell or source your config
+source ~/.bashrc  # or ~/.zshrc for zsh users
 
-# 4. Activate the conda environment
-conda activate apxm
-
-# 5. Verify the installation
+# Now 'apxm' is available globally!
 apxm doctor
 ```
 
-The `apxm install` command automatically:
-1. Detects your OS, architecture, and package manager
-2. Verifies Git, CMake, and other build tools
-3. Creates/updates the 'apxm' conda environment with MLIR/LLVM 21
-4. Installs rustup and Rust nightly (if needed)
-5. Compiles the APXM CLI with features: driver, metrics
-6. Reports any issues or confirms success
+**What happens during `apxm install`:**
 
-#### Installation Options
+1. **Platform detection** -- Detects OS, architecture, distro, WSL, package manager (via sniff)
+2. **Dependency checks** -- Verifies Rust, CMake, Ninja, Git, Mamba/Conda with version validation
+3. **Conda environment** -- Creates/updates the `apxm` environment with MLIR/LLVM 21
+4. **Rust toolchain** -- Installs rustup and Rust nightly if needed
+5. **Build** -- Compiles the APXM CLI with `driver` and `metrics` features
+6. **Binary installation** -- Installs `apxm` to `bin/` and adds to your shell PATH automatically
+7. **Summary** -- Reports any issues with actionable fix instructions
+
+After installation, the `apxm` binary is accessible from anywhere in your terminal (no need to activate conda or set paths manually).
+
+### Installation Options
+
+If you need more control over the installation process:
 
 ```bash
-apxm install --check        # Dry-run: check status without making changes
-apxm install --skip-deps    # Skip dependency verification
-apxm install --skip-build   # Skip the build step
-apxm install --auto         # Automatic mode (no prompts)
+# Check what would be installed without making changes
+python3 tools/apxm_cli.py install --check
+
+# Skip dependency checks (if you've already verified them)
+python3 tools/apxm_cli.py install --skip-deps
+
+# Skip the build step (if binary already exists)
+python3 tools/apxm_cli.py install --skip-build
+
+# Automatic mode with no prompts
+python3 tools/apxm_cli.py install --auto -y
+```
+
+### Verifying Installation
+
+After installation, verify everything is working:
+
+```bash
+# Check the installed binary location
+which apxm
+# Should output: /path/to/apxm/bin/apxm
+
+# Verify environment and dependencies
+apxm doctor
+# Reports: platform, conda env, MLIR/LLVM, Rust, and all required tools
+
+# Check version
+apxm version
+# Shows APXM version and environment details
+```
+
+### Troubleshooting First-Time Installation
+
+**"apxm: command not found" after installation:**
+- The installer added `apxm/bin` to your shell config, but you need to restart your shell
+- Quick fix: `source ~/.bashrc` (or `~/.zshrc` for zsh)
+- Or: Close and reopen your terminal
+
+**"Missing required dependencies" during install:**
+- Run `python3 tools/apxm_cli.py install --check` to see what's missing
+- The output shows exact install commands for your OS/package manager
+- Install missing dependencies, then run `apxm install` again
+
+**Conda environment creation fails:**
+- Make sure you have mamba or conda installed: `which mamba` or `which conda`
+- Try using the explicit path: `~/miniforge3/bin/mamba env create -f environment.yaml`
+- Check disk space: `df -h` (MLIR/LLVM needs ~3GB)
+
+**Build fails with "MLIR_DIR not found":**
+- Make sure conda environment was created: `conda env list | grep apxm`
+- Activate it first: `conda activate apxm`
+- Re-run: `python3 tools/apxm_cli.py install`
+
+**Want to start fresh:**
+```bash
+# Remove conda environment
+conda env remove -n apxm
+
+# Clean build artifacts
+rm -rf target/ bin/
+
+# Re-run installation
+python3 tools/apxm_cli.py install
 ```
 
 ### Manual Installation
@@ -145,17 +208,80 @@ After installation, run the doctor command:
 apxm doctor
 ```
 
-This checks:
-- APXM directory location
-- Dependencies (Rust, Cargo, Conda, CMake, Ninja, Git)
-- Rust toolchain version and nightly status
-- Conda environment 'apxm' activation
-- MLIR version 21.x
-- LLVM libraries
-- Build status (compiled binary location)
-- Registered LLM credentials
+The doctor command uses the [sniff](https://github.com/randres/sniff) library for comprehensive environment detection. It runs the following checks:
 
-All checks should show a green checkmark. If any fail, see the Troubleshooting section below.
+**Platform Detection:**
+- OS and architecture (Linux, macOS, Windows)
+- Linux distribution and version (Ubuntu, Fedora, etc.)
+- WSL detection (Windows Subsystem for Linux)
+- Container detection (Docker, Podman, Kubernetes)
+- System package manager (apt, dnf, brew, etc.)
+
+**Dependency Checks:**
+- **Rust (nightly)** >= 1.80 -- checks `rustc` with version extraction
+- **Cargo** >= 1.80 -- checks `cargo` binary
+- **Mamba/Conda** -- checks `mamba` first, falls back to `conda`
+- **CMake** >= 3.20 -- required for MLIR/LLVM builds
+- **Ninja** -- optional but recommended for faster builds
+- **Git** -- required for source management
+- **LLVM** >= 21.0 -- optional standalone check via `llvm-config`
+
+**Conda Environment:**
+- Whether the `apxm` conda environment exists and is active
+- Python version inside the environment
+- MLIR cmake directory (`$CONDA_PREFIX/lib/cmake/mlir`)
+- LLVM cmake directory (`$CONDA_PREFIX/lib/cmake/llvm`)
+- MLIR version verification (expects 21.x)
+
+**Build Status:**
+- Whether the compiled `apxm` binary exists at the expected location
+
+**Credentials:**
+- Lists registered LLM provider credentials (API keys are masked)
+
+**CI Environment (auto-detected):**
+- GitHub Actions, GitLab CI, Jenkins, CircleCI, Buildkite, Travis CI, Azure Pipelines, Bitbucket Pipelines
+- Git branch, commit SHA, and PR information
+- Runner OS, architecture, CPU cores, Docker and GPU availability
+
+All checks should show a green checkmark. Each failed check provides an actionable fix suggestion. The doctor command exits with code 1 if any required check fails, making it suitable for CI pipelines.
+
+**Example output:**
+
+```
+APXM Doctor -- Environment diagnostics powered by sniff
+
+Platform:
+  [ok] OS: Linux (ubuntu 22.04)
+  [ok] Arch: x86_64
+  Package manager: apt
+
+Project:
+  [ok] APXM directory: /home/user/apxm
+
+Dependencies:
+  [ok] Rust (nightly) (1.85.0)
+  [ok] Cargo (1.85.0)
+  [ok] Mamba/Conda (24.9.2)
+  [ok] CMake (3.28.3)
+  [ok] Ninja (1.11.1)
+  [ok] Git (2.43.0)
+
+Rust Toolchain:
+  [ok] Rust: rustc 1.85.0-nightly (abc1234 2025-01-15)
+
+Conda Environment:
+  [ok] Active env: apxm (/home/user/miniforge3/envs/apxm)
+  Python: 3.11.9
+  [ok] MLIR cmake: /home/user/miniforge3/envs/apxm/lib/cmake/mlir
+  [ok] MLIR version: 21.x
+  [ok] LLVM cmake: /home/user/miniforge3/envs/apxm/lib/cmake/llvm
+
+Build Status:
+  [ok] Compiler binary: /home/user/apxm/target/release/apxm
+
+All checks passed. Environment is ready.
+```
 
 ## Registering an LLM Backend
 
@@ -813,25 +939,105 @@ apxm execute -O3 workflow.ais
 
 ### 5. Installation and Environment Issues
 
-**Conda environment not found:**
+**Start with `apxm doctor`:**
+
+The fastest way to diagnose installation and environment problems is the doctor command. It uses sniff to detect your platform, check all dependencies, and provide specific fix instructions.
+
 ```bash
-# Create or update manually:
+apxm doctor
+```
+
+If doctor reports errors, follow the suggestions it provides. The sections below cover common issues in detail.
+
+**Conda environment not found:**
+
+Doctor will report: `Conda env 'apxm' not found`
+
+```bash
+# Create the environment:
 mamba env create -f environment.yaml
-# OR update existing:
+# OR with conda (slower):
+conda env create -f environment.yaml
+
+# Update existing:
 mamba env update -f environment.yaml -n apxm
 ```
 
-**Rust nightly not found:**
+**Conda environment exists but not active:**
+
+Doctor will report: `Env 'apxm' exists but is not active`
+
 ```bash
-rustup toolchain install nightly
+conda activate apxm
+# Then re-run doctor to verify:
+apxm doctor
+```
+
+**Wrong conda environment active:**
+
+Doctor will report: `Active conda environment is '<name>', but APXM recommends 'apxm'`
+
+This means you have a conda environment active, but it is not the `apxm`
+environment that contains MLIR/LLVM and the other dependencies APXM needs.
+
+```bash
+# Switch to the correct environment:
+conda activate apxm
+```
+
+**Conda environment contents** (defined in `environment.yaml`):
+
+| Package       | Version | Purpose                                 |
+|---------------|---------|-----------------------------------------|
+| `llvmdev`     | 21      | LLVM development libraries              |
+| `clangdev`    | 21      | Clang development libraries             |
+| `llvm-tools`  | 21      | LLVM binary tools                       |
+| `mlir`        | 21      | MLIR compiler infrastructure            |
+| `python`      | 3.11    | Python runtime for CLI tools            |
+| `cmake`       | latest  | Build system generator                  |
+| `ninja`       | latest  | Fast build system                       |
+| `openssl`     | latest  | TLS for LLM API backends                |
+| `sniff`       | latest  | Environment detection library (via pip) |
+
+**Rust nightly not found:**
+
+Doctor will report: `Rust (nightly) -- not found` or `Rust: <version> (nightly recommended)`
+
+```bash
+# Install Rust with nightly:
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
+
+# Or switch existing installation to nightly:
+rustup default nightly
+
 # Verify:
 rustup show
 ```
 
-**Build fails with MLIR/LLVM errors:**
+**CMake not found or too old:**
+
+Doctor will report: `CMake -- not found` or `CMake (3.x.x) -- needs newer version`
+
+```bash
+# Install via conda (recommended):
+conda install -c conda-forge cmake>=3.20
+
+# Or via system package manager (doctor shows which one you have):
+sudo apt install cmake    # Ubuntu/Debian
+sudo dnf install cmake    # Fedora/RHEL
+brew install cmake        # macOS
+```
+
+**MLIR/LLVM not found in conda environment:**
+
+Doctor will report: `MLIR not found at <path>` or `LLVM not found at <path>`
+
 ```bash
 # Ensure conda environment is activated:
 conda activate apxm
+
+# Install MLIR/LLVM:
+conda install -c conda-forge mlir=21 llvmdev=21
 
 # Verify MLIR/LLVM paths:
 echo $MLIR_DIR  # Should show: /path/to/conda/envs/apxm/lib/cmake/mlir
@@ -857,7 +1063,7 @@ pip install typer rich
 export PATH="$PATH:$(pwd)/tools"
 
 # Or use absolute path:
-export PATH="$PATH:/home/raherrer/projects/agents/apxm/tools"
+export PATH="$PATH:/path/to/apxm/tools"
 
 # Make permanent (bash):
 echo 'export PATH="$PATH:/path/to/apxm/tools"' >> ~/.bashrc
@@ -873,10 +1079,30 @@ chmod 700 ~/.apxm
 ls -la ~/.apxm/
 ```
 
+**WSL-specific issues:**
+
+Doctor detects WSL automatically and reports it in the Platform section. If you see WSL-related issues:
+
+```bash
+# Ensure you're using the Linux filesystem, not /mnt/c/
+cd ~/apxm  # Use Linux home directory for better performance
+
+# If conda is not found, install Miniforge inside WSL:
+curl -fsSL https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh | bash
+```
+
+**Container-specific issues:**
+
+Doctor detects Docker/Podman containers automatically. Inside containers:
+- Ensure all build tools are installed in the container image
+- Mount the APXM source as a volume for persistence
+- The conda environment must be created inside the container
+
 ### 6. Getting Help
 
 For more assistance:
-- Run `apxm doctor` for automated diagnostics
+- Run `apxm doctor` for automated diagnostics (always try this first)
+- Run `apxm install --check` for a dry-run install check
 - Check existing issues: https://github.com/randreshg/apxm/issues
 - Review documentation: [CLI_GUIDE.md](CLI_GUIDE.md), [CONTRACTS.md](CONTRACTS.md)
 - Enable verbose tracing: `apxm execute workflow.ais --trace debug`
@@ -1140,6 +1366,94 @@ agent Main {
         return summary
     }
 }
+```
+
+---
+
+## Using sniff for Environment Checks
+
+APXM's doctor and install commands are powered by [sniff](https://github.com/randres/sniff), a zero-dependency Python library for passive environment detection. You can also use sniff directly in your own scripts and CI pipelines.
+
+### Check Platform
+
+```python
+from sniff import PlatformDetector
+
+platform = PlatformDetector().detect()
+print(f"OS: {platform.os}, Arch: {platform.arch}")
+print(f"Distro: {platform.distro} {platform.distro_version}")
+print(f"WSL: {platform.is_wsl}, Container: {platform.is_container}")
+print(f"Package manager: {platform.pkg_manager}")
+```
+
+### Verify Dependencies
+
+```python
+from sniff import DependencyChecker, DependencySpec
+
+checker = DependencyChecker()
+
+# Check a single tool
+rust = checker.check(DependencySpec("Rust", "rustc", min_version="1.80"))
+if rust.ok:
+    print(f"Rust {rust.version}: ready")
+else:
+    print(f"Rust issue: {rust.error}")
+
+# Check APXM's full dependency list
+from tools.scripts.deps import APXM_DEPENDENCIES, check_all, get_fix_suggestion
+
+results = check_all()
+for r in results:
+    if not r.ok:
+        print(f"{r.name}: FAIL -- {get_fix_suggestion(r)}")
+```
+
+### Detect Conda Environment
+
+```python
+from sniff import CondaDetector
+
+conda = CondaDetector()
+env = conda.find_active()
+if env:
+    print(f"Active: {env.name} at {env.prefix}")
+    print(f"Python: {env.python_version}")
+
+# Find a specific environment
+apxm_env = conda.find_environment("apxm")
+if apxm_env:
+    print(f"APXM env: {apxm_env.prefix}")
+```
+
+### Detect CI Environment
+
+```python
+from sniff import CIDetector
+
+ci = CIDetector().detect()
+if ci.is_ci:
+    print(f"CI: {ci.provider.display_name}")
+    print(f"Branch: {ci.git.branch}, Commit: {ci.git.commit_short}")
+    print(f"Runner: {ci.runner.runner_os}/{ci.runner.runner_arch}")
+    print(f"GPU: {ci.runner.has_gpu}")
+else:
+    print("Running locally")
+```
+
+### CI Build Tuning
+
+APXM uses sniff's CI detection to automatically tune build settings:
+
+```python
+from tools.scripts.ci_env import ci_build_hints, detect_ci
+
+ci = detect_ci()
+hints = ci_build_hints(ci)
+
+# hints.max_jobs -- parallelism limit for constrained runners
+# hints.incremental -- False in CI (clean builds)
+# hints.use_color -- True for providers that support ANSI
 ```
 
 ---
