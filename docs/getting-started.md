@@ -94,15 +94,24 @@ git submodule update --init --recursive
 # Install sniff
 pip install -e external/sniff
 
-# Run installer
+# Run installer (creates conda env, installs Rust, builds binary)
 python3 tools/apxm_cli.py install
 
-# Restart shell
+# IMPORTANT: Restart shell to pick up PATH changes
 source ~/.bashrc  # or ~/.zshrc for zsh
 
-# Verify
+# Now you can use apxm globally
 apxm doctor
+
+# For building/running, activate conda environment first
+conda activate apxm
+apxm build
 ```
+
+**Important**: After installation:
+1. Restart your shell (or source your config) to add `bin/` to PATH
+2. When building or running APXM, activate the conda environment: `conda activate apxm`
+3. The conda environment provides MLIR/LLVM and ensures all dependencies are available
 
 **What happens during `apxm install`:**
 

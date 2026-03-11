@@ -32,10 +32,13 @@ from scripts.test import register_commands as register_test
 
 VERSION = "0.2.0"
 
-# Main CLI app (auto-activation disabled for install command)
+# Main CLI app with auto-activation
+# This automatically activates the conda environment from .sniff.toml
+# before running commands (except install, which handles it specially)
 app = Typer(
     name="apxm",
-    auto_activate=False,  # Handled per-command (install can't auto-activate)
+    auto_activate=True,  # Auto-detect and activate environment
+    fail_fast=False,     # Don't fail immediately - let commands handle it
     add_doctor_command=True,
     add_version_command=True,
     project_version=VERSION,
