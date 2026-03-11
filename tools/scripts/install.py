@@ -97,7 +97,8 @@ def register_commands(app: Typer) -> None:
 
         # ── Stage 3 ───────────────────────────────────────────────
         print_step(msg.STAGE_CONDA_ENV)
-        conda_cmd = platform.conda_cmd
+        # Find mamba or conda
+        conda_cmd = shutil.which("mamba") or shutil.which("conda")
         if not conda_cmd:
             print_error(msg.MSG_CONDA_NOT_FOUND)
             missing.append("Mamba/Conda")
