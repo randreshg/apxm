@@ -13,17 +13,18 @@ APXM is a full toolchain for building autonomous agents:
 ## Quick Start
 
 ```bash
-git clone https://github.com/randreshg/apxm
+# Clone with sniff submodule
+git clone --recursive https://github.com/randreshg/apxm
 cd apxm
 
-# Create conda environment (includes Python, MLIR/LLVM, and all dependencies)
-mamba env create -f environment.yaml
+# Install sniff (environment detection)
+pip install -e external/sniff
 
-# Add apxm to PATH (add to ~/.zshrc or ~/.bashrc for persistence)
-export PATH="$PATH:$(pwd)/bin"
+# Run automated installer (handles conda, rust, build, PATH)
+python3 tools/apxm_cli.py install
 
-# Build the project
-apxm build
+# Restart shell or source config
+source ~/.bashrc  # or ~/.zshrc
 
 # Verify installation
 apxm doctor
@@ -32,17 +33,33 @@ apxm doctor
 apxm execute examples/hello_graph.json
 ```
 
+**What the installer does:**
+- ✓ Detects platform and package manager
+- ✓ Creates conda environment with MLIR/LLVM 21
+- ✓ Installs Rust nightly if needed
+- ✓ Builds the APXM binary
+- ✓ Installs `apxm` to `bin/` and updates shell PATH
+
+See [docs/getting-started.md](docs/getting-started.md) for detailed instructions and troubleshooting.
+
 ## Prerequisites
 
+- **Python** 3.10+ (for the CLI)
 - **mamba** or **conda** ([miniforge](https://github.com/conda-forge/miniforge) recommended)
-- **Rust nightly** (managed via `rust-toolchain.toml`)
+- **Git**
+
+Optional (installer can set these up automatically):
+- Rust nightly
+- CMake >= 3.20
+
+Run `apxm doctor` to check your environment automatically.
 
 ---
 
 ## CLI Commands
 
 ```bash
-apxm doctor                     # Check environment
+apxm doctor                     # Check environment (powered by sniff)
 apxm install                    # Install/update conda environment
 apxm build                      # Build full project
 apxm build --compiler           # Build compiler only
@@ -170,6 +187,26 @@ crates/
 examples/         # Sample ApxmGraph programs
 docs/             # Documentation
 ```
+
+---
+
+## Environment Diagnostics
+
+The `apxm doctor` command uses [sniff](https://github.com/randres/sniff) for comprehensive environment detection:
+
+```bash
+apxm doctor
+```
+
+**What it checks:**
+- **Platform** -- OS, architecture, Linux distro, WSL, containers
+- **Dependencies** -- Rust (nightly), Cargo, CMake, Ninja, Git, LLVM
+- **Conda environment** -- `apxm` env activation, Python version, MLIR/LLVM 21.x
+- **Build status** -- whether the compiler binary has been built
+- **Credentials** -- registered LLM provider API keys
+- **CI environment** -- GitHub Actions, GitLab CI, Jenkins, and other providers (auto-detected)
+
+Each check provides actionable fix suggestions when issues are found.
 
 ---
 
