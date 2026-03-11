@@ -32,11 +32,10 @@ from scripts.test import register_commands as register_test
 
 VERSION = "0.2.0"
 
-# Main CLI app with auto-activation
+# Main CLI app (auto-activation disabled for install command)
 app = Typer(
     name="apxm",
-    auto_activate=True,  # Auto-detect and activate environment from .sniff.toml
-    fail_fast=True,      # Fail if dependencies missing
+    auto_activate=False,  # Handled per-command (install can't auto-activate)
     add_doctor_command=True,
     add_version_command=True,
     project_version=VERSION,

@@ -58,23 +58,31 @@ source ~/.bashrc  # or ~/.zshrc for zsh users
 
 ## Installation
 
-### Quick Start (3 commands)
+### Quick Start (4 commands)
 
 The fastest way to get APXM running:
 
 ```bash
-# 1. Clone and enter the repository
-git clone https://github.com/randreshg/apxm
+# 1. Clone the repository with submodules
+git clone --recursive https://github.com/randreshg/apxm
 cd apxm
 
-# 2. Run automated installation (handles everything)
+# 2. Install sniff (environment detection framework)
+pip install -e external/sniff
+
+# 3. Run automated installation (handles everything)
 python3 tools/apxm_cli.py install
 
-# 3. Restart your shell or source your config
+# 4. Restart your shell or source your config
 source ~/.bashrc  # or ~/.zshrc for zsh users
 
 # Now 'apxm' is available globally!
 apxm doctor
+```
+
+**Note**: The `--recursive` flag automatically clones the sniff submodule. If you already cloned without it, run:
+```bash
+git submodule update --init --recursive
 ```
 
 **What happens during `apxm install`:**
