@@ -4,10 +4,10 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import typer
+from sniff import Typer, Option, Exit, BinaryInstaller
 
-from apxm_env import get_conda_prefix, setup_mlir_environment
-from apxm_styles import (
+from apxm_env import check_conda_env, get_conda_prefix, setup_mlir_environment
+from sniff import (
     print_blank,
     print_error,
     print_header,
@@ -19,21 +19,19 @@ from apxm_styles import (
     print_warning,
 )
 
-from tools.scripts import get_config
-
-from .config import get_platform_config
-from .deps import check_all
+from . import get_config, messages as msg
+from .deps import check_all, get_fix_suggestion
 
 
-def register_commands(app: typer.Typer) -> None:
+def register_commands(app: Typer) -> None:
     """Register install command on the app."""
 
     @app.command()
     def install(
-        check: bool = typer.Option(False, "--check", help="Dry-run: report status without changes"),
-        skip_deps: bool = typer.Option(False, "--skip-deps", help="Skip dependency checks"),
-        skip_build: bool = typer.Option(False, "--skip-build", help="Skip build step"),
-        auto: bool = typer.Option(
+        check: bool = Option(False, "--check", help="Dry-run: report status without changes"),
+        skip_deps: bool = Option(False, "--skip-deps", help="Skip dependency checks"),
+        skip_build: bool = Option(False, "--skip-build", help="Skip build step"),
+        auto: bool = Option(
             False, "--auto", "-y", help="Automatic mode (no prompts)"
         ),
     ):
@@ -51,20 +49,23 @@ def register_commands(app: typer.Typer) -> None:
           6. Summary
         """
         config = get_config()
-        platform = get_platform_config()
+        platform = app.platform
         missing: list[str] = []
 
-        print_header("APXM Install")
+        print_header(msg.HEADER_INSTALL)
 
         # ── Stage 1 ───────────────────────────────────────────────
-        print_step("Stage 1: Platform detection")
-        print_info(f"OS: {platform.os_name} ({platform.arch})")
+        print_step(msg.STAGE_PLATFORM_DETECTION)
+        os_label = f"{platform.os} ({platform.arch})"
+        print_info(msg.MSG_OS.format(os_label=os_label))
         if platform.distro:
-            print_info(f"Distro: {platform.distro} {platform.distro_version or ''}")
+            print_info(msg.MSG_DISTRO.format(
+                distro=platform.distro, version=platform.distro_version or "",
+            ))
         if platform.is_wsl:
-            print_info("WSL detected")
+            print_info(msg.MSG_WSL_DETECTED)
         if platform.pkg_manager:
-            print_info(f"Package manager: {platform.pkg_manager}")
+            print_info(msg.MSG_PKG_MANAGER.format(pkg_manager=platform.pkg_manager))
         print_blank()
 
         # ── Stage 2 ───────────────────────────────────────────────
@@ -72,52 +73,53 @@ def register_commands(app: typer.Typer) -> None:
         # so Stage 2 only reports their status without adding to missing.
         stage3_4_names = {"Mamba/Conda", "Rust (nightly)", "Cargo"}
         if not skip_deps:
-            print_step("Stage 2: Checking dependencies")
+            print_step(msg.STAGE_CHECKING_DEPS)
             results = check_all()
             for r in results:
+                version_str = f" ({r.version})" if r.version else ""
                 if r.found:
-                    version_str = f" ({r.version})" if r.version else ""
                     if r.meets_minimum:
-                        print_success(f"{r.dep.name}{version_str}")
+                        print_success(msg.MSG_DEP_OK.format(name=r.name, version=version_str))
                     else:
                         print_warning(
-                            f"{r.dep.name}{version_str} -- "
-                            f"needs >= {r.dep.min_version}"
+                            msg.MSG_DEP_NEEDS_UPGRADE.format(name=r.name, version=version_str)
                         )
-                        if r.dep.name not in stage3_4_names:
-                            missing.append(f"{r.dep.name} (upgrade to >= {r.dep.min_version})")
+                        if r.name not in stage3_4_names:
+                            missing.append(msg.MSG_DEP_UPGRADE_REQUIRED.format(name=r.name))
                 else:
-                    if r.dep.required:
-                        print_error(f"{r.dep.name} -- not found")
-                        if r.dep.name not in stage3_4_names:
-                            missing.append(r.dep.name)
+                    if r.required:
+                        print_error(msg.MSG_DEP_NOT_FOUND.format(name=r.name))
+                        if r.name not in stage3_4_names:
+                            missing.append(r.name)
                     else:
-                        print_warning(f"{r.dep.name} -- not found (optional)")
+                        print_warning(msg.MSG_DEP_NOT_FOUND_OPTIONAL.format(name=r.name))
             print_blank()
 
         # ── Stage 3 ───────────────────────────────────────────────
-        print_step("Stage 3: Conda environment")
+        print_step(msg.STAGE_CONDA_ENV)
         conda_cmd = platform.conda_cmd
         if not conda_cmd:
-            print_error("Mamba/Conda -- not found")
+            print_error(msg.MSG_CONDA_NOT_FOUND)
             missing.append("Mamba/Conda")
             print_blank()
         else:
-            print_success(f"{conda_cmd}: found")
+            print_success(msg.MSG_CONDA_FOUND.format(cmd=conda_cmd))
 
             env_yaml = config.apxm_dir / "environment.yaml"
             if not env_yaml.exists():
-                print_error(f"environment.yaml not found: {env_yaml}")
+                print_error(msg.MSG_CONDA_ENV_YAML_NOT_FOUND.format(path=env_yaml))
                 missing.append("environment.yaml")
             elif check:
-                conda_prefix = get_conda_prefix()
-                if conda_prefix:
-                    print_success(f"Conda env 'apxm': {conda_prefix}")
+                conda_check = check_conda_env()
+                for w in conda_check.warnings:
+                    print_warning(w)
+                if conda_check.prefix:
+                    print_success(msg.MSG_CONDA_ENV_OK.format(prefix=conda_check.prefix))
                 else:
-                    print_warning("Conda env 'apxm': not found (will be created)")
-                    missing.append("Conda env 'apxm' (run install without --check)")
+                    print_warning(msg.MSG_CONDA_ENV_NOT_FOUND_WILL_CREATE)
+                    missing.append(msg.MSG_CONDA_ENV_NOT_FOUND_RUN_INSTALL)
             else:
-                print_info("Creating/updating conda environment...")
+                print_info(msg.MSG_CONDA_CREATING)
                 result = subprocess.run(
                     [conda_cmd, "env", "create", "-f", str(env_yaml)],
                     capture_output=False,
@@ -128,19 +130,19 @@ def register_commands(app: typer.Typer) -> None:
                         capture_output=False,
                     )
                     if result.returncode != 0:
-                        print_error(f"{conda_cmd} env create/update failed")
-                        missing.append("Conda env (create/update failed)")
+                        print_error(msg.MSG_CONDA_CREATE_FAILED.format(cmd=conda_cmd))
+                        missing.append(msg.MSG_CONDA_ENV_CREATE_FAILED)
                     else:
-                        print_success("Conda environment updated")
+                        print_success(msg.MSG_CONDA_ENV_UPDATED)
                 else:
-                    print_success("Conda environment created")
+                    print_success(msg.MSG_CONDA_ENV_CREATED)
             print_blank()
 
         # ── Stage 4 ───────────────────────────────────────────────
-        print_step("Stage 4: Rust toolchain")
+        print_step(msg.STAGE_RUST_TOOLCHAIN)
         has_rustup = shutil.which("rustup") is not None
         if has_rustup:
-            print_success("rustup: found")
+            print_success(msg.MSG_RUSTUP_FOUND)
             if not check:
                 try:
                     result = subprocess.run(
@@ -148,15 +150,15 @@ def register_commands(app: typer.Typer) -> None:
                         capture_output=True, text=True, timeout=30,
                     )
                     if "nightly" in result.stdout:
-                        print_success("Rust nightly: installed")
+                        print_success(msg.MSG_RUST_NIGHTLY_INSTALLED)
                     else:
-                        print_warning("Rust nightly not found, installing...")
+                        print_warning(msg.MSG_RUST_NIGHTLY_INSTALLING)
                         subprocess.run(
                             ["rustup", "toolchain", "install", "nightly"],
                             capture_output=False, timeout=300,
                         )
                 except (subprocess.TimeoutExpired, OSError) as e:
-                    print_warning(f"Could not check Rust toolchain: {e}")
+                    print_warning(msg.MSG_RUST_CHECK_FAILED.format(error=e))
             else:
                 try:
                     result = subprocess.run(
@@ -165,17 +167,17 @@ def register_commands(app: typer.Typer) -> None:
                     )
                     version = result.stdout.strip()
                     if "nightly" in version:
-                        print_success(f"Rust: {version}")
+                        print_success(msg.MSG_RUST_VERSION.format(version=version))
                     else:
-                        print_warning(f"Rust: {version} (nightly recommended)")
-                        missing.append("Rust nightly (rustup toolchain install nightly)")
+                        print_warning(msg.MSG_RUST_NIGHTLY_RECOMMENDED.format(version=version))
+                        missing.append(msg.MSG_RUST_NIGHTLY_MISSING)
                 except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-                    print_warning("Could not determine Rust version")
+                    print_warning(msg.MSG_RUST_VERSION_UNKNOWN)
         else:
-            print_error("rustup -- not found")
+            print_error(msg.MSG_RUSTUP_NOT_FOUND)
             missing.append("rustup")
             if not check and auto:
-                print_info("Installing rustup...")
+                print_info(msg.MSG_RUSTUP_INSTALLING)
                 try:
                     subprocess.run(
                         [
@@ -185,27 +187,27 @@ def register_commands(app: typer.Typer) -> None:
                         capture_output=False, timeout=300,
                     )
                 except (subprocess.TimeoutExpired, OSError) as e:
-                    print_error(f"Failed to install rustup: {e}")
+                    print_error(msg.MSG_RUSTUP_INSTALL_FAILED.format(error=e))
         print_blank()
 
         # ── Stage 5 ───────────────────────────────────────────────
         if not skip_build:
-            print_step("Stage 5: Build")
+            print_step(msg.STAGE_BUILD)
             has_cargo = shutil.which("cargo") is not None
             conda_prefix = get_conda_prefix()
 
             if check:
                 if config.compiler_bin.exists():
-                    print_success(f"Binary: {config.compiler_bin}")
+                    print_success(msg.MSG_COMPILER_BIN_OK_SHORT.format(path=config.compiler_bin))
                 else:
-                    print_warning("Compiler not built yet")
-                    missing.append("Build (conda activate apxm && apxm build)")
+                    print_warning(msg.MSG_COMPILER_NOT_BUILT_YET)
+                    missing.append(msg.MSG_BUILD_CONDA_ACTIVATE)
             elif not has_cargo:
-                print_warning("Cargo not available -- skipping build")
-                missing.append("Build (install Rust first)")
+                print_warning(msg.MSG_CARGO_NOT_AVAILABLE)
+                missing.append(msg.MSG_BUILD_INSTALL_RUST)
             elif not conda_prefix:
-                print_warning("Conda env not activated -- skipping build")
-                missing.append("Build (conda activate apxm && apxm build)")
+                print_warning(msg.MSG_CONDA_NOT_ACTIVATED)
+                missing.append(msg.MSG_BUILD_CONDA_ACTIVATE)
             else:
                 env = setup_mlir_environment(conda_prefix, config.target_dir)
                 result = subprocess.run(
@@ -219,19 +221,29 @@ def register_commands(app: typer.Typer) -> None:
                     env=env,
                 )
                 if result.returncode == 0:
-                    print_success("Build complete!")
+                    print_success(msg.MSG_BUILD_COMPLETE)
+
+                    # Install binary to bin/
+                    binary_path = config.apxm_dir / "target" / "release" / "apxm"
+                    if binary_path.exists():
+                        try:
+                            installer = BinaryInstaller(config.apxm_dir)
+                            result = installer.install_binary(binary_path, update_shell=True)
+                            print_success(result.message)
+                        except Exception as e:
+                            print_warning(f"Binary install failed: {e}")
                 else:
-                    print_error("Build failed!")
-                    missing.append("Build (fix errors and retry: apxm build)")
+                    print_error(msg.MSG_BUILD_FAILED)
+                    missing.append(msg.MSG_BUILD_FIX_RETRY)
         print_blank()
 
         # ── Stage 6: Summary ──────────────────────────────────────
         if missing:
-            print_header("Action Required")
+            print_header(msg.HEADER_ACTION_REQUIRED)
             print_numbered_list(missing)
             print_blank()
-            print_info("Fix the above, then re-run: apxm install")
-            raise typer.Exit(1)
+            print_info(msg.MSG_FIX_RERUN)
+            raise Exit(1)
         else:
-            print_success("Everything looks good!")
+            print_success(msg.MSG_EVERYTHING_OK)
             print_next_steps(["conda activate apxm", "apxm doctor"])

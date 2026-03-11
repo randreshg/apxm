@@ -1,0 +1,28 @@
+# APXM Environment Specification
+# Enables automatic environment setup with: sniff activate
+
+[project]
+name = "apxm"
+description = "MLIR compiler and runtime for agent workflows"
+
+
+[conda]
+name = "apxm"
+file = "environment.yaml"
+
+
+[tools]
+cmake = { command = "cmake", version = ">=3.20" }
+ninja = { command = "ninja" }
+cargo = { command = "cargo", version = ">=1.70" }
+python = { command = "python", version = ">=3.10" }
+clang = { command = "clang", version = ">=17" }
+
+
+[env]
+MLIR_DIR = "{conda}/lib/cmake/mlir"
+LLVM_DIR = "{conda}/lib/cmake/llvm"
+APXM_HOME = "{project}"
+
+[paths]
+bin = ["{project}/bin", "{project}/target/release"]
