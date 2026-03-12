@@ -1,35 +1,40 @@
 """Test command for APXM CLI."""
 
+import os
 import subprocess
 from typing import Optional
 
-import typer
+from sniff import Typer, Option, Exit
+from sniff import print_error, print_header, print_info, print_success, print_warning
 
-from apxm_env import setup_mlir_environment
-from apxm_styles import print_error, print_header, print_info, print_success, print_warning
+from . import get_config
+from .ci_env import (
+    apply_ci_cargo_flags,
+    apply_ci_env,
+    apply_ci_test_flags,
+    ci_build_hints,
+)
 
-from tools.scripts import ensure_conda_env, get_config
 
-
-def register_commands(app: typer.Typer) -> None:
+def register_commands(app: Typer) -> None:
     """Register test command on the app."""
 
     @app.command()
     def test(
-        all: bool = typer.Option(
+        all: bool = Option(
             False, "--all", help="Run all tests including compiler (requires MLIR/LLVM 21)"
         ),
-        runtime: bool = typer.Option(False, "--runtime", help="Run only runtime tests"),
-        compiler: bool = typer.Option(
+        runtime: bool = Option(False, "--runtime", help="Run only runtime tests"),
+        compiler: bool = Option(
             False, "--compiler", help="Run only compiler tests (requires MLIR/LLVM 21)"
         ),
-        credentials: bool = typer.Option(
+        credentials: bool = Option(
             False, "--credentials", help="Run only credential store tests"
         ),
-        backends: bool = typer.Option(
+        backends: bool = Option(
             False, "--backends", help="Run only LLM backend tests (uses mocks, no API keys needed)"
         ),
-        package: Optional[str] = typer.Option(
+        package: Optional[str] = Option(
             None, "--package", "-p", help="Run tests for a specific package"
         ),
     ):
@@ -37,10 +42,6 @@ def register_commands(app: typer.Typer) -> None:
 
         By default, runs workspace tests excluding the compiler (which requires
         MLIR/LLVM 21). No LLM API keys are needed -- all backend tests use mocks.
-
-        The only distinction is compiler tests (need MLIR installed) vs everything
-        else (always works offline). The test suite uses MockLLMBackend and dummy
-        keys throughout -- no real API calls are made.
 
         Examples:
             apxm test                    # All tests except compiler (no API keys needed)
@@ -52,8 +53,15 @@ def register_commands(app: typer.Typer) -> None:
             apxm test --package <name>   # Specific package tests
         """
         config = get_config()
-        conda_prefix = ensure_conda_env()
-        env = setup_mlir_environment(conda_prefix, config.target_dir)
+
+        # CI environment overrides
+        ci = app.ci_info
+        hints = ci_build_hints(ci)
+        env = None
+        if ci.is_ci:
+            env = apply_ci_env(dict(os.environ), hints)
+            provider = ci.provider.display_name if ci.provider else "Unknown CI"
+            print_info(f"CI detected: {provider}")
 
         cmd = ["cargo", "test"]
 
@@ -82,6 +90,9 @@ def register_commands(app: typer.Typer) -> None:
             print_info("No API keys needed -- all tests use mocks")
             cmd.extend(["--workspace", "--exclude", "apxm-compiler"])
 
+        cmd = apply_ci_cargo_flags(cmd, hints)
+        cmd = apply_ci_test_flags(cmd, hints)
+
         result = subprocess.run(cmd, cwd=config.apxm_dir, env=env)
 
         if result.returncode == 0:
@@ -89,4 +100,4 @@ def register_commands(app: typer.Typer) -> None:
         else:
             print_error("Some tests failed!")
 
-        raise typer.Exit(result.returncode)
+        raise Exit(result.returncode)

@@ -23,6 +23,7 @@ clang = { command = "clang", version = ">=17" }
 MLIR_DIR = "{conda}/lib/cmake/mlir"
 LLVM_DIR = "{conda}/lib/cmake/llvm"
 APXM_HOME = "{project}"
+LD_LIBRARY_PATH = "{project}/target/release/lib:{project}/target/release"
 
 [paths]
 bin = ["{project}/bin", "{project}/target/release"]

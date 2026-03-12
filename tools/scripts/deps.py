@@ -1,137 +1,161 @@
-"""Dependency checking for APXM CLI."""
+"""Dependency checking for APXM CLI -- powered by sniff."""
 
-import re
-import shutil
-import subprocess
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Optional
+
+from sniff import DependencyChecker, DependencySpec, DependencyResult
+from sniff.version import VersionSpec, version_satisfies
+
+from .messages import (
+    FIX_SUGGESTIONS,
+    MSG_DEP_INSTALL_GENERIC,
+    MSG_DEP_UPGRADE_GENERIC,
+)
 
 
 @dataclass
-class Dependency:
-    """A system dependency to check."""
+class ApxmDependency:
+    """An APXM dependency: a sniff DependencySpec plus a rich version constraint."""
 
-    name: str
-    command: str
-    version_arg: str = "--version"
-    version_pattern: Optional[str] = None  # regex to extract version
-    min_version: Optional[str] = None
-    required: bool = True
-
-
-@dataclass
-class CheckResult:
-    """Result of checking a dependency."""
-
-    dep: Dependency
-    found: bool
-    version: Optional[str] = None
-    meets_minimum: bool = True
-    error: Optional[str] = None
+    spec: DependencySpec
+    version_constraint: VersionSpec | None = None
 
     @property
-    def ok(self) -> bool:
-        return self.found and self.meets_minimum
+    def name(self) -> str:
+        return self.spec.name
+
+    @property
+    def command(self) -> str:
+        return self.spec.command
 
 
-# Standard APXM dependencies
-DEPENDENCIES = [
-    Dependency(
+def _dep(
+    name: str,
+    command: str,
+    version_pattern: str | None = None,
+    version_constraint: str | None = None,
+    required: bool = True,
+    fallback_commands: list[str] | None = None,
+) -> ApxmDependency:
+    """Build an ApxmDependency with a parsed VersionSpec constraint."""
+    spec = DependencySpec(
+        name=name,
+        command=command,
+        version_pattern=version_pattern,
+        min_version=None,
+        required=required,
+        fallback_commands=fallback_commands,
+    )
+    parsed = VersionSpec.parse(version_constraint) if version_constraint else None
+    return ApxmDependency(spec=spec, version_constraint=parsed)
+
+
+# Standard APXM dependencies with version constraints
+APXM_DEPENDENCIES: list[ApxmDependency] = [
+    _dep(
         name="Rust (nightly)",
         command="rustc",
         version_pattern=r"rustc (\d+\.\d+\.\d+)",
+        version_constraint=">=1.80",
     ),
-    Dependency(
+    _dep(
         name="Cargo",
         command="cargo",
         version_pattern=r"cargo (\d+\.\d+\.\d+)",
+        version_constraint=">=1.80",
     ),
-    Dependency(
+    _dep(
         name="Mamba/Conda",
         command="mamba",
         version_pattern=r"(\d+\.\d+\.\d+)",
+        fallback_commands=["conda"],
     ),
-    Dependency(
+    _dep(
         name="CMake",
         command="cmake",
         version_pattern=r"cmake version (\d+\.\d+\.\d+)",
-        min_version="3.20",
+        version_constraint=">=3.20",
     ),
-    Dependency(
+    _dep(
         name="Ninja",
         command="ninja",
         version_pattern=r"(\d+\.\d+\.\d+)",
         required=False,
     ),
-    Dependency(
+    _dep(
         name="Git",
         command="git",
         version_pattern=r"git version (\d+\.\d+\.\d+)",
     ),
+    _dep(
+        name="LLVM (21+)",
+        command="llvm-config",
+        version_pattern=r"(\d+\.\d+\.\d+)",
+        version_constraint=">=21.0",
+        required=False,
+    ),
 ]
 
 
-def _parse_version(version_str: str) -> tuple[int, ...]:
-    """Parse a version string into a tuple of ints for comparison."""
-    parts = []
-    for part in version_str.split("."):
-        try:
-            parts.append(int(part))
-        except ValueError:
-            break
-    return tuple(parts)
+def _check_one(dep: ApxmDependency, checker: DependencyChecker) -> DependencyResult:
+    """Check a single dependency using DependencyChecker + VersionSpec."""
+    result = checker.check(dep.spec)
 
+    if not result.found or not result.version or dep.version_constraint is None:
+        return result
 
-def _version_ge(version: str, minimum: str) -> bool:
-    """Check if version >= minimum."""
-    return _parse_version(version) >= _parse_version(minimum)
+    meets = version_satisfies(result.version, dep.version_constraint.raw)
 
+    if meets == result.meets_minimum:
+        return result
 
-def check_dependency(dep: Dependency) -> CheckResult:
-    """Check if a dependency is available and meets version requirements."""
-    cmd_path = shutil.which(dep.command)
-
-    # Fallback for mamba -> conda
-    if not cmd_path and dep.command == "mamba":
-        cmd_path = shutil.which("conda")
-
-    if not cmd_path:
-        return CheckResult(
-            dep=dep,
-            found=False,
-            error=f"{dep.name} not found in PATH",
-        )
-
-    version = None
-    if dep.version_pattern:
-        try:
-            result = subprocess.run(
-                [cmd_path, dep.version_arg],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            output = result.stdout + result.stderr
-            match = re.search(dep.version_pattern, output)
-            if match:
-                version = match.group(1)
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            pass
-
-    meets_min = True
-    if version and dep.min_version:
-        meets_min = _version_ge(version, dep.min_version)
-
-    return CheckResult(
-        dep=dep,
-        found=True,
-        version=version,
-        meets_minimum=meets_min,
+    return DependencyResult(
+        name=result.name,
+        command=result.command,
+        found=result.found,
+        version=result.version,
+        meets_minimum=meets,
+        required=result.required,
+        error=result.error,
     )
 
 
-def check_all(deps: Optional[list[Dependency]] = None) -> list[CheckResult]:
-    """Check all dependencies and return results."""
+def check_all(
+    deps: list[ApxmDependency] | None = None,
+) -> list[DependencyResult]:
+    """Check all APXM dependencies and return results.
+
+    Args:
+        deps: Optional list of ApxmDependency to check. Defaults to APXM_DEPENDENCIES.
+
+    Returns:
+        List of DependencyResult from sniff.
+    """
     if deps is None:
-        deps = DEPENDENCIES
-    return [check_dependency(dep) for dep in deps]
+        deps = APXM_DEPENDENCIES
+    checker = DependencyChecker()
+    return [_check_one(dep, checker) for dep in deps]
+
+
+def get_fix_suggestion(result: DependencyResult) -> str | None:
+    """Get a fix suggestion for a failed dependency check.
+
+    Args:
+        result: The DependencyResult to suggest a fix for.
+
+    Returns:
+        A human-readable fix suggestion, or None.
+    """
+    if result.ok:
+        return None
+
+    suggestion = FIX_SUGGESTIONS.get(result.command)
+    if suggestion:
+        return suggestion
+
+    if not result.found:
+        return MSG_DEP_INSTALL_GENERIC.format(name=result.name)
+    if not result.meets_minimum:
+        return MSG_DEP_UPGRADE_GENERIC.format(name=result.name)
+    return None

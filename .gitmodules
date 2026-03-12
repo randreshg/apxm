@@ -1,3 +1,0 @@
-[submodule "external/sniff"]
-	path = external/sniff
-	url = https://github.com/randreshg/sniff.git

@@ -18,8 +18,6 @@ Usage:
     apxm --help                     # Show all available commands
 """
 
-from typing import Optional
-
 from sniff import Typer, Option, Argument, Exit
 
 from scripts.build import register_commands as register_build

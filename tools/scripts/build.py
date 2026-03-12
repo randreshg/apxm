@@ -4,6 +4,7 @@ Uses sniff.build.BuildSystemDetector for Cargo workspace detection
 and sniff.compiler.CompilerDetector to verify rustc availability.
 """
 
+import os
 import shutil
 import subprocess
 
@@ -11,12 +12,10 @@ from sniff import Typer, Option, Exit
 
 from sniff.build import BuildSystemDetector, BuildSystem
 from sniff.compiler import CompilerDetector
-
-from apxm_env import setup_mlir_environment
 from sniff import print_error, print_header, print_info, print_step, print_success, print_warning
 
-from . import ensure_conda_env, get_config
-from .ci_env import apply_ci_cargo_flags, apply_ci_env, ci_build_hints, detect_ci
+from . import get_config
+from .ci_env import apply_ci_cargo_flags, apply_ci_env, ci_build_hints
 
 
 def _build_cargo_cmd(package: str, features: list[str] | None = None) -> list[str]:
@@ -68,20 +67,17 @@ def register_commands(app: Typer) -> None:
         rustc = CompilerDetector().detect_compiler("rustc")
         if not rustc.found:
             print_error("rustc not found")
-            print_info("Activate the conda environment: conda activate apxm")
-            print_info("Or install Rust via: curl https://sh.rustup.rs | sh")
+            print_info("Install Rust via: curl https://sh.rustup.rs | sh")
             raise Exit(1)
         print_info(f"Cargo workspace: {build_info.root} (edition {build_info.version or 'unknown'})")
         print_info(f"rustc {rustc.version or 'unknown'} ({rustc.target or 'unknown target'})")
 
-        conda_prefix = ensure_conda_env()
-        env = setup_mlir_environment(conda_prefix, config.target_dir)
-
-        # Detect CI environment and adapt build settings
-        ci = detect_ci()
+        # CI environment overrides (if running in CI)
+        ci = app.ci_info
         hints = ci_build_hints(ci)
+        env = None
         if ci.is_ci:
-            env = apply_ci_env(env, hints)
+            env = apply_ci_env(dict(os.environ), hints)
             provider = ci.provider.display_name if ci.provider else "Unknown CI"
             print_info(f"CI detected: {provider}")
             if hints.max_jobs:
