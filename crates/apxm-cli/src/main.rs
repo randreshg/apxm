@@ -159,8 +159,6 @@ enum RegisterAction {
         /// Name of the credential to test (omit to test all)
         name: Option<String>,
     },
-    /// Generate config.toml entries from registered credentials
-    GenerateConfig,
 }
 
 fn parse_header(s: &str) -> Result<(String, String), String> {
@@ -656,12 +654,6 @@ async fn register_command(action: RegisterAction) -> Result<()> {
             if !all_ok {
                 return Err(anyhow::anyhow!("Some credentials failed validation"));
             }
-        }
-        RegisterAction::GenerateConfig => {
-            let config = store
-                .generate_config()
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
-            println!("{config}");
         }
     }
 

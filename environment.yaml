@@ -22,3 +22,6 @@ dependencies:
     - zlib
     - libxml2
     - zstd
+    # Python packages via pip
+    - pip:
+        - -e ../sniff

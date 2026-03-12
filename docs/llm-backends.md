@@ -698,7 +698,7 @@ echo 'providers = ["my-openai", "my-claude"]' >> ~/.apxm/config.toml
 - Rotate API keys regularly following provider best practices
 
 For more information, see:
-- [CLI Guide](CLI_GUIDE.md) - Complete CLI documentation
+- [CLI Reference](cli-reference.md) - Complete CLI documentation
 - [Configuration](../README.md) - Config.toml reference
 - Provider documentation:
   - [OpenAI API](https://platform.openai.com/docs/api-reference)

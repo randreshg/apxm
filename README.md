@@ -33,11 +33,11 @@ apxm doctor
 ```
 
 **What the installer does:**
-- ✓ Detects platform and package manager
+- ✓ Detects platform and package manager (via sniff)
 - ✓ Creates conda environment with MLIR/LLVM 21
 - ✓ Installs Rust nightly if needed
 - ✓ Builds the APXM binary
-- ✓ Installs `apxm` to `bin/` and updates shell PATH
+- ✓ Installs a self-contained wrapper to `~/.local/bin/apxm` (no manual `conda activate` needed)
 
 See [docs/getting-started.md](docs/getting-started.md) for detailed instructions and troubleshooting.
 
@@ -74,7 +74,7 @@ apxm workloads run <name>       # Run a specific workload
 apxm benchmarks run --workloads # Run all benchmark workloads
 ```
 
-See [docs/AGENTS.md](docs/AGENTS.md) for complete reference.
+See [docs/cli-reference.md](docs/cli-reference.md) for complete reference.
 
 ---
 
@@ -211,6 +211,43 @@ Each check provides actionable fix suggestions when issues are found.
 
 ## Documentation
 
-- [Getting Started](docs/GETTING_STARTED.md) - Installation, setup, and first steps
-- [AGENTS.md](docs/AGENTS.md) - CLI reference and AI agent guide
-- [Benchmark Workloads](papers/CF26/benchmarks/workloads/README.md) - workload benchmarks and examples
+### Guides
+- [Getting Started](docs/getting-started.md) — Installation, first program, common patterns
+- [CLI Reference](docs/cli-reference.md) — All commands, options, and workflows
+- [LLM Backends](docs/llm-backends.md) — Provider setup, credentials, security
+
+### Concepts
+- [What is A-PXM?](docs/concepts/overview.md) — High-level overview
+- [Motivation](docs/concepts/motivation.md) — Why agent workflows need a formal execution model
+- [The Problem](docs/concepts/the-problem.md) — The agentic von Neumann bottleneck
+- [Architecture](docs/concepts/architecture.md) — End-to-end system design
+- [Strategic Analysis](docs/concepts/strategic-analysis.md) — Where A-PXM wins vs alternatives
+- [AAM](docs/concepts/aam.md) — Agent Abstract Machine (Beliefs, Goals, Capabilities)
+- [AIS](docs/concepts/ais.md) — Agent Instruction Set (17 typed operations)
+- [Dataflow Execution](docs/concepts/dataflow-execution.md) — Token-based scheduling
+- [Codelets](docs/concepts/codelets.md) — Fundamental unit of AI work
+
+### PXM Deep Dives
+- [Foundations](docs/pxm/foundations.md) — How A-PXM draws on decades of PXM research
+- [Compute](docs/pxm/compute.md) — Compute across 6 foundational PXMs
+- [Memory](docs/pxm/memory.md) — Memory separation across PXMs
+- [Scheduling](docs/pxm/scheduling.md) — Scheduling and execution across PXMs
+
+### AIS Operations
+- [LLM Ops](docs/ais/llm-ops.md) — ASK, THINK, REASON, PLAN, REFLECT, VERIFY
+- [Tool Ops](docs/ais/tool-ops.md) — INV instruction
+- [Memory Ops](docs/ais/memory-ops.md) — QMEM, UMEM, FENCE
+- [Control Flow](docs/ais/control-flow.md) — BRANCH, SWITCH
+- [Synchronization](docs/ais/sync-ops.md) — MERGE, WAIT_ALL, FENCE
+- [Communication](docs/ais/communication.md) — TRY_CATCH, COMM, FLOW
+
+### Internals
+- [Compiler Pipeline](docs/compiler/overview.md) — Four-stage pipeline
+- [Optimization Passes](docs/compiler/optimization-passes.md) — FuseAskOps, CSE, DCE
+- [Artifact Format](docs/compiler/artifact-format.md) — .apxmobj binary specification
+- [Wire Contracts](docs/internals/contracts.md) — Compiler-runtime synchronization
+- [Graph JSON Contract](docs/internals/graph-json-contract.md) — Stable JSON format
+- [Dataflow Scheduler](docs/runtime/dataflow-scheduler.md) — Token-based scheduling
+- [Memory Hierarchy](docs/runtime/memory-hierarchy.md) — STM, LTM, Episodic tiers
+- [Multi-Agent Execution](docs/runtime/multi-agent.md) — Cross-agent parallelism
+

@@ -5,23 +5,33 @@ Minimal CLI wrapper for compile/run workflows.
 ## Overview
 
 `apxm-cli` is a thin wrapper around `apxm-driver` that exposes:
-- `compile` — compile ApxmGraph JSON/binary to an artifact
-- `execute` — compile + execute a graph via the runtime
-- `run` — execute a precompiled artifact
-- `doctor` — verify MLIR/compiler dependencies
-- `activate` — print shell exports for MLIR/LLVM env setup
-- `install` — create/update the conda env from environment.yaml
+- `compile` -- compile ApxmGraph JSON/binary to an artifact
+- `execute` -- compile + execute a graph via the runtime
+- `run` -- execute a precompiled artifact
+- `doctor` -- verify environment, dependencies, and toolchain (powered by [sniff](https://github.com/randres/sniff))
+- `activate` -- print shell exports for MLIR/LLVM env setup
+- `install` -- create/update the conda env from environment.yaml
 
 ## Responsibilities
 
 - Provide a minimal, scriptable CLI for compile/run workflows
-- Surface MLIR toolchain diagnostics (`doctor`)
+- Surface environment and toolchain diagnostics (`doctor`) using sniff for platform, dependency, conda, and CI detection
 - Bootstrap the MLIR toolchain with `install` + `activate`
 
 ## How It Fits
 
 `apxm-cli` wraps `apxm-driver` for compile/run (via the `driver` feature) and
-uses `apxm-core` diagnostics for environment checks.
+uses sniff for environment detection:
+- `sniff.PlatformDetector` -- OS, arch, distro, WSL, container detection
+- `sniff.DependencyChecker` -- tool existence and version validation
+- `sniff.CondaDetector` -- conda/mamba environment detection
+- `sniff.CIDetector` -- CI/CD provider detection and metadata extraction
+
+The Python CLI layer (`tools/scripts/`) wraps sniff types with APXM-specific logic:
+- `tools/scripts/config.py` -- `PlatformConfig` wrapping `sniff.PlatformInfo`
+- `tools/scripts/deps.py` -- APXM dependency specs using `sniff.DependencySpec`
+- `tools/scripts/doctor.py` -- doctor command using all sniff detectors
+- `tools/scripts/ci_env.py` -- CI build settings derived from `sniff.CIDetector`
 
 ## Usage
 
