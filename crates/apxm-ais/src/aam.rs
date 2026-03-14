@@ -132,7 +132,7 @@ impl Goals {
     pub fn push(&mut self, goal: Goal) {
         self.goals.push(goal);
         // Sort by priority (descending)
-        self.goals.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.goals.sort_by_key(|b| std::cmp::Reverse(b.priority));
     }
 
     /// Get the highest priority active goal.

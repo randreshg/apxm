@@ -4,8 +4,8 @@
 
 // Re-export everything from apxm-ais operations
 pub use apxm_ais::operations::{
-    AIS_OPERATIONS, AISOperationType, OperationCategory, OperationField, OperationSpec,
-    get_all_operations, get_operation_spec,
+    AIS_OPERATIONS, AISOperationType, OperationCategory, OperationField, OperationLatency,
+    OperationSpec, get_all_operations, get_operation_spec,
 };
 
 // Re-export validation from apxm-ais

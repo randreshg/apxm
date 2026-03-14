@@ -9,7 +9,7 @@
 //! ```text
 //!                     ┌─────────────┐
 //!                     │   apxm-ais  │  ← Single Source of Truth
-//!                     │  (31 ops)   │
+//!                     │  (32 ops)   │
 //!                     └──────┬──────┘
 //!                            │
 //!               ┌────────────┼────────────┐
@@ -19,7 +19,7 @@
 //!       └───────────────┘    │    └───────────────┘
 //! ```
 //!
-//! ## Operations (31 total)
+//! ## Operations (32 total)
 //!
 //! | Category | Operations |
 //! |----------|------------|
@@ -46,8 +46,8 @@ pub use aam::{AAM, Beliefs, Capabilities, Goals};
 pub use memory::MemoryTier;
 pub use operations::tablegen::generate_tablegen;
 pub use operations::{
-    AIS_OPERATIONS, AISOperationType, OperationCategory, OperationField, OperationSpec,
-    get_all_operations, get_operation_spec,
+    AIS_OPERATIONS, AISOperationType, OperationCategory, OperationField, OperationLatency,
+    OperationSpec, get_all_operations, get_operation_spec,
 };
 pub use types::Value;
 pub use validation::{

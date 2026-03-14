@@ -1,7 +1,7 @@
 //! AIS Operation Definitions - Single Source of Truth
 //!
-//! This module contains the complete specification for all 31 AIS operations
-//! (28 public + 1 metadata + 2 internal). Both the compiler and runtime use
+//! This module contains the complete specification for all 32 AIS operations
+//! (29 public + 1 metadata + 2 internal). Both the compiler and runtime use
 //! these definitions to ensure consistent semantics.
 
 use super::category::OperationCategory;
@@ -14,9 +14,9 @@ use std::fmt;
 
 /// Represents all AIS operation types.
 ///
-/// This enum is the canonical list of operations (31 total):
+/// This enum is the canonical list of operations (32 total):
 /// - 1 metadata operation (AgentOp)
-/// - 28 public operations
+/// - 29 public operations
 /// - 2 internal operations (ConstStr, Yield)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -27,8 +27,10 @@ pub enum AISOperationType {
 
     // Memory Operations (2)
     /// Query memory (read from memory system).
+    #[serde(rename = "QMEM")]
     QMem,
     /// Update memory (write to memory system).
+    #[serde(rename = "UMEM")]
     UMem,
 
     // LLM Operations (3) - Compiler markers for critical path analysis
@@ -310,6 +312,42 @@ impl OperationField {
 }
 
 // ============================================================================
+// Latency Classification
+// ============================================================================
+
+/// Expected latency tier for an operation, used by the scheduler for
+/// critical-path analysis and by agents for cost estimation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum OperationLatency {
+    /// No external I/O — executes in microseconds (control flow, sync).
+    None,
+    /// Local I/O only — millisecond range (memory, code sandbox).
+    Low,
+    /// Single LLM call or tool invocation — seconds range.
+    Medium,
+    /// Extended thinking / multi-step LLM — tens of seconds.
+    High,
+}
+
+impl OperationLatency {
+    /// Returns a human-readable label.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OperationLatency::None => "none",
+            OperationLatency::Low => "low",
+            OperationLatency::Medium => "medium",
+            OperationLatency::High => "high",
+        }
+    }
+}
+
+impl fmt::Display for OperationLatency {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+// ============================================================================
 // Operation Specification
 // ============================================================================
 
@@ -326,8 +364,14 @@ pub struct OperationSpec {
     pub name: &'static str,
     /// Operation category.
     pub category: OperationCategory,
-    /// Description of what the operation does.
+    /// Short description of what the operation does (one line).
     pub description: &'static str,
+    /// Extended description with usage guidance (for agents and docs).
+    pub long_description: &'static str,
+    /// Expected latency tier.
+    pub latency: OperationLatency,
+    /// Minimal JSON example showing typical usage (for agents).
+    pub example_json: Option<&'static str>,
     /// Required and optional input fields.
     pub fields: &'static [OperationField],
     /// Whether this operation needs async execution (submission to executor).
@@ -362,6 +406,12 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Agent",
         category: OperationCategory::Metadata,
         description: "Agent structural declaration (memory, beliefs, goals, capabilities)",
+        long_description: "Declares an agent's identity and initial AAM state. Every graph must \
+            have exactly one AGENT node. It configures memory tiers (STM/LTM/Episodic), initial \
+            beliefs and goals, and the capabilities the agent can invoke. The runtime uses this \
+            to initialize the agent's AAM before executing any other node.",
+        latency: OperationLatency::None,
+        example_json: Some(r#"{"id": 0, "op": "AGENT", "attributes": {"memory": {"stm": true}, "beliefs": {"role": "analyst"}, "goals": ["summarize data"], "capabilities": ["search", "calculate"]}}"#),
         fields: &[
             OperationField::optional("memory", "Memory configuration"),
             OperationField::optional("beliefs", "Initial beliefs"),
@@ -378,6 +428,12 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "QueryMemory",
         category: OperationCategory::Memory,
         description: "Retrieve data from memory (STM, LTM, or Episodic)",
+        long_description: "Reads from the agent's memory system. Supports three tiers: \
+            STM (short-term, per-execution scratch), LTM (long-term, persists across runs), \
+            and Episodic (execution traces). The query string is matched against stored keys. \
+            Returns the stored value or null if not found.",
+        latency: OperationLatency::Low,
+        example_json: Some(r#"{"id": 2, "op": "QMEM", "attributes": {"query": "user_name", "memory_tier": "stm"}}"#),
         fields: &[
             OperationField::required("query", "Query string or key to search for"),
             OperationField::optional("memory_tier", "Target memory tier: stm, ltm, or episodic"),
@@ -391,6 +447,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "UpdateMemory",
         category: OperationCategory::Memory,
         description: "Persist or update data in memory",
+        long_description: "Writes a key-value pair to the agent's memory system. If the key \
+            already exists, the value is overwritten. Supports the same three memory tiers as \
+            QMEM. Use FENCE after UMEM if subsequent QMEM nodes must see the write.",
+        latency: OperationLatency::Low,
+        example_json: Some(r#"{"id": 3, "op": "UMEM", "attributes": {"key": "summary", "value": "{{node_2}}", "memory_tier": "stm"}}"#),
         fields: &[
             OperationField::required("key", "Key to store the value under"),
             OperationField::required("value", "Value to store"),
@@ -400,12 +461,18 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         min_inputs: 0,
         produces_output: true,
     },
-    // ========== LLM Operations (3) - Compiler markers for critical path analysis ==========
+    // ========== LLM Operations (3) ==========
     OperationSpec {
         op_type: AISOperationType::Ask,
         name: "Ask",
         category: OperationCategory::Reasoning,
         description: "Simple Q&A with LLM (no extended thinking) - LOW latency",
+        long_description: "Sends a prompt to the configured LLM and returns the response. \
+            The lightest LLM operation — no chain-of-thought or extended thinking. Use for \
+            straightforward questions, classifications, extractions, or reformulations. \
+            Template strings support {{node_N}} interpolation for dataflow inputs.",
+        latency: OperationLatency::Medium,
+        example_json: Some(r#"{"id": 1, "op": "ASK", "attributes": {"template_str": "Summarize: {{node_0}}"}}"#),
         fields: &[
             OperationField::required("template_str", "Prompt template for the question"),
             OperationField::optional("temperature", "Sampling temperature (0.0-1.0)"),
@@ -420,6 +487,12 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Think",
         category: OperationCategory::Reasoning,
         description: "Extended thinking with token_budget - HIGH latency",
+        long_description: "Activates extended thinking (chain-of-thought) with a configurable \
+            token budget. The LLM produces internal reasoning before the final answer. Use for \
+            complex multi-step problems, math, code generation, or planning that benefits from \
+            deliberate reasoning. The budget controls how many tokens the model can spend thinking.",
+        latency: OperationLatency::High,
+        example_json: Some(r#"{"id": 1, "op": "THINK", "attributes": {"template_str": "Solve step by step: {{node_0}}", "budget": 4096}}"#),
         fields: &[
             OperationField::required("template_str", "Prompt template for deep reasoning"),
             OperationField::optional("budget", "Token budget for extended thinking"),
@@ -435,6 +508,12 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Reason",
         category: OperationCategory::Reasoning,
         description: "Structured reasoning with belief/goal updates - MEDIUM latency",
+        long_description: "Performs structured reasoning that can update the agent's beliefs \
+            and goals (AAM state). Unlike ASK, the runtime parses the LLM response for belief \
+            and goal mutations. Use when the agent needs to update its internal state based on \
+            new information. Supports structured JSON output mode.",
+        latency: OperationLatency::Medium,
+        example_json: Some(r#"{"id": 1, "op": "REASON", "attributes": {"template_str": "Given {{node_0}}, update your analysis", "structured": true}}"#),
         fields: &[
             OperationField::required("template_str", "Prompt template for structured reasoning"),
             OperationField::optional("temperature", "Sampling temperature (0.0-1.0)"),
@@ -451,6 +530,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Plan",
         category: OperationCategory::Reasoning,
         description: "Decompose goal into AIS subgraph",
+        long_description: "Uses the LLM to decompose a high-level goal into a sequence of \
+            concrete steps. The output is a structured plan that can be used to drive subsequent \
+            nodes. Supports optional constraints to bound the plan space.",
+        latency: OperationLatency::High,
+        example_json: Some(r#"{"id": 1, "op": "PLAN", "attributes": {"goal": "Research and summarize recent AI papers", "constraints": "max 5 steps"}}"#),
         fields: &[
             OperationField::required("goal", "Goal to decompose into steps"),
             OperationField::optional("constraints", "Constraints on the plan"),
@@ -464,6 +548,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Reflect",
         category: OperationCategory::Reasoning,
         description: "Analyze execution trace for self-improvement",
+        long_description: "Retrieves past execution traces and asks the LLM to analyze them \
+            for patterns, failures, or improvements. Useful for iterative refinement loops \
+            where the agent learns from its own execution history.",
+        latency: OperationLatency::Medium,
+        example_json: Some(r#"{"id": 4, "op": "REFLECT", "attributes": {"trace_query": "last_execution"}}"#),
         fields: &[
             OperationField::required("trace_query", "Query to retrieve trace for reflection"),
             OperationField::optional("reflection_prompt", "Custom prompt for reflection"),
@@ -477,6 +566,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Verify",
         category: OperationCategory::Reasoning,
         description: "Fact-check outputs against evidence",
+        long_description: "Cross-references a claim against provided evidence using the LLM. \
+            Returns a verification result with confidence score. Use after ASK/THINK/REASON \
+            nodes to validate outputs before acting on them.",
+        latency: OperationLatency::Medium,
+        example_json: Some(r#"{"id": 5, "op": "VERIFY", "attributes": {"claim": "{{node_3}}", "evidence": "{{node_4}}"}}"#),
         fields: &[
             OperationField::required("claim", "Claim to verify"),
             OperationField::required("evidence", "Evidence to check against"),
@@ -491,6 +585,12 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "InvokeTool",
         category: OperationCategory::Tools,
         description: "Call external tool with structured params; store result",
+        long_description: "Invokes a registered capability (tool or function) by name. \
+            The capability must be declared in the AGENT node's capabilities list or \
+            registered in the runtime's CapabilityRegistry. Parameters are passed as \
+            a JSON object. The tool's return value becomes this node's output token.",
+        latency: OperationLatency::Medium,
+        example_json: Some(r#"{"id": 2, "op": "INV", "attributes": {"capability": "web_search", "parameters": {"query": "{{node_1}}"}}}"#),
         fields: &[
             OperationField::required("capability", "Name of the capability/tool to invoke"),
             OperationField::optional("parameters", "Parameters to pass to the tool"),
@@ -504,6 +604,12 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "ExecuteCode",
         category: OperationCategory::Tools,
         description: "Run code in a sandboxed environment; update Beliefs",
+        long_description: "Executes arbitrary code in a sandboxed environment. The sandbox \
+            prevents file system access, network calls, and other side effects unless \
+            explicitly allowed. The code's stdout/return value becomes the output token. \
+            Execution results are also written to the agent's beliefs.",
+        latency: OperationLatency::Low,
+        example_json: Some(r#"{"id": 3, "op": "EXC", "attributes": {"code": "print(2 + 2)"}}"#),
         fields: &[
             OperationField::required("code", "Code to execute"),
             OperationField::optional("sandbox_config", "Sandbox configuration"),
@@ -517,17 +623,27 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "PrintOutput",
         category: OperationCategory::Tools,
         description: "Print output to stdout for debugging or user display",
+        long_description: "Writes a message to stdout. Supports {{node_N}} template \
+            interpolation. Useful for debugging graphs during development or displaying \
+            final results to the user. The message is also stored as the output token.",
+        latency: OperationLatency::None,
+        example_json: Some(r#"{"id": 4, "op": "PRINT", "attributes": {"message": "Result: {{node_3}}"}}"#),
         fields: &[OperationField::required("message", "Message to print")],
         needs_submission: true,
         min_inputs: 0,
         produces_output: true,
     },
-    // ========== Control Flow Operations (5) ==========
+    // ========== Control Flow Operations (7) ==========
     OperationSpec {
         op_type: AISOperationType::Jump,
         name: "Jump",
         category: OperationCategory::ControlFlow,
         description: "Unconditional jump to a labeled instruction",
+        long_description: "Transfers control flow unconditionally to a target label. \
+            The label must correspond to a node ID in the graph. Edges from this node \
+            use Control dependency type.",
+        latency: OperationLatency::None,
+        example_json: Some(r#"{"id": 5, "op": "JUMP", "attributes": {"label": "7"}}"#),
         fields: &[OperationField::required("label", "Target label to jump to")],
         needs_submission: false,
         min_inputs: 0,
@@ -538,6 +654,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "BranchOnValue",
         category: OperationCategory::ControlFlow,
         description: "Conditional branch based on token value comparison",
+        long_description: "Evaluates an input token against a value and branches to one of \
+            two labels. If the token matches the value, control goes to label_true; otherwise \
+            to label_false. Used for if/else patterns in agent workflows.",
+        latency: OperationLatency::None,
+        example_json: Some(r#"{"id": 5, "op": "BRANCH_ON_VALUE", "attributes": {"token": "{{node_4}}", "value": "yes", "label_true": "6", "label_false": "7"}}"#),
         fields: &[
             OperationField::required("token", "Token to evaluate"),
             OperationField::required("value", "Value to compare against"),
@@ -553,6 +674,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "LoopStart",
         category: OperationCategory::ControlFlow,
         description: "Begin bounded loop",
+        long_description: "Marks the beginning of a bounded loop. The count_token specifies \
+            how many iterations to execute. Must be paired with a LOOP_END node. The compiler \
+            verifies loop bounds at compile time to prevent infinite loops.",
+        latency: OperationLatency::None,
+        example_json: Some(r#"{"id": 3, "op": "LOOP_START", "attributes": {"count_token": "3"}}"#),
         fields: &[OperationField::required(
             "count_token",
             "Token containing iteration count",
@@ -566,6 +692,10 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "LoopEnd",
         category: OperationCategory::ControlFlow,
         description: "End bounded loop",
+        long_description: "Marks the end of a bounded loop started by LOOP_START. The runtime \
+            decrements the loop counter and branches back to LOOP_START if iterations remain.",
+        latency: OperationLatency::None,
+        example_json: None,
         fields: &[],
         needs_submission: false,
         min_inputs: 0,
@@ -576,6 +706,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Return",
         category: OperationCategory::ControlFlow,
         description: "Return from subgraph with result token",
+        long_description: "Returns a value from a subgraph or flow. The token attribute \
+            specifies which node's output to return. Used as the terminal node in flows \
+            invoked via FLOW_CALL.",
+        latency: OperationLatency::None,
+        example_json: Some(r#"{"id": 6, "op": "RETURN", "attributes": {"token": "{{node_5}}"}}"#),
         fields: &[OperationField::required("token", "Result token to return")],
         needs_submission: false,
         min_inputs: 1,
@@ -586,6 +721,12 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Switch",
         category: OperationCategory::ControlFlow,
         description: "Multi-way branch based on string value comparison",
+        long_description: "Routes execution to one of several branches based on matching \
+            a discriminant token against case labels. Each case specifies a label string \
+            and a destination node. If no case matches, the default destination is used. \
+            The matched branch's result becomes the output token.",
+        latency: OperationLatency::None,
+        example_json: Some(r#"{"id": 3, "op": "SWITCH", "attributes": {"discriminant": "{{node_2}}", "cases": [{"label": "math", "node_id": 4}, {"label": "code", "node_id": 5}], "default": "6"}}"#),
         fields: &[
             OperationField::required("discriminant", "Token to match against case labels"),
             OperationField::required("cases", "Array of case label/destination pairs"),
@@ -600,6 +741,12 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "FlowCall",
         category: OperationCategory::ControlFlow,
         description: "Call a flow on another agent with implicit parallelism",
+        long_description: "Invokes a named flow on a target agent. The target agent executes \
+            its flow graph independently and returns the result. Multiple FLOW_CALL nodes can \
+            execute in parallel if they have no data dependencies between them. This is the \
+            primary mechanism for multi-agent composition.",
+        latency: OperationLatency::High,
+        example_json: Some(r#"{"id": 4, "op": "FLOW_CALL", "attributes": {"agent_name": "researcher", "flow_name": "analyze", "args": {"topic": "{{node_1}}"}}}"#),
         fields: &[
             OperationField::required("agent_name", "Name of the agent to call"),
             OperationField::required("flow_name", "Name of the flow to invoke"),
@@ -615,6 +762,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Merge",
         category: OperationCategory::Synchronization,
         description: "Sync parallel paths; aggregate tokens into one",
+        long_description: "Waits for multiple parallel branches to complete and combines \
+            their output tokens into a single aggregated result. Used after parallel \
+            FLOW_CALL or fan-out patterns to collect results before further processing.",
+        latency: OperationLatency::None,
+        example_json: Some(r#"{"id": 6, "op": "MERGE", "attributes": {"tokens": ["{{node_3}}", "{{node_4}}", "{{node_5}}"]}}"#),
         fields: &[OperationField::required(
             "tokens",
             "List of tokens to merge",
@@ -628,6 +780,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Fence",
         category: OperationCategory::Synchronization,
         description: "Memory barrier; order prior QMEM/UMEM operations",
+        long_description: "Ensures all preceding memory operations (UMEM writes) are visible \
+            to subsequent QMEM reads. Without a FENCE, the scheduler may reorder memory \
+            operations for parallelism. Place between UMEM and QMEM when ordering matters.",
+        latency: OperationLatency::None,
+        example_json: None,
         fields: &[OperationField::optional(
             "ordering",
             "Memory ordering constraint",
@@ -641,6 +798,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "WaitAll",
         category: OperationCategory::Synchronization,
         description: "Block until all specified tokens are available",
+        long_description: "Blocks execution until all listed input tokens are ready. Unlike \
+            MERGE, it does not combine the tokens — it simply acts as a synchronization barrier. \
+            Commonly used before a node that needs all its inputs but doesn't need them merged.",
+        latency: OperationLatency::None,
+        example_json: Some(r#"{"id": 5, "op": "WAIT_ALL", "attributes": {"tokens": ["{{node_2}}", "{{node_3}}"]}}"#),
         fields: &[OperationField::required("tokens", "Tokens to wait for")],
         needs_submission: true,
         min_inputs: 1,
@@ -652,6 +814,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "TryCatch",
         category: OperationCategory::ErrorHandling,
         description: "Structured exception handling with recovery subgraph",
+        long_description: "Wraps a try subgraph with a catch recovery subgraph. If any node \
+            in the try subgraph fails, execution transfers to the catch subgraph. The catch \
+            subgraph receives the error context and can attempt recovery or graceful degradation.",
+        latency: OperationLatency::None,
+        example_json: Some(r#"{"id": 2, "op": "TRY_CATCH", "attributes": {"try_subgraph": "3", "catch_subgraph": "4"}}"#),
         fields: &[
             OperationField::required("try_subgraph", "Subgraph to try executing"),
             OperationField::required("catch_subgraph", "Recovery subgraph on failure"),
@@ -665,6 +832,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "HandleError",
         category: OperationCategory::ErrorHandling,
         description: "Invoke recovery template on failure; update Goals/Beliefs",
+        long_description: "Handles an error by invoking a recovery template. The error handler \
+            can update the agent's goals and beliefs to reflect the failure and adapt the agent's \
+            strategy. Typically used inside TRY_CATCH catch subgraphs.",
+        latency: OperationLatency::Medium,
+        example_json: Some(r#"{"id": 4, "op": "ERR", "attributes": {"error_handler": "retry_with_fallback"}}"#),
         fields: &[OperationField::required(
             "error_handler",
             "Error handler to invoke",
@@ -679,6 +851,12 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Communicate",
         category: OperationCategory::Communication,
         description: "Send message to recipient using protocol",
+        long_description: "Sends a message from this agent to another agent. The target agent \
+            must be reachable in the runtime's agent registry. Supports different communication \
+            protocols (direct, broadcast, request-reply). The response from the target agent \
+            becomes this node's output token.",
+        latency: OperationLatency::Medium,
+        example_json: Some(r#"{"id": 3, "op": "COMMUNICATE", "attributes": {"target_agent": "reviewer", "message": "Please review: {{node_2}}"}}"#),
         fields: &[
             OperationField::required("target_agent", "Target agent to communicate with"),
             OperationField::required("message", "Message to send"),
@@ -688,12 +866,18 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         min_inputs: 0,
         produces_output: true,
     },
-    // ========== Phase 1 ISA Extensions (4) ==========
+    // ========== Phase 1 ISA Extensions (5) ==========
     OperationSpec {
         op_type: AISOperationType::UpdateGoal,
         name: "UpdateGoal",
         category: OperationCategory::Memory,
         description: "Modify AAM goals at runtime: set, remove, or clear",
+        long_description: "Dynamically modifies the agent's goal set during execution. \
+            Supports three actions: 'set' (upsert a goal with priority), 'remove' (delete \
+            a specific goal), and 'clear' (remove all goals). Goal changes are visible to \
+            subsequent REASON and REFLECT nodes.",
+        latency: OperationLatency::None,
+        example_json: Some(r#"{"id": 3, "op": "UPDATE_GOAL", "attributes": {"goal_id": "optimize_latency", "action": "set", "priority": 2}}"#),
         fields: &[
             OperationField::required(
                 "goal_id",
@@ -711,6 +895,12 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Guard",
         category: OperationCategory::ControlFlow,
         description: "Enforce preconditions: halt or skip based on condition",
+        long_description: "Evaluates a condition expression against the input token. If the \
+            condition fails, the guard either halts execution with an error or skips the \
+            downstream subgraph (configurable via on_fail). Use to enforce invariants like \
+            confidence thresholds, non-null checks, or content validation.",
+        latency: OperationLatency::None,
+        example_json: Some(r#"{"id": 3, "op": "GUARD", "attributes": {"condition": "> 0.8", "on_fail": "skip", "error_message": "Confidence too low"}}"#),
         fields: &[
             OperationField::required(
                 "condition",
@@ -728,6 +918,12 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Claim",
         category: OperationCategory::Communication,
         description: "Atomically claim a task from a shared work queue via APXM server",
+        long_description: "Claims a task from a distributed work queue managed by the APXM \
+            server. The claim is atomic — only one agent gets each task. The claimed task \
+            is leased for a configurable duration. If the agent doesn't complete within the \
+            lease, the task returns to the queue for other agents.",
+        latency: OperationLatency::Low,
+        example_json: Some(r#"{"id": 2, "op": "CLAIM", "attributes": {"queue": "review_tasks", "lease_ms": 30000}}"#),
         fields: &[
             OperationField::required("queue", "Queue name to claim from"),
             OperationField::optional("lease_ms", "Lease duration in ms (default: 60000)"),
@@ -743,6 +939,12 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Pause",
         category: OperationCategory::Communication,
         description: "Suspend execution pending human-in-the-loop review via checkpoint",
+        long_description: "Creates a checkpoint and suspends execution until a human resumes \
+            it via the APXM server API. The pause message is displayed to the human reviewer. \
+            Optionally sends a webhook notification. The human can provide input that becomes \
+            this node's output token when RESUME is called.",
+        latency: OperationLatency::High,
+        example_json: Some(r#"{"id": 5, "op": "PAUSE", "attributes": {"message": "Please review the analysis before proceeding"}}"#),
         fields: &[
             OperationField::required("message", "Human-readable message explaining the pause"),
             OperationField::optional(
@@ -766,6 +968,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Resume",
         category: OperationCategory::ControlFlow,
         description: "Resume a suspended PAUSE checkpoint; polls server until human resumes; returns human_input",
+        long_description: "Polls the APXM server for a specific checkpoint until a human \
+            resumes it. When resumed, the human's input (if any) becomes this node's output \
+            token. Configurable polling interval and max attempts prevent indefinite blocking.",
+        latency: OperationLatency::High,
+        example_json: Some(r#"{"id": 6, "op": "RESUME", "attributes": {"checkpoint": "review_checkpoint_1"}}"#),
         fields: &[
             OperationField::required("checkpoint", "Checkpoint ID to resume from"),
             OperationField::optional(
@@ -788,6 +995,11 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "ConstStr",
         category: OperationCategory::Internal,
         description: "String constant (compiler internal for string literals)",
+        long_description: "Compiler-internal operation that produces a constant string value. \
+            Not available in the public AIS. The compiler generates CONST_STR nodes when \
+            lowering template strings to explicit dataflow.",
+        latency: OperationLatency::None,
+        example_json: None,
         fields: &[OperationField::required(
             "value",
             "The string constant value",
@@ -801,6 +1013,10 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         name: "Yield",
         category: OperationCategory::Internal,
         description: "Yield value from switch case region (terminates region)",
+        long_description: "Compiler-internal operation that terminates a switch case region \
+            and yields a value to the parent SWITCH node. Not available in the public AIS.",
+        latency: OperationLatency::None,
+        example_json: None,
         fields: &[OperationField::required(
             "value",
             "The value to yield from the region",
