@@ -1,4 +1,6 @@
 use crate::{ApxmGraph, GraphError};
+use apxm_core::constants::graph::attrs as graph_attrs;
+use apxm_core::types::{get_operation_spec, provider_spec};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 pub fn validate_graph(graph: &ApxmGraph) -> Result<(), GraphError> {
@@ -48,6 +50,7 @@ pub fn validate_graph(graph: &ApxmGraph) -> Result<(), GraphError> {
 
     validate_acyclic(graph)?;
     validate_parameters(graph)?;
+    validate_providers(graph)?;
 
     Ok(())
 }
@@ -111,5 +114,45 @@ fn validate_parameters(graph: &ApxmGraph) -> Result<(), GraphError> {
             )));
         }
     }
+    Ok(())
+}
+
+/// Validate that LLM nodes reference registered providers.
+fn validate_providers(graph: &ApxmGraph) -> Result<(), GraphError> {
+    for node in &graph.nodes {
+        if !get_operation_spec(node.op).category.requires_llm() {
+            continue;
+        }
+
+        let provider_value = match node.attributes.get(graph_attrs::PROVIDER) {
+            Some(v) => v,
+            None => continue, // No explicit provider — runtime will use its default.
+        };
+
+        let provider_name = match provider_value.as_str() {
+            Some(s) => s,
+            None => {
+                return Err(GraphError::Validation(format!(
+                    "node '{}' ({}): provider attribute must be a string",
+                    node.name, node.op
+                )));
+            }
+        };
+
+        if provider_spec::resolve_builtin_provider(provider_name).is_none() {
+            let valid: Vec<&str> = provider_spec::BUILTIN_PROVIDERS
+                .iter()
+                .map(|s| s.id)
+                .collect();
+            return Err(GraphError::Validation(format!(
+                "node '{}' ({}): unknown provider '{}'. Registered providers: {}",
+                node.name,
+                node.op,
+                provider_name,
+                valid.join(", ")
+            )));
+        }
+    }
+
     Ok(())
 }

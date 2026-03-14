@@ -1,7 +1,7 @@
 use crate::{ApxmGraph, GraphError};
 use apxm_core::constants::graph::metadata as graph_meta;
 use apxm_core::types::{
-    DependencyType, Edge, Node,
+    Edge, Node,
     execution::{DagMetadata, ExecutionDag, FlowParameter},
 };
 use std::collections::HashMap;
@@ -40,7 +40,7 @@ pub fn lower_to_execution_dag(graph: &ApxmGraph) -> Result<ExecutionDag, GraphEr
             graph_edge.from,
             graph_edge.to,
             token_id,
-            map_dependency(&graph_edge.dependency),
+            graph_edge.dependency.clone(),
         ));
     }
 
@@ -92,6 +92,3 @@ pub fn lower_to_execution_dag(graph: &ApxmGraph) -> Result<ExecutionDag, GraphEr
     })
 }
 
-fn map_dependency(dependency: &DependencyType) -> DependencyType {
-    dependency.clone()
-}

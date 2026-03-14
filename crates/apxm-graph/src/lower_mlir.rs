@@ -68,13 +68,12 @@ pub fn lower_to_mlir(graph: &ApxmGraph) -> Result<String, GraphError> {
 
     let mut state = LoweringState::new();
     let mut produced_values: HashMap<u64, MlirValueRef> = HashMap::new();
-    let mut arg_values = Vec::with_capacity(graph.parameters.len());
-    for (index, _) in graph.parameters.iter().enumerate() {
-        arg_values.push(MlirValueRef {
+    let arg_values: Vec<MlirValueRef> = (0..graph.parameters.len())
+        .map(|index| MlirValueRef {
             ssa: format!("%arg{index}"),
             ty: MlirValueType::Token,
-        });
-    }
+        })
+        .collect();
 
     for node_id in &order {
         let node = nodes_by_id.get(node_id).ok_or_else(|| {
@@ -141,10 +140,7 @@ pub fn lower_to_mlir(graph: &ApxmGraph) -> Result<String, GraphError> {
             .collect::<Result<Vec<_>, _>>()?;
 
         if token_values.len() == 1 {
-            token_values
-                .into_iter()
-                .next()
-                .ok_or_else(|| GraphError::Lowering("missing return value".to_string()))?
+            token_values.into_iter().next().unwrap()
         } else {
             let output = state.fresh_value("ret_merge");
             let operands = token_values
@@ -285,54 +281,22 @@ fn emit_node(
                 ty: MlirValueType::Token,
             }))
         }
-        AISOperationType::Ask => {
+        AISOperationType::Ask | AISOperationType::Think | AISOperationType::Reason => {
+            let op_name = match node.op {
+                AISOperationType::Ask => "ask",
+                AISOperationType::Think => "think",
+                AISOperationType::Reason => "reason",
+                _ => unreachable!(),
+            };
             let template = get_non_empty_template(&node.attributes);
             let result = format!("%n{}", node.id);
             let attrs = extra_attr_dict(
                 &node.attributes,
                 &[graph_attrs::TEMPLATE_STR, graph_attrs::PROMPT],
             );
-            let context = format_context_brackets(&inputs);
+            let context = format_context(&inputs, '[', ']');
             state.emit(format!(
-                "    {result} = ais.ask {}{}{} : !ais.token",
-                quote_string(&template),
-                context,
-                attrs
-            ));
-            Ok(Some(MlirValueRef {
-                ssa: result,
-                ty: MlirValueType::Token,
-            }))
-        }
-        AISOperationType::Think => {
-            let template = get_non_empty_template(&node.attributes);
-            let result = format!("%n{}", node.id);
-            let attrs = extra_attr_dict(
-                &node.attributes,
-                &[graph_attrs::TEMPLATE_STR, graph_attrs::PROMPT],
-            );
-            let context = format_context_brackets(&inputs);
-            state.emit(format!(
-                "    {result} = ais.think {}{}{} : !ais.token",
-                quote_string(&template),
-                context,
-                attrs
-            ));
-            Ok(Some(MlirValueRef {
-                ssa: result,
-                ty: MlirValueType::Token,
-            }))
-        }
-        AISOperationType::Reason => {
-            let template = get_non_empty_template(&node.attributes);
-            let result = format!("%n{}", node.id);
-            let attrs = extra_attr_dict(
-                &node.attributes,
-                &[graph_attrs::TEMPLATE_STR, graph_attrs::PROMPT],
-            );
-            let context = format_context_brackets(&inputs);
-            state.emit(format!(
-                "    {result} = ais.reason {}{}{} : !ais.token",
+                "    {result} = ais.{op_name} {}{}{} : !ais.token",
                 quote_string(&template),
                 context,
                 attrs
@@ -597,7 +561,12 @@ fn emit_node(
                 ty: MlirValueType::Token,
             }))
         }
-        AISOperationType::WaitAll => {
+        AISOperationType::WaitAll | AISOperationType::Merge => {
+            let op_name = match node.op {
+                AISOperationType::WaitAll => "wait_all",
+                AISOperationType::Merge => "merge",
+                _ => unreachable!(),
+            };
             let tokens = inputs
                 .into_iter()
                 .map(|value| ensure_token(state, value))
@@ -607,8 +576,7 @@ fn emit_node(
 
             if tokens.is_empty() {
                 state.emit(format!(
-                    "    {result} = ais.wait_all{} -> !ais.token",
-                    attrs
+                    "    {result} = ais.{op_name}{attrs} -> !ais.token"
                 ));
             } else {
                 let operands = tokens
@@ -618,33 +586,7 @@ fn emit_node(
                     .join(", ");
                 let types = vec!["!ais.token"; tokens.len()].join(", ");
                 state.emit(format!(
-                    "    {result} = ais.wait_all {operands} : {types}{attrs} -> !ais.token"
-                ));
-            }
-            Ok(Some(MlirValueRef {
-                ssa: result,
-                ty: MlirValueType::Token,
-            }))
-        }
-        AISOperationType::Merge => {
-            let tokens = inputs
-                .into_iter()
-                .map(|value| ensure_token(state, value))
-                .collect::<Result<Vec<_>, _>>()?;
-            let result = format!("%n{}", node.id);
-            let attrs = extra_attr_dict(&node.attributes, &[]);
-
-            if tokens.is_empty() {
-                state.emit(format!("    {result} = ais.merge{} -> !ais.token", attrs));
-            } else {
-                let operands = tokens
-                    .iter()
-                    .map(|token| token.ssa.clone())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let types = vec!["!ais.token"; tokens.len()].join(", ");
-                state.emit(format!(
-                    "    {result} = ais.merge {operands} : {types}{attrs} -> !ais.token"
+                    "    {result} = ais.{op_name} {operands} : {types}{attrs} -> !ais.token"
                 ));
             }
             Ok(Some(MlirValueRef {
@@ -662,7 +604,7 @@ fn emit_node(
                 .unwrap_or_else(|| "goal".to_string());
             let attrs = extra_attr_dict(&node.attributes, &[graph_attrs::GOAL]);
             let result = format!("%n{}", node.id);
-            let context = format_context_parens(&inputs);
+            let context = format_context(&inputs, '(', ')');
 
             state.emit(format!(
                 "    {result} = ais.plan {}{}{} : !ais.goal<0>",
@@ -686,7 +628,7 @@ fn emit_node(
                 &[graph_attrs::TRACE_ID, graph_attrs::TRACE],
             );
             let result = format!("%n{}", node.id);
-            let context = format_context_parens(&inputs);
+            let context = format_context(&inputs, '(', ')');
 
             state.emit(format!(
                 "    {result} = ais.reflect {}{}{} : !ais.token",
@@ -808,7 +750,7 @@ fn emit_const_token(state: &mut LoweringState, value: &str) -> MlirValueRef {
     }
 }
 
-fn format_context_brackets(values: &[MlirValueRef]) -> String {
+fn format_context(values: &[MlirValueRef], open: char, close: char) -> String {
     if values.is_empty() {
         return String::new();
     }
@@ -822,24 +764,7 @@ fn format_context_brackets(values: &[MlirValueRef]) -> String {
         .map(|value| format_type(&value.ty).to_string())
         .collect::<Vec<_>>()
         .join(", ");
-    format!(" [{operands} : {types}]")
-}
-
-fn format_context_parens(values: &[MlirValueRef]) -> String {
-    if values.is_empty() {
-        return String::new();
-    }
-    let operands = values
-        .iter()
-        .map(|value| value.ssa.clone())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let types = values
-        .iter()
-        .map(|value| format_type(&value.ty).to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!(" ({operands} : {types})")
+    format!(" {open}{operands} : {types}{close}")
 }
 
 fn format_type(value_type: &MlirValueType) -> String {
@@ -920,13 +845,7 @@ fn extra_attr_dict(attributes: &HashMap<String, Value>, consumed: &[&str]) -> St
 fn value_to_mlir_attr(value: &Value) -> String {
     match value {
         Value::Null => quote_string("null"),
-        Value::Bool(flag) => {
-            if *flag {
-                "true".to_string()
-            } else {
-                "false".to_string()
-            }
-        }
+        Value::Bool(flag) => flag.to_string(),
         Value::Number(Number::Integer(number)) => format!("{number} : i64"),
         Value::Number(Number::Float(number)) => {
             if number.is_finite() {
@@ -969,7 +888,6 @@ fn is_valid_attr_name(name: &str) -> bool {
 
 fn normalize_memory_space(value: &str) -> String {
     match value.trim().to_ascii_lowercase().as_str() {
-        "stm" => "stm".to_string(),
         "ltm" => "ltm".to_string(),
         "episodic" => "episodic".to_string(),
         _ => "stm".to_string(),
@@ -1005,12 +923,8 @@ fn sanitize_symbol_name(name: &str) -> String {
     if symbol.is_empty() {
         return "graph_main".to_string();
     }
-    let starts_valid = symbol
-        .chars()
-        .next()
-        .map(|ch| ch.is_ascii_alphabetic() || ch == '_')
-        .unwrap_or(false);
-    if starts_valid {
+    let first = symbol.as_bytes()[0];
+    if first.is_ascii_alphabetic() || first == b'_' {
         symbol
     } else {
         format!("g_{symbol}")

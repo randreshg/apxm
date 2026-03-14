@@ -4,7 +4,7 @@ use crate::{
     aam::Aam,
     capability::{CapabilitySystem, flow_registry::FlowRegistry},
     executor::{
-        ExecutionContext, ExecutionEventEmitter, ExecutionResult, ExecutorEngine, InnerPlanLinker,
+        ExecutionContext, ExecutionEventEmitter, ExecutorEngine, InnerPlanLinker,
         NoOpLinker,
     },
     memory::{MemoryConfig, MemorySystem},
@@ -215,45 +215,13 @@ impl Runtime {
         })
     }
 
-    /// Execute a serialized artifact
-    pub async fn execute_artifact(
-        &self,
-        artifact: Artifact,
-    ) -> Result<RuntimeExecutionResult, RuntimeError> {
-        let dag = artifact
-            .into_dag()
-            .ok_or_else(|| RuntimeError::State("Artifact contains no DAGs".to_string()))?;
-        self.execute(dag).await
-    }
-
     /// Execute a serialized artifact with automatic entry point detection and flow registration.
-    ///
-    /// This method:
-    /// 1. Checks for an `@entry` DAG in the artifact
-    /// 2. Reconstructs runtime agents and registers all flows in the FlowRegistry
-    /// 3. Executes the @entry DAG
-    ///
-    /// # Errors
-    ///
-    /// Returns `RuntimeError::State` if the artifact does not have an `@entry` flow.
     pub async fn execute_artifact_auto(
         &self,
         artifact: Artifact,
     ) -> Result<RuntimeExecutionResult, RuntimeError> {
-        // 1. Find @entry DAG
-        let entry_dag = artifact.entry_dag().cloned().ok_or_else(|| {
-            let name = artifact
-                .dags()
-                .first()
-                .and_then(|d| d.metadata.name.as_deref())
-                .unwrap_or("<unnamed>");
-            RuntimeError::State(format!(
-                "No @entry flow found in artifact '{}'. Mark a flow with @entry to designate the entry point.",
-                name
-            ))
-        })?;
+        let entry_dag = find_entry_dag(&artifact)?;
 
-        // 2. Reconstruct and register runtime agents.
         let agents = reconstruct_agents_from_artifact(&artifact);
         let num_registered_agents = agents.len();
         let num_registered_flows: usize = agents.iter().map(|agent| agent.flows.len()).sum();
@@ -276,175 +244,28 @@ impl Runtime {
             num_registered_flows
         );
 
-        // 3. Execute @entry DAG
         self.execute(entry_dag).await
     }
 
     /// Execute an artifact with provided arguments for entry flow parameters.
-    ///
-    /// This method validates that the number of arguments matches the entry flow's
-    /// parameter count, then injects the argument values into the entry tokens.
     pub async fn execute_artifact_with_args(
         &self,
         artifact: Artifact,
         args: Vec<String>,
     ) -> Result<RuntimeExecutionResult, RuntimeError> {
-        // 1. Find @entry DAG
-        let entry_dag = artifact.entry_dag().cloned().ok_or_else(|| {
-            let name = artifact
-                .dags()
-                .first()
-                .and_then(|d| d.metadata.name.as_deref())
-                .unwrap_or("<unnamed>");
-            RuntimeError::State(format!(
-                "No @entry flow found in artifact '{}'. Mark a flow with @entry to designate the entry point.",
-                name
-            ))
-        })?;
-
-        // 2. Validate argument count against parameters
-        let params = &entry_dag.metadata.parameters;
-        if args.len() != params.len() {
-            let flow_name = entry_dag.metadata.name.as_deref().unwrap_or("<unnamed>");
-            let param_desc = if params.is_empty() {
-                "no parameters".to_string()
-            } else {
-                params
-                    .iter()
-                    .map(|p| format!("{}: {}", p.name, p.type_name))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            };
-            return Err(RuntimeError::State(format!(
-                "Flow '{}' requires {} argument(s) ({}) but {} were provided",
-                flow_name,
-                params.len(),
-                param_desc,
-                args.len()
-            )));
-        }
-
-        // 3. Reconstruct and register runtime agents.
-        for agent in reconstruct_agents_from_artifact(&artifact) {
-            log_info!(
-                "runtime",
-                agent = %agent.name,
-                flows = agent.flows.len(),
-                "Auto-registering agent from artifact"
-            );
-            self.flow_registry.register_agent(agent);
-        }
-
-        // 4. Convert args to Values and execute with inputs
-        let arg_values: Vec<Value> = args.into_iter().map(Value::String).collect();
-
-        log_info!(
-            "runtime",
-            nodes = entry_dag.nodes.len(),
-            inputs = arg_values.len(),
-            "Executing DAG with {} input values",
-            arg_values.len()
-        );
-
-        #[cfg(feature = "metrics")]
-        self.llm_registry.metrics().reset();
-
-        let context = self.build_context(None, None);
-
-        let executor = Arc::new(ExecutorEngine::new(context.clone()));
-
-        let (results, stats, scheduler_metrics) = self
-            .scheduler
-            .execute(entry_dag, executor, context, arg_values)
-            .await?;
-
-        Ok(RuntimeExecutionResult {
-            results,
-            stats,
-            #[cfg(feature = "metrics")]
-            llm_metrics: self.llm_registry.metrics().aggregate(),
-            scheduler_metrics,
-        })
+        self.execute_artifact_with_session_and_emitter(artifact, args, None, None)
+            .await
     }
 
     /// Execute an artifact with positional arguments and an optional session identifier.
-    ///
-    /// Identical to [`execute_artifact_with_args`] but forwards `session_id` into the
-    /// [`ExecutionContext`] so downstream capability executors can correlate invocations.
     pub async fn execute_artifact_with_session(
         &self,
         artifact: Artifact,
         args: Vec<String>,
         session_id: Option<String>,
     ) -> Result<RuntimeExecutionResult, RuntimeError> {
-        let _lane_permit = if let Some(ref sid) = session_id {
-            Some(self.session_lane_guard.acquire(sid).await)
-        } else {
-            None
-        };
-
-        // 1. Find @entry DAG
-        let entry_dag = artifact.entry_dag().cloned().ok_or_else(|| {
-            let name = artifact
-                .dags()
-                .first()
-                .and_then(|d| d.metadata.name.as_deref())
-                .unwrap_or("<unnamed>");
-            RuntimeError::State(format!(
-                "No @entry flow found in artifact '{}'. Mark a flow with @entry to designate the entry point.",
-                name
-            ))
-        })?;
-
-        // 2. Validate argument count against parameters
-        let params = &entry_dag.metadata.parameters;
-        if args.len() != params.len() {
-            let flow_name = entry_dag.metadata.name.as_deref().unwrap_or("<unnamed>");
-            let param_desc = if params.is_empty() {
-                "no parameters".to_string()
-            } else {
-                params
-                    .iter()
-                    .map(|p| format!("{}: {}", p.name, p.type_name))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            };
-            return Err(RuntimeError::State(format!(
-                "Flow '{}' requires {} argument(s) ({}) but {} were provided",
-                flow_name,
-                params.len(),
-                param_desc,
-                args.len()
-            )));
-        }
-
-        // 3. Reconstruct and register runtime agents.
-        for agent in reconstruct_agents_from_artifact(&artifact) {
-            self.flow_registry.register_agent(agent);
-        }
-
-        // 4. Convert args to Values and execute with inputs
-        let arg_values: Vec<Value> = args.into_iter().map(Value::String).collect();
-
-        #[cfg(feature = "metrics")]
-        self.llm_registry.metrics().reset();
-
-        let context = self.build_context(session_id, None);
-
-        let executor = Arc::new(ExecutorEngine::new(context.clone()));
-
-        let (results, stats, scheduler_metrics) = self
-            .scheduler
-            .execute(entry_dag, executor, context, arg_values)
-            .await?;
-
-        Ok(RuntimeExecutionResult {
-            results,
-            stats,
-            #[cfg(feature = "metrics")]
-            llm_metrics: self.llm_registry.metrics().aggregate(),
-            scheduler_metrics,
-        })
+        self.execute_artifact_with_session_and_emitter(artifact, args, session_id, None)
+            .await
     }
 
     /// Execute an artifact with optional session ID and per-execution event emitter.
@@ -461,38 +282,8 @@ impl Runtime {
             None
         };
 
-        let entry_dag = artifact.entry_dag().cloned().ok_or_else(|| {
-            let name = artifact
-                .dags()
-                .first()
-                .and_then(|d| d.metadata.name.as_deref())
-                .unwrap_or("<unnamed>");
-            RuntimeError::State(format!(
-                "No @entry flow found in artifact '{}'. Mark a flow with @entry to designate the entry point.",
-                name
-            ))
-        })?;
-
-        let params = &entry_dag.metadata.parameters;
-        if args.len() != params.len() {
-            let flow_name = entry_dag.metadata.name.as_deref().unwrap_or("<unnamed>");
-            let param_desc = if params.is_empty() {
-                "no parameters".to_string()
-            } else {
-                params
-                    .iter()
-                    .map(|p| format!("{}: {}", p.name, p.type_name))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            };
-            return Err(RuntimeError::State(format!(
-                "Flow '{}' requires {} argument(s) ({}) but {} were provided",
-                flow_name,
-                params.len(),
-                param_desc,
-                args.len()
-            )));
-        }
+        let entry_dag = find_entry_dag(&artifact)?;
+        validate_args(&entry_dag, &args)?;
 
         for agent in reconstruct_agents_from_artifact(&artifact) {
             self.flow_registry.register_agent(agent);
@@ -518,91 +309,71 @@ impl Runtime {
         })
     }
 
-    /// Execute an artifact from raw bytes
-    pub async fn execute_artifact_bytes(
-        &self,
-        bytes: &[u8],
-    ) -> Result<RuntimeExecutionResult, RuntimeError> {
-        let artifact = Artifact::from_bytes(bytes)
-            .map_err(|e| RuntimeError::State(format!("Artifact parse error: {e}")))?;
-        self.execute_artifact(artifact).await
-    }
-
-    /// Execute an artifact from raw bytes with entry point validation.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the artifact does not have an `@entry` flow.
-    pub async fn execute_artifact_bytes_auto(
-        &self,
-        bytes: &[u8],
-    ) -> Result<RuntimeExecutionResult, RuntimeError> {
-        let artifact = Artifact::from_bytes(bytes)
-            .map_err(|e| RuntimeError::State(format!("Artifact parse error: {e}")))?;
-        self.execute_artifact_auto(artifact).await
-    }
-
-    /// Execute a DAG sequentially (for testing/debugging)
-    pub async fn execute_sequential(
-        &self,
-        dag: ExecutionDag,
-    ) -> Result<ExecutionResult, RuntimeError> {
-        log_info!(
-            "runtime",
-            nodes = dag.nodes.len(),
-            "Executing DAG sequentially"
-        );
-
-        let context = self.build_context(None, None);
-
-        let executor = ExecutorEngine::new(context);
-        executor.execute_dag(dag).await
-    }
-
-    /// Get memory system reference
     pub fn memory(&self) -> &MemorySystem {
         &self.memory
     }
 
-    /// Get LLM registry reference
     pub fn llm_registry(&self) -> &LLMRegistry {
         &self.llm_registry
     }
 
-    /// Get LLM registry as Arc (clones the Arc)
     pub fn llm_registry_arc(&self) -> Arc<LLMRegistry> {
         Arc::clone(&self.llm_registry)
     }
 
-    /// Get capability system reference
     pub fn capability_system(&self) -> &CapabilitySystem {
         &self.capability_system
     }
 
-    /// Get AAM handle
     pub fn aam(&self) -> &Aam {
         &self.aam
     }
 
-    /// Get configuration
     pub fn config(&self) -> &RuntimeConfig {
         &self.config
     }
 
-    /// Create a new execution context
-    pub fn create_context(&self) -> ExecutionContext {
-        self.build_context(None, None)
-    }
-
-    /// Get flow registry reference
     pub fn flow_registry(&self) -> &FlowRegistry {
         &self.flow_registry
     }
+}
 
-    /// Get flow registry as Arc (clones the Arc)
-    pub fn flow_registry_arc(&self) -> Arc<FlowRegistry> {
-        Arc::clone(&self.flow_registry)
+fn find_entry_dag(artifact: &Artifact) -> Result<ExecutionDag, RuntimeError> {
+    artifact.entry_dag().cloned().ok_or_else(|| {
+        let name = artifact
+            .dags()
+            .first()
+            .and_then(|d| d.metadata.name.as_deref())
+            .unwrap_or("<unnamed>");
+        RuntimeError::State(format!(
+            "No @entry flow found in artifact '{}'. Mark a flow with @entry to designate the entry point.",
+            name
+        ))
+    })
+}
+
+fn validate_args(dag: &ExecutionDag, args: &[String]) -> Result<(), RuntimeError> {
+    let params = &dag.metadata.parameters;
+    if args.len() != params.len() {
+        let flow_name = dag.metadata.name.as_deref().unwrap_or("<unnamed>");
+        let param_desc = if params.is_empty() {
+            "no parameters".to_string()
+        } else {
+            params
+                .iter()
+                .map(|p| format!("{}: {}", p.name, p.type_name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        return Err(RuntimeError::State(format!(
+            "Flow '{}' requires {} argument(s) ({}) but {} were provided",
+            flow_name,
+            params.len(),
+            param_desc,
+            args.len()
+        )));
     }
+    Ok(())
 }
 
 fn reconstruct_agents_from_artifact(artifact: &Artifact) -> Vec<Agent> {

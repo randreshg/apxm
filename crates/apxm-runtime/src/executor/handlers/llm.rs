@@ -48,19 +48,60 @@ pub enum LlmMode {
     Reason,
 }
 
+impl LlmMode {
+    fn name(self) -> &'static str {
+        match self {
+            LlmMode::Ask => "ASK",
+            LlmMode::Think => "THINK",
+            LlmMode::Reason => "REASON",
+        }
+    }
+}
+
 impl From<&AISOperationType> for LlmMode {
     fn from(op_type: &AISOperationType) -> Self {
         match op_type {
             AISOperationType::Ask => LlmMode::Ask,
             AISOperationType::Think => LlmMode::Think,
             AISOperationType::Reason => LlmMode::Reason,
-            _ => LlmMode::Ask, // Fallback for unexpected types
+            _ => LlmMode::Ask,
         }
     }
 }
 
 /// Maximum number of tool loop iterations to prevent infinite loops
 const MAX_TOOL_ITERATIONS: usize = 10;
+
+fn resolve_system_prompt(
+    ctx: &ExecutionContext,
+    node: &Node,
+    mode: LlmMode,
+) -> Result<String> {
+    let (config_instruction, template_name, fallback) = match mode {
+        LlmMode::Ask => (
+            ctx.instruction_config.ask.as_ref(),
+            "ask_system",
+            "You are a helpful AI assistant. Answer concisely.",
+        ),
+        LlmMode::Think => (
+            ctx.instruction_config.think.as_ref(),
+            "think_system",
+            "You are a deep reasoning AI. Think through problems carefully and thoroughly.",
+        ),
+        LlmMode::Reason => (
+            ctx.instruction_config.reason.as_ref(),
+            "reason_system",
+            "You are a helpful AI assistant. When providing structured responses, \
+             use JSON format with fields: belief_updates (object), new_goals (array), \
+             and result (any type).",
+        ),
+    };
+    let prompt = get_optional_string_attribute(node, graph_attrs::SYSTEM_PROMPT)?
+        .or_else(|| config_instruction.cloned())
+        .or_else(|| apxm_backends::render_prompt(template_name, &serde_json::json!({})).ok())
+        .unwrap_or_else(|| fallback.to_string());
+    Ok(prompt)
+}
 
 fn resolve_token_budget(ctx: &ExecutionContext, node: &Node) -> Option<u64> {
     node.attributes
@@ -337,11 +378,7 @@ fn default_priority() -> u32 {
 /// - **Reason**: Structured output with belief_updates, new_goals, inner_plan
 pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) -> Result<Value> {
     let mode = LlmMode::from(&node.op_type);
-    let mode_name = match mode {
-        LlmMode::Ask => "ASK",
-        LlmMode::Think => "THINK",
-        LlmMode::Reason => "REASON",
-    };
+    let mode_name = mode.name();
 
     let base_prompt = get_string_attribute(node, graph_attrs::TEMPLATE_STR)
         .or_else(|_| get_string_attribute(node, graph_attrs::PROMPT))?;
@@ -419,55 +456,15 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     let mut request = LLMRequest::new(prompt.clone());
 
     // Apply mode-specific configuration
-    match mode {
-        LlmMode::Ask => {
-            // Simple Q&A - minimal system prompt
-            // Priority: 1) node attribute (agent context), 2) config instruction, 3) template, 4) hardcoded fallback
-            let system_prompt = get_optional_string_attribute(node, graph_attrs::SYSTEM_PROMPT)?
-                .or_else(|| ctx.instruction_config.ask.clone())
-                .or_else(|| apxm_backends::render_prompt("ask_system", &serde_json::json!({})).ok())
-                .unwrap_or_else(|| "You are a helpful AI assistant. Answer concisely.".to_string());
-            request = request.with_system_prompt(system_prompt);
-        }
-        LlmMode::Think => {
-            // Extended thinking - set budget via metadata for backends that support it
-            if let Some(budget_tokens) = budget {
-                request = request
-                    .with_metadata_value("thinking_budget", serde_json::json!(budget_tokens));
-            }
-            // Priority: 1) config instruction, 2) template, 3) hardcoded fallback
-            let system_prompt = ctx
-                .instruction_config
-                .think
-                .clone()
-                .or_else(|| {
-                    apxm_backends::render_prompt("think_system", &serde_json::json!({})).ok()
-                })
-                .unwrap_or_else(|| {
-                    "You are a deep reasoning AI. Think through problems carefully and thoroughly."
-                        .to_string()
-                });
-            request = request.with_system_prompt(system_prompt);
-        }
-        LlmMode::Reason => {
-            // Structured reasoning - request JSON output
-            // Priority: 1) config instruction, 2) template, 3) hardcoded fallback
-            let system_prompt = ctx
-                .instruction_config
-                .reason
-                .clone()
-                .or_else(|| {
-                    apxm_backends::render_prompt("reason_system", &serde_json::json!({})).ok()
-                })
-                .unwrap_or_else(|| {
-                    "You are a helpful AI assistant. When providing structured responses, \
-                     use JSON format with fields: belief_updates (object), new_goals (array), \
-                     and result (any type)."
-                        .to_string()
-                });
-            request = request.with_system_prompt(system_prompt);
+    if mode == LlmMode::Think {
+        if let Some(budget_tokens) = budget {
+            request =
+                request.with_metadata_value("thinking_budget", serde_json::json!(budget_tokens));
         }
     }
+
+    let system_prompt = resolve_system_prompt(ctx, node, mode)?;
+    request = request.with_system_prompt(system_prompt);
 
     if let Some(model_name) = model {
         request = request.with_model(model_name);
@@ -481,7 +478,7 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
             .and_then(|v| v.as_boolean())
             .unwrap_or(true); // Enable by default for Ask
 
-    if tools_enabled && mode == LlmMode::Ask {
+    if tools_enabled {
         // Get tool names from node attributes, or use all registered capabilities
         let tool_names: Option<Vec<String>> = node
             .attributes
@@ -583,11 +580,7 @@ async fn execute_llm_once(
     enable_inner_plan: bool,
     bind_outputs: bool,
 ) -> Result<Value> {
-    let mode_name = match mode {
-        LlmMode::Ask => "ASK",
-        LlmMode::Think => "THINK",
-        LlmMode::Reason => "REASON",
-    };
+    let mode_name = mode.name();
 
     // For Ask mode with tools, use the tool loop
     if mode == LlmMode::Ask && request.has_tools() {
@@ -899,51 +892,13 @@ async fn process_structured_output(
     Ok(structured.result)
 }
 
-/// Parse structured output from LLM response
 fn parse_structured_output(
     content: &str,
 ) -> std::result::Result<StructuredReasonOutput, serde_json::Error> {
-    // Try to find JSON in the content
-    let trimmed = content.trim();
-
-    // Try direct parse first
-    if let Ok(output) = serde_json::from_str::<StructuredReasonOutput>(trimmed) {
-        return Ok(output);
-    }
-
-    // Try to extract JSON from markdown code block
-    if let Some(json_str) = extract_json_from_markdown(trimmed)
-        && let Ok(output) = serde_json::from_str::<StructuredReasonOutput>(&json_str)
-    {
-        return Ok(output);
-    }
-
-    // If all parsing fails, return error
-    Err(serde_json::Error::custom(
-        "Failed to parse structured output",
-    ))
-}
-
-/// Extract JSON from markdown code block
-fn extract_json_from_markdown(content: &str) -> Option<String> {
-    // Look for ```json ... ``` or ``` ... ```
-    if let Some(start) = content.find("```json")
-        && let Some(end) = content[start + 7..].find("```")
-    {
-        return Some(content[start + 7..start + 7 + end].trim().to_string());
-    }
-
-    if let Some(start) = content.find("```")
-        && let Some(end) = content[start + 3..].find("```")
-    {
-        let extracted = content[start + 3..start + 3 + end].trim();
-        // Only return if it looks like JSON
-        if extracted.starts_with('{') || extracted.starts_with('[') {
-            return Some(extracted.to_string());
-        }
-    }
-
-    None
+    let json_value = parse_json_from_text(content).ok_or_else(|| {
+        serde_json::Error::custom("Failed to parse structured output")
+    })?;
+    serde_json::from_value(json_value)
 }
 
 #[cfg(test)]
@@ -990,9 +945,9 @@ That's all."#;
     }
 
     #[test]
-    fn test_extract_json_from_markdown() {
+    fn test_extract_fenced_json() {
         let content = "```json\n{\"test\": 123}\n```";
-        let extracted = extract_json_from_markdown(content).unwrap();
+        let extracted = extract_fenced_json(content).unwrap();
         assert_eq!(extracted, "{\"test\": 123}");
     }
 

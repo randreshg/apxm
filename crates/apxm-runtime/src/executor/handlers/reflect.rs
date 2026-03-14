@@ -141,11 +141,9 @@ pub async fn execute(ctx: &ExecutionContext, node: &Node, inputs: Vec<Value>) ->
     }
 
     // Load system prompt from config, template, or fallback
-    // Priority: 1) config instruction, 2) template, 3) hardcoded fallback
-    let system_prompt = ctx
-        .instruction_config
-        .reflect
-        .clone()
+    // Priority: 1) node attribute (agent context), 2) config instruction, 3) template, 4) hardcoded fallback
+    let system_prompt = get_optional_string_attribute(node, graph_attrs::SYSTEM_PROMPT)?
+        .or_else(|| ctx.instruction_config.reflect.clone())
         .or_else(|| apxm_backends::render_prompt("reflect_system", &serde_json::json!({})).ok())
         .unwrap_or_else(|| {
             "You are an expert at analyzing execution patterns and extracting insights. \
