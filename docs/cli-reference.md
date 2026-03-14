@@ -8,16 +8,20 @@ Complete command reference for the APXM CLI. For installation and first steps, s
 
 | Command | Description |
 |---------|-------------|
-| `apxm install` | Install/update environment (conda, Rust, build, wrapper) |
+| `apxm install` | Install/update environment (conda, Rust, wrapper) |
 | `apxm doctor` | Check environment status and dependencies |
-| `apxm build` | Build compiler and runtime |
-| `apxm compile <file> -o <out>` | Compile to `.apxmobj` artifact |
+| `apxm activate` | Print shell exports for MLIR/LLVM env setup |
+| `apxm compile <file> -o <out>` | Compile ApxmGraph JSON/binary to `.apxmobj` artifact |
 | `apxm execute <file> [args]` | Compile and run in one step |
 | `apxm run <file.apxmobj> [args]` | Run a pre-compiled artifact |
-| `apxm test` | Run test suite |
+| `apxm validate <file>` | Validate an ApxmGraph JSON file |
+| `apxm analyze <file>` | Analyze an ApxmGraph for parallelism |
 | `apxm register <subcommand>` | Manage LLM credentials |
-| `apxm workloads list\|check\|run` | Manage benchmark workloads |
-| `apxm benchmarks run` | Run A-PXM vs LangGraph benchmarks |
+| `apxm tools <subcommand>` | Manage external tool/capability registrations |
+| `apxm ops <subcommand>` | Browse AIS operations |
+| `apxm template <subcommand>` | Browse graph templates |
+| `apxm explain <file>` | Explain what a graph does in human terms |
+| `apxm codelet <subcommand>` | Compose graph fragments (merge) |
 
 ---
 
@@ -31,7 +35,7 @@ apxm install --skip-deps    # Skip dependency checks
 apxm install --skip-build   # Skip build step
 ```
 
-**Stages:** Platform detection, dependency checks, conda environment, Rust toolchain, build, wrapper generation.
+**Stages:** Platform detection, dependency checks, conda environment, Rust toolchain, wrapper generation.
 
 Long-running output (conda, cargo) is captured to `.apxm/install.log` — on failure the last ~30 lines are printed automatically.
 
@@ -47,15 +51,11 @@ Checks: platform, dependencies (Rust, Cargo, CMake, Ninja, Mamba/Conda, Git), co
 
 ---
 
-## Build
+## Activate
 
 ```bash
-apxm build                  # Full project (compiler + runtime)
-apxm build --compiler       # Compiler only
-apxm build --runtime        # Runtime only
-apxm build --debug          # Debug build
-apxm build --clean          # Clean before building
-apxm build --no-trace       # Zero-overhead (tracing compiled out)
+eval "$(apxm activate)"     # Set up MLIR/LLVM env vars in current shell
+apxm activate               # Print exports (inspect without applying)
 ```
 
 ---
@@ -66,7 +66,7 @@ apxm build --no-trace       # Zero-overhead (tracing compiled out)
 apxm compile workflow.json -o workflow.apxmobj
 apxm compile workflow.json -o workflow.apxmobj -O2
 apxm compile workflow.json -o workflow.apxmobj --emit-diagnostics diag.json
-apxm compile workflow.json -o workflow.apxmobj --cargo   # Auto-build first
+apxm compile workflow.json -o workflow.apxmobj --dump-ir  # Also dump MLIR IR
 ```
 
 **Optimization levels:** `-O0` (no passes), `-O1` (default: normalize, fuse, CSE, DCE), `-O2` (additional MLIR passes), `-O3` (maximum).
@@ -90,14 +90,7 @@ apxm run workflow.apxmobj --trace info
 
 ## Tracing
 
-Build-time control:
-
-```bash
-apxm build                  # Tracing compiled in (default)
-apxm build --no-trace       # Tracing compiled out (zero overhead)
-```
-
-Runtime control (when built with tracing):
+Runtime control:
 
 | Level | What You See |
 |-------|--------------|
@@ -128,33 +121,66 @@ Supported providers: `openai`, `anthropic`, `google`, `ollama`, `openrouter`.
 
 ---
 
-## Testing
-
-**No API keys needed.** All 375+ tests use `MockLLMBackend`.
+## Validate
 
 ```bash
-apxm test                   # All tests except compiler
-apxm test --all             # All tests (requires MLIR/LLVM 21)
-apxm test --runtime         # Runtime (133 tests)
-apxm test --compiler        # Compiler (requires MLIR)
-apxm test --credentials     # Credential store
-apxm test --backends        # Backend mocks (74 tests)
-apxm test --package <name>  # Specific crate
+apxm validate graph.json              # Human-readable validation report
+apxm validate graph.json --json       # Machine-readable JSON output
 ```
 
 ---
 
-## Workloads & Benchmarks
+## Analyze
 
 ```bash
-apxm workloads list                           # List workloads
-apxm workloads check                          # Verify all compile
-apxm workloads run <name>                     # Run specific workload
+apxm analyze graph.json               # Parallelism analysis (phases, speedup estimate)
+apxm analyze graph.json --json        # Full analysis as JSON
+```
 
-apxm benchmarks run --workloads --tables      # Full benchmark suite
-apxm benchmarks run --workloads --quick       # Quick mode (3 iterations)
-apxm benchmarks run --workloads --workload 1  # Specific workload
-apxm benchmarks run --list                    # List available
+---
+
+## Ops
+
+```bash
+apxm ops list                         # All operations, grouped by category
+apxm ops list --category reasoning    # Filter by category
+apxm ops show ASK                     # Detailed info + example JSON for an op
+```
+
+---
+
+## Template
+
+```bash
+apxm template list                    # List available starter templates
+apxm template show fan-out            # Display template details
+apxm template show fan-out --json     # Emit graph JSON ready to use
+```
+
+---
+
+## Explain
+
+```bash
+apxm explain graph.json               # Human-readable explanation of what a graph does
+```
+
+---
+
+## Codelet
+
+```bash
+apxm codelet merge a.json b.json -o combined.json   # Merge graph fragments
+```
+
+---
+
+## Tools
+
+```bash
+apxm tools list                       # List registered external tools
+apxm tools add <name> --endpoint <url>  # Register an external tool/capability
+apxm tools remove <name>              # Unregister a tool
 ```
 
 ---
@@ -227,7 +253,7 @@ cargo run -p apxm-artifact --example inspect -- path/to/file.apxmobj
 
 ```bash
 rm -rf target/release/build/apxm-compiler-*
-apxm build --compiler
+cargo build -p apxm-compiler --release
 ```
 
 ---
@@ -238,6 +264,6 @@ apxm build --compiler
 
 **"MLIR toolchain not detected" / "Library not loaded"** — Re-run `apxm install` to regenerate the wrapper.
 
-**Build failures** — Check `.apxm/install.log` for full output.
+**Install failures** — Check `.apxm/install.log` for full output.
 
 **Credential issues** — Run `apxm register test` to verify API connectivity.

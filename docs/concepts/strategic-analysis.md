@@ -349,7 +349,7 @@ let guardrail = OutputGuardrail::new(|output: &str| {
 | Aspect | A-PXM | LLMCompiler |
 |--------|-------|-------------|
 | **Nature** | Formal compiler + runtime | Prompting technique |
-| **IR** | Typed MLIR dialect (17 ops) | None (Claude function calls) |
+| **IR** | Typed MLIR dialect (32 ops) | None (Claude function calls) |
 | **Optimization** | Static passes | None (LLM decides) |
 | **Determinism** | Deterministic structure | Non-deterministic |
 | **Portability** | `.apxmobj` artifact | Claude-specific |

@@ -1,6 +1,6 @@
 ---
 title: "Agent Instruction Set (AIS)"
-description: "The 17 typed operations that form the intermediate representation of A-PXM, organized into six categories."
+description: "The 32 typed operations that form the intermediate representation of A-PXM, organized into nine categories."
 ---
 
 # Agent Instruction Set (AIS)

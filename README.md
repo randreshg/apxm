@@ -58,20 +58,24 @@ Run `apxm doctor` to check your environment automatically.
 ## CLI Commands
 
 ```bash
-apxm doctor                     # Check environment (powered by sniff)
-apxm install                    # Install/update conda environment
-apxm build                      # Build full project
-apxm build --compiler           # Build compiler only
-apxm build --runtime            # Build runtime only
-apxm build --no-trace           # Build without tracing (zero overhead)
-apxm execute <file.json>         # Compile and run an ApxmGraph file
-apxm execute <file.json> --trace debug  # Run with debug tracing
-apxm compile <file.json> -o out.apxmobj # Compile to artifact
-apxm run <file.apxmobj>         # Run pre-compiled artifact
-apxm workloads list             # List benchmark workloads
-apxm workloads check            # Validate workloads compile
-apxm workloads run <name>       # Run a specific workload
-apxm benchmarks run --workloads # Run all benchmark workloads
+apxm doctor                           # Check environment (powered by sniff)
+apxm install                          # Install/update conda environment
+apxm activate                         # Print shell exports for MLIR/LLVM env setup
+apxm compile <file.json> -o out.apxmobj  # Compile to .apxmobj artifact
+apxm execute <file.json>              # Compile and run in one step
+apxm execute <file.json> --trace debug   # Run with debug tracing
+apxm run <file.apxmobj>               # Run pre-compiled artifact
+apxm validate <file.json>             # Validate an ApxmGraph JSON file
+apxm analyze <file.json>              # Analyze parallelism and critical path
+apxm register add <name> --provider openai --api-key sk-...  # Add LLM credential
+apxm register list                    # List registered credentials
+apxm tools list                       # List registered external tools
+apxm ops list                         # Browse AIS operations
+apxm ops show ASK                     # Detailed info for a specific op
+apxm template list                    # Browse graph templates
+apxm template show fan-out --json     # Emit template as ready-to-use JSON
+apxm explain <file.json>              # Explain what a graph does in human terms
+apxm codelet merge a.json b.json -o combined.json  # Merge graph fragments
 ```
 
 See [docs/cli-reference.md](docs/cli-reference.md) for complete reference.
@@ -80,15 +84,8 @@ See [docs/cli-reference.md](docs/cli-reference.md) for complete reference.
 
 ## Runtime Tracing
 
-APXM includes a two-tier tracing system for debugging and performance analysis:
+APXM includes a tracing system for debugging and performance analysis:
 
-**Build-time control:**
-```bash
-apxm build              # Default: tracing compiled in
-apxm build --no-trace   # Zero-overhead build (tracing compiled out)
-```
-
-**Runtime control** (when built with tracing):
 ```bash
 apxm execute workflow.json                  # Silent execution
 apxm execute workflow.json --trace info     # High-level execution flow

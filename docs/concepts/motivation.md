@@ -175,7 +175,7 @@ Across 10 evaluation workloads:
 - [The Agentic von Neumann Bottleneck](the-problem.md) -- The full analysis of what's broken
 - [Architecture](architecture.md) -- How the pieces fit together
 - [Agent Abstract Machine](aam.md) -- Formal state model
-- [Agent Instruction Set](ais.md) -- The 17 typed operations
+- [Agent Instruction Set](ais.md) -- The 32 typed operations
 - [Dataflow Execution](dataflow-execution.md) -- Token-based scheduling
 - [Strategic Analysis](strategic-analysis.md) -- Where A-PXM wins vs alternatives
 - [PXM Foundations](../pxm/foundations.md) -- Research lineage behind the five separations
