@@ -14,20 +14,25 @@ path = "src/main.rs"
 apxm-core = { path = "../apxm-core" }
 apxm-driver = { path = "../apxm-driver", optional = true }
 apxm-artifact = { path = "../apxm-artifact", optional = true }
-apxm-graph = { path = "../apxm-graph", optional = true }
-clap = { version = "4", features = ["derive"] }
-tokio = { version = "1.48", features = ["rt", "macros"] }
+apxm-graph = { path = "../apxm-graph" }
+clap = { version = "4.0", features = ["derive"] }
+tokio = { version = "1.0", features = ["rt", "rt-multi-thread", "macros"] }
 anyhow = "1.0"
-colored = "3.0.0"
-dirs = "5"
-serde_json = { version = "1.0", optional = true }
+colored = "3.0"
+dirs = "5.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
 apxm-credentials = { path = "../apxm-credentials" }
-rpassword = "7"
+rpassword = "7.0"
+
+[dev-dependencies]
+tempfile = "3.0"
+serde_json = "1.0"
 
 [features]
 default = []
-driver = ["dep:apxm-driver", "tokio/rt-multi-thread", "dep:apxm-artifact", "dep:apxm-graph", "dep:serde_json", "dep:tracing-subscriber"]
+driver = ["dep:apxm-driver", "tokio/rt-multi-thread", "dep:apxm-artifact", "dep:tracing-subscriber"]
 metrics = ["driver", "apxm-driver/metrics"]
 # Compile out all tracing for zero overhead (propagates through chain)
 no-trace = ["apxm-driver/no-trace", "apxm-core/no-trace"]
