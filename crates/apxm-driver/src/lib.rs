@@ -23,6 +23,7 @@
 //!   └──────────┘          └──────────┘          └──────────┘
 //! ```
 
+pub mod cache;
 pub mod compiler;
 pub mod config;
 pub mod error;
@@ -30,10 +31,7 @@ pub mod linker;
 pub mod runtime;
 
 // --- Config ---
-pub use config::{
-    ApXmConfig, CapabilityConfig, ChatConfig, ConfigError, ExecPolicyConfig, LlmBackendConfig,
-    ToolConfig,
-};
+pub use config::{ApXmConfig, ChatConfig, ConfigError, LlmBackendConfig, ToolConfig};
 
 // --- Linker ---
 pub use linker::{LinkResult, Linker, LinkerConfig};

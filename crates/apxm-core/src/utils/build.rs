@@ -78,20 +78,6 @@ pub struct LinkSpec {
 }
 
 impl LinkSpec {
-    pub fn new(
-        search_paths: Vec<PathBuf>,
-        rpaths: Vec<PathBuf>,
-        libs: Vec<String>,
-        symlink: Option<(PathBuf, PathBuf)>,
-    ) -> Self {
-        Self {
-            search_paths,
-            rpaths,
-            libs,
-            symlink,
-        }
-    }
-
     pub fn simple(lib_path: &Path, lib_name: &str) -> Self {
         let parent = lib_path
             .parent()
@@ -135,16 +121,6 @@ impl LibraryConfig {
             platform,
         }
     }
-
-    pub fn with_env_var(mut self, var: impl Into<String>) -> Self {
-        self.env_vars.push(var.into());
-        self
-    }
-
-    pub fn with_lib_dir(mut self, dir: impl Into<String>) -> Self {
-        self.lib_dirs.push(dir.into());
-        self
-    }
 }
 
 /// Locate a shared library using the provided configuration.
@@ -160,8 +136,7 @@ pub fn locate_library(config: &LibraryConfig) -> Result<LinkSpec> {
 
     let library_path = candidates
         .iter()
-        .filter_map(|prefix| find_library(prefix, config))
-        .next()
+        .find_map(|prefix| find_library(prefix, config))
         .with_context(|| {
             format!(
                 "Library not found in any candidate path. Set one of: {}",
@@ -178,7 +153,7 @@ fn gather_prefix_candidates(env_vars: &[String]) -> Vec<PathBuf> {
         .iter()
         .filter_map(|key| env::var(key).ok())
         .map(|value| normalize_candidate_prefix(&PathBuf::from(value)))
-        .filter(|path| path.exists() && path.is_dir())
+        .filter(|path| path.is_dir())
         .collect()
 }
 
@@ -190,33 +165,20 @@ fn normalize_candidate_prefix(path: &Path) -> PathBuf {
 }
 
 fn cmake_dir_to_prefix(path: &Path) -> Option<PathBuf> {
-    let parts: Vec<String> = path
-        .components()
-        .filter_map(|c| c.as_os_str().to_str().map(|s| s.to_string()))
-        .collect();
+    let package_dir = path.file_name()?.to_str()?;
+    let cmake_path = path.parent()?;
+    let cmake_dir = cmake_path.file_name()?.to_str()?;
+    let lib_path = cmake_path.parent()?;
+    let lib_dir = lib_path.file_name()?.to_str()?;
 
-    if parts.len() < 3 {
-        return None;
+    if matches!(lib_dir, "lib" | "lib64")
+        && cmake_dir.eq_ignore_ascii_case("cmake")
+        && matches!(package_dir, "mlir" | "llvm")
+    {
+        Some(lib_path.parent()?.to_path_buf())
+    } else {
+        None
     }
-
-    let tail = &parts[parts.len() - 3..];
-    let lib_dir = tail[0].as_str();
-    let cmake_dir = tail[1].as_str();
-    let package_dir = tail[2].as_str();
-
-    let is_lib_dir = matches!(lib_dir, "lib" | "lib64");
-    let is_cmake_dir = cmake_dir.eq_ignore_ascii_case("cmake");
-    let is_package_dir = matches!(package_dir, "mlir" | "llvm");
-
-    if is_lib_dir && is_cmake_dir && is_package_dir {
-        let mut prefix = path.to_path_buf();
-        for _ in 0..3 {
-            prefix = prefix.parent()?.to_path_buf();
-        }
-        return Some(prefix);
-    }
-
-    None
 }
 
 /// Find a library under the given prefix using the configuration.
@@ -225,13 +187,13 @@ fn find_library(prefix: &Path, config: &LibraryConfig) -> Option<PathBuf> {
         .lib_dirs
         .iter()
         .map(|dir_name| prefix.join(dir_name))
-        .filter(|libdir| libdir.exists() && libdir.is_dir())
+        .filter(|libdir| libdir.is_dir())
         .find_map(|libdir| {
             config
                 .lib_patterns
                 .iter()
                 .map(|pattern| libdir.join(pattern))
-                .find(|candidate| candidate.exists() && candidate.is_file())
+                .find(|candidate| candidate.is_file())
                 .or_else(|| find_versioned_library(&libdir, config))
         })
 }
@@ -289,12 +251,12 @@ fn build_link_spec(library_path: &Path, config: &LibraryConfig) -> Result<LinkSp
         (library_path.to_path_buf(), PathBuf::from(symlink_name))
     });
 
-    Ok(LinkSpec::new(
-        vec![parent.clone()],
-        vec![parent],
-        vec!["MLIR".to_string()],
+    Ok(LinkSpec {
+        search_paths: vec![parent.clone()],
+        rpaths: vec![parent],
+        libs: vec!["MLIR".to_string()],
         symlink,
-    ))
+    })
 }
 
 /// Emit cargo directives for the provided LinkSpec.
@@ -381,7 +343,6 @@ fn create_link_or_copy(src: &Path, dst: &Path) -> Result<()> {
 
 /// Detect LLVM major version from llvm-config or library files.
 pub fn detect_llvm_version(prefix: &Path) -> Option<String> {
-    // Try llvm-config first
     let config_name = if cfg!(target_os = "windows") {
         "llvm-config.exe"
     } else {
@@ -390,37 +351,27 @@ pub fn detect_llvm_version(prefix: &Path) -> Option<String> {
 
     let llvm_config = prefix.join("bin").join(config_name);
     if llvm_config.exists() {
-        Command::new(&llvm_config)
+        if let Some(version) = Command::new(&llvm_config)
             .arg("--version")
             .output()
             .ok()
             .filter(|o| o.status.success())
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .and_then(|v| v.trim().split('.').next().map(String::from))
-            .inspect(|version| {
-                log_debug!(
-                    "build::llvm",
-                    "Detected LLVM version from llvm-config: {}",
-                    version
-                )
-            })
-            .or_else(|| {
-                log_debug!(
-                    "build::llvm",
-                    "Failed to get LLVM version from llvm-config, falling back to library scan",
-                );
-                None
-            })
-    } else {
-        find_llvm_version_from_libraries(prefix)
+        {
+            log_debug!("build::llvm", "Detected LLVM version from llvm-config: {}", version);
+            return Some(version);
+        }
     }
+
+    find_llvm_version_from_libraries(prefix)
 }
 
 /// Find LLVM version by scanning library files.
 fn find_llvm_version_from_libraries(prefix: &Path) -> Option<String> {
     let platform = Platform::current();
     let lib_dir = prefix.join("lib");
-    if !lib_dir.exists() || !lib_dir.is_dir() {
+    if !lib_dir.is_dir() {
         return None;
     }
 
@@ -445,7 +396,7 @@ fn find_llvm_version_from_libraries(prefix: &Path) -> Option<String> {
                 }
             })
         })
-        .max_by(|a, b| a.cmp(b))
+        .max()
         .inspect(|version| {
             log_debug!(
                 "build::llvm",
@@ -467,30 +418,24 @@ pub fn find_versioned_mlir_library(lib_dir: &Path, llvm_version: &str) -> Option
         Platform::Linux => vec![format!("libMLIR.so.{}", llvm_version)],
     };
 
-    // Try versioned libraries first
-    for pattern in &patterns {
-        if let Ok(entries) = fs::read_dir(lib_dir) {
-            for entry in entries.filter_map(Result::ok) {
-                let path = entry.path();
-                if path.is_file()
-                    && path
-                        .file_name()
-                        .and_then(OsStr::to_str)
-                        .map(|name| name.starts_with(pattern))
-                        .unwrap_or(false)
-                {
-                    return Some(path);
+    if let Ok(entries) = fs::read_dir(lib_dir) {
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(name) = path.file_name().and_then(OsStr::to_str) {
+                    if patterns.iter().any(|p| name.starts_with(p.as_str())) {
+                        return Some(path);
+                    }
                 }
             }
         }
     }
 
-    // Fallback to unversioned library
-    let fallback_names = platform.mlir_library_patterns();
-    fallback_names
+    platform
+        .mlir_library_patterns()
         .iter()
         .map(|name| lib_dir.join(name))
-        .find(|path| path.exists() && path.is_file())
+        .find(|path| path.is_file())
 }
 
 #[derive(Debug, Clone)]
@@ -693,13 +638,9 @@ fn gather_env_vars(keys: &[String]) -> BTreeMap<String, Option<String>> {
 }
 
 fn gather_extra_env_vars() -> BTreeMap<String, String> {
-    let mut vars = BTreeMap::new();
-    for (key, value) in env::vars() {
-        if key.starts_with("MLIR_SYS_") || key.starts_with("LLVM_SYS_") {
-            vars.insert(key, value);
-        }
-    }
-    vars
+    env::vars()
+        .filter(|(key, _)| key.starts_with("MLIR_SYS_") || key.starts_with("LLVM_SYS_"))
+        .collect()
 }
 
 fn build_candidate_reports(
@@ -792,21 +733,7 @@ fn command_available(cmd: &str) -> bool {
 }
 
 fn find_in_path(cmd: &str) -> Option<PathBuf> {
-    let mut candidates = vec![cmd.to_string()];
-    if cfg!(windows) {
-        candidates.push(format!("{cmd}.exe"));
-    }
-
-    let path_var = env::var_os("PATH")?;
-    for dir in env::split_paths(&path_var) {
-        for name in &candidates {
-            let candidate = dir.join(name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
+    which::which(cmd).ok()
 }
 
 fn yes_no(value: bool) -> &'static str {

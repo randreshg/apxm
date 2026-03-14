@@ -1,8 +1,8 @@
 //! Configuration primitives for APxM tooling and runtimes.
 //!
 //! This module parses the TOML-based `~/.apxm/config.toml` (and project-specific variants)
-//! so that the driver, runtime, and future tooling can load provider definitions, capability
-//! metadata, tool guards, and execpolicy references from a single schema.
+//! so that the driver, runtime, and future tooling can load provider definitions,
+//! tool guards, and system prompts from a single schema.
 
 use std::collections::HashMap;
 use std::fs;
@@ -25,14 +25,8 @@ pub struct ApXmConfig {
     /// LLM backend definitions.
     pub llm_backends: Vec<LlmBackendConfig>,
 
-    /// Capability definitions (e.g., tool metadata files).
-    pub capabilities: Vec<CapabilityConfig>,
-
     /// Tool-specific behavior overrides.
     pub tools: HashMap<String, ToolConfig>,
-
-    /// Exec policy references.
-    pub execpolicy: ExecPolicyConfig,
 
     /// System prompts for LLM operations (ask, think, reason, plan, reflect).
     #[serde(default)]
@@ -116,19 +110,6 @@ impl Default for LlmBackendConfig {
     }
 }
 
-/// Capability descriptor used when loading capability metadata.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CapabilityConfig {
-    /// Capability name (as registered on the runtime).
-    pub name: String,
-    /// If provided, the path to a JSON schema that validates inputs.
-    pub schema_path: Option<PathBuf>,
-    /// Path to the binary/module that implements the capability.
-    pub module: Option<PathBuf>,
-    /// Enable or disable the capability in this context.
-    pub enabled: Option<bool>,
-}
-
 /// Tool-specific configuration overrides.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ToolConfig {
@@ -136,12 +117,9 @@ pub struct ToolConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
 
-    /// Trusted folders for this tool (used by execpolicy).
+    /// Trusted folders for this tool (used as fallback for allowed_paths/working_directory).
     #[serde(default)]
     pub trusted_folders: Vec<PathBuf>,
-
-    /// Optional policy name to use when the tool is invoked.
-    pub policy: Option<String>,
 
     /// Commands to block (bash).
     #[serde(default)]
@@ -216,17 +194,6 @@ pub struct ToolConfig {
     pub max_default_lines: Option<usize>,
 }
 
-/// Exec policy support (filenames, trusted descriptors, etc.).
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ExecPolicyConfig {
-    /// Explicit execpolicy files to load (e.g., `project:execpolicy.toml`).
-    #[serde(default)]
-    pub policy_files: Vec<String>,
-
-    /// Optional fallback/default policy identifier.
-    pub default_policy: Option<String>,
-}
-
 // Re-export InstructionConfig from apxm-core for consistency
 pub use apxm_core::InstructionConfig;
 
@@ -270,12 +237,6 @@ impl ApXmConfig {
     /// Build APxM standard tool configuration from config file fields.
     pub fn tools_config(&self) -> apxm_tools::ToolsConfig {
         let mut tools_config = apxm_tools::ToolsConfig::default();
-
-        for capability in &self.capabilities {
-            if let Some(enabled) = capability.enabled {
-                apply_enabled_override(&capability.name, enabled, &mut tools_config);
-            }
-        }
 
         for (tool_name, tool_config) in &self.tools {
             apply_tool_preset(tool_name, &mut tools_config);

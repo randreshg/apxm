@@ -40,8 +40,7 @@ pub use models::{
 
 // Re-export from operations (which re-exports from apxm-ais)
 pub use operations::metadata::{
-    AIS_OPERATIONS, INTERNAL_OPERATIONS, OperationField, OperationSpec, ValidationError,
-    find_operation_by_name, get_operation_spec,
+    AIS_OPERATIONS, OperationField, OperationSpec, ValidationError, get_operation_spec,
 };
 pub use operations::{AISOperation, AISOperationType, OperationCategory, validate_operation};
 

@@ -9,50 +9,10 @@
 
 mod category;
 mod definitions;
-mod metadata;
 pub mod tablegen;
 
 pub use category::OperationCategory;
 pub use definitions::{
-    AIS_OPERATIONS, AISOperationType, INTERNAL_OPERATIONS, METADATA_OPERATIONS, OperationField,
-    OperationSpec, find_operation_by_mnemonic, find_operation_by_name, get_all_operations,
-    get_operation_spec, get_public_operations,
-};
-pub use metadata::{
-    // All static metadata instances
-    AGENT,
-    ASK,
-    BRANCH_ON_VALUE,
-    CLAIM,
-    COMMUNICATE,
-    CONST_STR,
-    ERR,
-    EXC,
-    FENCE,
-    FLOW_CALL,
-    GUARD,
-    INV,
-    JUMP,
-    LOOP_END,
-    LOOP_START,
-    MERGE,
-    OperationEmit,
-    OperationMetadata,
-    PAUSE,
-    PLAN,
-    PRINT,
-    QMEM,
-    REASON,
-    REFLECT,
-    RESUME,
-    RETURN,
-    SWITCH,
-    THINK,
-    TRY_CATCH,
-    UMEM,
-    UPDATE_GOAL,
-    VERIFY,
-    WAIT_ALL,
-    YIELD,
-    get_operation_metadata,
+    AIS_OPERATIONS, AISOperationType, OperationField, OperationSpec, get_all_operations,
+    get_operation_spec,
 };

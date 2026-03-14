@@ -38,12 +38,10 @@ across the toolchain.
 ## Usage
 
 ```rust
-use apxm_ais::{
-    AISOperationType, OperationMetadata, get_operation_metadata, generate_tablegen,
-};
+use apxm_ais::{AISOperationType, get_operation_spec, generate_tablegen};
 
-let meta: &OperationMetadata = get_operation_metadata(AISOperationType::Ask);
-println!("Operation: {}", meta.name);
+let spec = get_operation_spec(AISOperationType::Ask);
+println!("Operation: {} ({})", spec.name, spec.op_type.mlir_mnemonic());
 
 let tablegen = generate_tablegen();
 println!("TableGen bytes: {}", tablegen.len());

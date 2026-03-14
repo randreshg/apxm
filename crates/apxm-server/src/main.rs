@@ -53,16 +53,11 @@ use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetReques
 use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 
-fn unix_now_ms() -> u64 {
+fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
-}
-
-/// Alias used by task queue and checkpoint handlers.
-fn now_ms() -> u64 {
-    unix_now_ms()
 }
 
 // ─── Agent Registry ─────────────────────────────────────────────────────────
@@ -153,6 +148,29 @@ impl TaskQueueManager {
     async fn claim(&self, queue_name: &str, agent_id: &str, lease_ms: u64) -> Option<QueuedTask> {
         let queue: Arc<Mutex<VecDeque<QueuedTask>>> = self.inner.get(queue_name)?.value().clone();
         let mut guard = queue.lock().await;
+
+        // Expire stale claims so their tasks become available again.
+        let now = now_ms();
+        for task in guard.iter_mut() {
+            if task.status == TaskStatus::Claimed {
+                if let Some(expires) = task.lease_expires_ms {
+                    if now > expires {
+                        task.status = TaskStatus::Pending;
+                        task.claim_token = None;
+                        task.claimed_by = None;
+                        task.lease_expires_ms = None;
+                        // Mirror into all_tasks index.
+                        if let Some(mut indexed) = self.all_tasks.get_mut(&task.id) {
+                            indexed.status = TaskStatus::Pending;
+                            indexed.claim_token = None;
+                            indexed.claimed_by = None;
+                            indexed.lease_expires_ms = None;
+                        }
+                    }
+                }
+            }
+        }
+
         let pos = guard.iter().position(|t| t.status == TaskStatus::Pending)?;
         let task = guard.get_mut(pos)?;
         let claim_token = uuid::Uuid::new_v4().to_string();
@@ -178,6 +196,11 @@ impl TaskQueueManager {
             .ok_or_else(|| format!("Task '{}' not found", task_id))?;
         if task.claim_token.as_deref() != Some(claim_token) {
             return Err("Invalid claim token".to_string());
+        }
+        if let Some(expires) = task.lease_expires_ms {
+            if now_ms() > expires {
+                return Err("lease_expired: Task lease has expired. Task may have been reclaimed by another worker.".to_string());
+            }
         }
         task.status = TaskStatus::Completed;
         task.result = Some(result.clone());
@@ -391,7 +414,10 @@ struct A2aTaskRecord {
 #[serde(tag = "type", rename_all = "lowercase")]
 enum A2aPart {
     Text { text: String },
-    Data { data: JsonValue },
+    Data {
+        #[allow(dead_code)]
+        data: JsonValue,
+    },
 }
 
 /// Inbound A2A message envelope.
@@ -410,50 +436,6 @@ struct A2aSendTaskRequest {
     #[serde(default)]
     #[allow(dead_code)]
     metadata: Option<JsonValue>,
-}
-
-// ─── MCP JSON-RPC 2.0 Types ──────────────────────────────────────────────────
-
-/// Structured outbound MCP JSON-RPC 2.0 response.
-///
-/// Using a typed struct (rather than ad-hoc `serde_json::json!`) ensures the
-/// envelope fields are always correct and prevents field-name typos.
-#[derive(Debug, Serialize)]
-struct McpResponse {
-    jsonrpc: String,
-    id: JsonValue,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<JsonValue>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<McpResponseError>,
-}
-
-#[derive(Debug, Serialize)]
-struct McpResponseError {
-    code: i32,
-    message: String,
-}
-
-impl McpResponse {
-    fn ok(id: JsonValue, result: JsonValue) -> Self {
-        Self {
-            jsonrpc: "2.0".to_string(),
-            id,
-            result: Some(result),
-            error: None,
-        }
-    }
-    fn err(id: JsonValue, code: i32, message: impl Into<String>) -> Self {
-        Self {
-            jsonrpc: "2.0".to_string(),
-            id,
-            result: None,
-            error: Some(McpResponseError {
-                code,
-                message: message.into(),
-            }),
-        }
-    }
 }
 
 // ─── Execute Request ─────────────────────────────────────────────────────────
@@ -1045,7 +1027,7 @@ async fn search_facts(
         .await
         .map_err(ApiError::runtime)?;
     Ok(Json(
-        serde_json::to_value(results).map_err(ApiError::internal)?,
+        serde_json::to_value(results).map_err(|e| ApiError::internal_message(e.to_string()))?,
     ))
 }
 
@@ -1121,7 +1103,7 @@ fn prepare_request(
     mut req: ExecuteRequest,
 ) -> Result<(ApxmGraph, Vec<String>, Option<String>), ApiError> {
     let mut graph = ApxmGraph::from_json(
-        &serde_json::to_string(&req.graph).map_err(ApiError::bad_request_json)?,
+        &serde_json::to_string(&req.graph).map_err(|e| ApiError::bad_request(format!("invalid json: {e}")))?,
     )
     .map_err(|e| ApiError::bad_request(format!("invalid graph: {e}")))?;
     apply_runtime_attributes(
@@ -1269,7 +1251,7 @@ async fn register_agent(
         url: req.url,
         flows: req.flows,
         capabilities: req.capabilities,
-        registered_at: unix_now_ms(),
+        registered_at: now_ms(),
     };
     info!(name = %req.name, "Registering agent");
     state.agent_registry.insert(req.name.clone(), reg);
@@ -1502,14 +1484,7 @@ async fn a2a_send_task(
 async fn a2a_get_task(State(state): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
     match state.a2a_tasks.get(&id) {
         Some(record) => {
-            let state_str = match record.state {
-                A2aState::Submitted => "submitted",
-                A2aState::Working => "working",
-                A2aState::Completed => "completed",
-                A2aState::Failed => "failed",
-                A2aState::Canceled => "canceled",
-            };
-            let mut body = serde_json::json!({"id": record.id, "status": {"state": state_str}});
+            let mut body = serde_json::json!({"id": record.id, "status": {"state": record.state}});
             if let Some(ref text) = record.output_text {
                 body["result"] = serde_json::json!({"message": {"role": "agent", "parts": [{"type": "text", "text": text}]}});
             }
@@ -1542,10 +1517,6 @@ impl ApiError {
         }
     }
 
-    fn bad_request_json(error: serde_json::Error) -> Self {
-        Self::bad_request(format!("invalid json: {error}"))
-    }
-
     fn not_found(message: impl Into<String>) -> Self {
         Self {
             status: axum::http::StatusCode::NOT_FOUND,
@@ -1555,13 +1526,6 @@ impl ApiError {
 
     fn runtime(error: RuntimeError) -> Self {
         error!(error = %error, "runtime error");
-        Self {
-            status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            message: error.to_string(),
-        }
-    }
-
-    fn internal(error: serde_json::Error) -> Self {
         Self {
             status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             message: error.to_string(),
@@ -1705,9 +1669,13 @@ async fn complete_task(
         .task_manager
         .complete(&id, &req.claim_token, req.result)
         .await
-        .map_err(|e| ApiError {
-            status: axum::http::StatusCode::BAD_REQUEST,
-            message: e,
+        .map_err(|e| {
+            let status = if e.starts_with("lease_expired:") {
+                axum::http::StatusCode::CONFLICT
+            } else {
+                axum::http::StatusCode::BAD_REQUEST
+            };
+            ApiError { status, message: e }
         })?;
     info!(id = %id, success = %req.success, "Task completed");
     Ok(Json(serde_json::json!({ "ok": true, "id": id })))

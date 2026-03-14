@@ -28,6 +28,7 @@ async-trait = "0.1"
 # Utilities
 thiserror = "2.0"
 dirs = "5.0"
+sha2 = "0.10"
 tempfile = "3.3"
 parking_lot = "0.12"
 tracing = "0.1.43"

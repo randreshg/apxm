@@ -2,21 +2,12 @@
 
 use serde::{Deserialize, Serialize};
 
-/// System prompts for LLM operations (ask, think, reason, plan, reflect).
+/// Fallback system prompts for LLM operations.
 ///
-/// These prompts are shared between APXM runtime and LangGraph benchmarks
-/// to ensure consistent behavior across both implementations.
-///
-/// Configuration is typically loaded from `~/.apxm/config.toml` under `[instruction]`:
-///
-/// ```toml
-/// [instruction]
-/// ask = "You are a helpful AI assistant."
-/// think = "Think step by step."
-/// reason = "Provide structured reasoning."
-/// plan = "Create actionable plans."
-/// reflect = "Analyze execution patterns."
-/// ```
+/// These are tier-2 defaults used when a node does not carry an explicit
+/// `system_prompt` attribute (tier-1). AgentMate frontends compose
+/// per-operation instructions into the node attribute at graph construction
+/// time, so this config is only consulted as a runtime fallback.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct InstructionConfig {
     /// System prompt for ASK operations (simple Q&A).
@@ -33,6 +24,9 @@ pub struct InstructionConfig {
 
     /// System prompt for REFLECT operations (execution analysis and insights).
     pub reflect: Option<String>,
+
+    /// System prompt for VERIFY operations (condition verification).
+    pub verify: Option<String>,
 }
 
 impl InstructionConfig {
@@ -49,6 +43,7 @@ impl InstructionConfig {
             "reason" => self.reason.as_deref(),
             "plan" => self.plan.as_deref(),
             "reflect" => self.reflect.as_deref(),
+            "verify" => self.verify.as_deref(),
             _ => None,
         }
     }

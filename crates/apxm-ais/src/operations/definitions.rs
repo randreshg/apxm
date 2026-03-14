@@ -197,59 +197,6 @@ impl AISOperationType {
         }
     }
 
-    /// Returns true if this is a public AIS operation (part of the 28).
-    pub fn is_public(&self) -> bool {
-        !matches!(
-            self,
-            AISOperationType::ConstStr | AISOperationType::Yield | AISOperationType::Agent
-        )
-    }
-
-    /// Returns true if this is a metadata operation.
-    pub fn is_metadata(&self) -> bool {
-        matches!(self, AISOperationType::Agent)
-    }
-
-    /// Returns true if this is an internal operation.
-    pub fn is_internal(&self) -> bool {
-        matches!(self, AISOperationType::ConstStr | AISOperationType::Yield)
-    }
-
-    /// Get all public operation types (28 operations).
-    pub fn public_operations() -> &'static [AISOperationType] {
-        &[
-            AISOperationType::QMem,
-            AISOperationType::UMem,
-            AISOperationType::Ask,
-            AISOperationType::Think,
-            AISOperationType::Reason,
-            AISOperationType::Plan,
-            AISOperationType::Reflect,
-            AISOperationType::Verify,
-            AISOperationType::Inv,
-            AISOperationType::Exc,
-            AISOperationType::Jump,
-            AISOperationType::BranchOnValue,
-            AISOperationType::LoopStart,
-            AISOperationType::LoopEnd,
-            AISOperationType::Return,
-            AISOperationType::Switch,
-            AISOperationType::FlowCall,
-            AISOperationType::Merge,
-            AISOperationType::Fence,
-            AISOperationType::WaitAll,
-            AISOperationType::TryCatch,
-            AISOperationType::Err,
-            AISOperationType::Communicate,
-            // Phase 1 ISA extensions
-            AISOperationType::UpdateGoal,
-            AISOperationType::Guard,
-            AISOperationType::Claim,
-            AISOperationType::Pause,
-            AISOperationType::Resume,
-        ]
-    }
-
     /// Maps a wire-format operation kind index (u32) to an `AISOperationType`.
     ///
     /// This is the **single source of truth** for the u32→AISOperationType mapping
@@ -397,49 +344,34 @@ impl OperationSpec {
         self.fields.iter().find(|f| f.name == name)
     }
 
-    /// Check if a field is required.
-    pub fn is_field_required(&self, name: &str) -> bool {
-        self.get_field(name).is_some_and(|f| f.required)
-    }
-
     /// Get all required fields.
     pub fn required_fields(&self) -> impl Iterator<Item = &OperationField> {
         self.fields.iter().filter(|f| f.required)
     }
-
-    /// Get all optional fields.
-    pub fn optional_fields(&self) -> impl Iterator<Item = &OperationField> {
-        self.fields.iter().filter(|f| !f.required)
-    }
 }
 
 // ============================================================================
-// Metadata Operations (1) - Agent structural declaration
+// Operation Registry
 // ============================================================================
 
-/// Metadata operations (1 operation).
-pub static METADATA_OPERATIONS: &[OperationSpec] = &[OperationSpec {
-    op_type: AISOperationType::Agent,
-    name: "Agent",
-    category: OperationCategory::Metadata,
-    description: "Agent structural declaration (memory, beliefs, goals, capabilities)",
-    fields: &[
-        OperationField::optional("memory", "Memory configuration"),
-        OperationField::optional("beliefs", "Initial beliefs"),
-        OperationField::optional("goals", "Initial goals"),
-        OperationField::optional("capabilities", "Available capabilities"),
-    ],
-    needs_submission: false,
-    min_inputs: 0,
-    produces_output: false,
-}];
-
-// ============================================================================
-// Operation Registry: 28 Public Operations
-// ============================================================================
-
-/// All 29 public AIS operations with complete metadata.
+/// All AIS operations (metadata + public + internal) with complete specs.
 pub static AIS_OPERATIONS: &[OperationSpec] = &[
+    // ========== Metadata Operation (1) ==========
+    OperationSpec {
+        op_type: AISOperationType::Agent,
+        name: "Agent",
+        category: OperationCategory::Metadata,
+        description: "Agent structural declaration (memory, beliefs, goals, capabilities)",
+        fields: &[
+            OperationField::optional("memory", "Memory configuration"),
+            OperationField::optional("beliefs", "Initial beliefs"),
+            OperationField::optional("goals", "Initial goals"),
+            OperationField::optional("capabilities", "Available capabilities"),
+        ],
+        needs_submission: false,
+        min_inputs: 0,
+        produces_output: false,
+    },
     // ========== Memory Operations (2) ==========
     OperationSpec {
         op_type: AISOperationType::QMem,
@@ -850,14 +782,7 @@ pub static AIS_OPERATIONS: &[OperationSpec] = &[
         min_inputs: 0,
         produces_output: true,
     },
-];
-
-// ============================================================================
-// Internal Operations (not part of public AIS)
-// ============================================================================
-
-/// Internal operations used by the compiler but not exposed in the public AIS.
-pub static INTERNAL_OPERATIONS: &[OperationSpec] = &[
+    // ========== Internal Operations (2) ==========
     OperationSpec {
         op_type: AISOperationType::ConstStr,
         name: "ConstStr",
@@ -891,56 +816,21 @@ pub static INTERNAL_OPERATIONS: &[OperationSpec] = &[
 // ============================================================================
 
 /// Get the specification for an operation type.
-///
-/// This function never fails - all operation types have corresponding specs.
-/// It checks metadata, public, and internal operations.
 pub fn get_operation_spec(op_type: AISOperationType) -> &'static OperationSpec {
-    // Check metadata operations
-    if let Some(spec) = METADATA_OPERATIONS.iter().find(|s| s.op_type == op_type) {
-        return spec;
-    }
-
-    // Check public operations
-    if let Some(spec) = AIS_OPERATIONS.iter().find(|s| s.op_type == op_type) {
-        return spec;
-    }
-
-    // Check internal operations
-    if let Some(spec) = INTERNAL_OPERATIONS.iter().find(|s| s.op_type == op_type) {
-        return spec;
-    }
-
-    // This should never happen if the operation type enum and specs are in sync
-    panic!(
-        "Operation {:?} has no specification. This is a bug - all operations must have specs.",
-        op_type
-    );
-}
-
-/// Get all operation specifications (metadata + public + internal).
-pub fn get_all_operations() -> impl Iterator<Item = &'static OperationSpec> {
-    METADATA_OPERATIONS
+    AIS_OPERATIONS
         .iter()
-        .chain(AIS_OPERATIONS.iter())
-        .chain(INTERNAL_OPERATIONS.iter())
+        .find(|s| s.op_type == op_type)
+        .unwrap_or_else(|| {
+            panic!(
+                "Operation {:?} has no specification. This is a bug - all operations must have specs.",
+                op_type
+            )
+        })
 }
 
-/// Get only public operation specifications.
-pub fn get_public_operations() -> impl Iterator<Item = &'static OperationSpec> {
+/// Get all operation specifications.
+pub fn get_all_operations() -> impl Iterator<Item = &'static OperationSpec> {
     AIS_OPERATIONS.iter()
-}
-
-/// Find an operation specification by name.
-///
-/// Searches metadata, public, and internal operations.
-/// Returns None if no operation with the given name exists.
-pub fn find_operation_by_name(name: &str) -> Option<&'static OperationSpec> {
-    get_all_operations().find(|s| s.name == name)
-}
-
-/// Find an operation specification by MLIR mnemonic.
-pub fn find_operation_by_mnemonic(mnemonic: &str) -> Option<&'static OperationSpec> {
-    get_all_operations().find(|s| s.op_type.mlir_mnemonic() == mnemonic)
 }
 
 // ============================================================================
@@ -962,51 +852,15 @@ mod tests {
     #[test]
     fn test_operation_counts() {
         assert_eq!(
-            METADATA_OPERATIONS.len(),
-            1,
-            "Expected 1 metadata operation"
-        );
-        assert_eq!(
             AIS_OPERATIONS.len(),
-            29,
-            "Expected 29 public AIS operations (24 original + 5 phase-1 extensions)"
-        );
-        assert_eq!(
-            INTERNAL_OPERATIONS.len(),
-            2,
-            "Expected 2 internal operations (ConstStr, Yield)"
+            32,
+            "Expected 32 total operations (1 metadata + 29 public + 2 internal)"
         );
         assert_eq!(
             AISOperationType::all_operations().len(),
             32,
-            "Expected 32 total operations (27 original + 5 phase-1 extensions)"
+            "Expected 32 total operation types"
         );
-    }
-
-    #[test]
-    fn test_agent_is_metadata() {
-        assert!(AISOperationType::Agent.is_metadata());
-        assert!(!AISOperationType::Agent.is_public());
-        assert!(!AISOperationType::Agent.is_internal());
-    }
-
-    #[test]
-    fn test_const_str_is_internal() {
-        assert!(AISOperationType::ConstStr.is_internal());
-        assert!(!AISOperationType::ConstStr.is_public());
-        assert!(!AISOperationType::ConstStr.is_metadata());
-    }
-
-    #[test]
-    fn test_llm_ops_are_public() {
-        // All three LLM ops are public
-        assert!(AISOperationType::Ask.is_public());
-        assert!(AISOperationType::Think.is_public());
-        assert!(AISOperationType::Reason.is_public());
-        // None are internal or metadata
-        assert!(!AISOperationType::Ask.is_internal());
-        assert!(!AISOperationType::Think.is_internal());
-        assert!(!AISOperationType::Reason.is_internal());
     }
 
     #[test]

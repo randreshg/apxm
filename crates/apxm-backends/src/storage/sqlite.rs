@@ -9,11 +9,7 @@ use sqlx::{
     SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
 };
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
+use std::{path::Path, sync::Arc, time::Duration};
 
 const SQLITE_SPACE: &str = "sqlite";
 const SCHEMA_KV_STORE: &str = r#"
@@ -79,7 +75,6 @@ fn escape_like(s: &str) -> String {
 #[derive(Clone)]
 pub struct SqliteBackend {
     pool: SqlitePool,
-    path: PathBuf,
     embedder: Option<Arc<dyn Embedder>>,
 }
 
@@ -87,7 +82,7 @@ impl SqliteBackend {
     /// Time:  O(1) per connection (schema is constant-size)
     /// Space: O(1)
     pub async fn new<P: AsRef<Path>>(path: P, max_connections: Option<u32>) -> StorageResult<Self> {
-        let path = path.as_ref().to_path_buf();
+        let path = path.as_ref();
         let in_memory = path == Path::new(":memory:");
 
         let max_conn = if in_memory {
@@ -108,7 +103,7 @@ impl SqliteBackend {
         options = if in_memory {
             options.in_memory(true)
         } else {
-            options.filename(&path).create_if_missing(true)
+            options.filename(path).create_if_missing(true)
         };
 
         if !in_memory {
@@ -120,28 +115,13 @@ impl SqliteBackend {
         let pool = SqlitePoolOptions::new()
             .max_connections(max_conn)
             .acquire_timeout(Duration::from_secs(30))
-            .after_connect(move |conn, _meta| {
+            .after_connect(|conn, _meta| {
                 Box::pin(async move {
-                    // Reborrow `conn` for each call; do not move it.
-                    sqlx::query("PRAGMA foreign_keys = ON;")
-                        .execute(&mut *conn)
-                        .await?;
-
-                    if !in_memory {
-                        sqlx::query("PRAGMA journal_mode = WAL;")
-                            .execute(&mut *conn)
-                            .await?;
-                        sqlx::query("PRAGMA synchronous = NORMAL;")
-                            .execute(&mut *conn)
-                            .await?;
-                    }
-
                     sqlx::query(SCHEMA_KV_STORE).execute(&mut *conn).await?;
                     sqlx::query(SCHEMA_KV_FTS).execute(&mut *conn).await?;
                     sqlx::query(SCHEMA_KV_EMBEDDINGS)
                         .execute(&mut *conn)
                         .await?;
-
                     Ok(())
                 })
             })
@@ -151,14 +131,12 @@ impl SqliteBackend {
 
         Ok(Self {
             pool,
-            path,
             embedder: None,
         })
     }
 
     pub async fn in_memory() -> StorageResult<Self> {
-        // Pool will be forced to 1 connection for correctness.
-        Self::new(":memory:", Some(4)).await
+        Self::new(":memory:", None).await
     }
 
     /// Attach an embedder for vector similarity search.
@@ -168,26 +146,6 @@ impl SqliteBackend {
     pub fn with_embedder(mut self, embedder: Arc<dyn Embedder>) -> Self {
         self.embedder = Some(embedder);
         self
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    pub async fn vacuum(&self) -> StorageResult<()> {
-        sqlx::query("VACUUM")
-            .execute(&self.pool)
-            .await
-            .map_err(|e| mem_err("vacuum", e))?;
-        Ok(())
-    }
-
-    pub async fn optimize(&self) -> StorageResult<()> {
-        sqlx::query("PRAGMA optimize")
-            .execute(&self.pool)
-            .await
-            .map_err(|e| mem_err("optimize", e))?;
-        Ok(())
     }
 
     /// Extract text content from a JSON value for FTS5 indexing.
@@ -314,7 +272,7 @@ impl StorageBackend for SqliteBackend {
 
     async fn exists(&self, key: &str) -> StorageResult<bool> {
         let exists = sqlx::query_scalar::<_, i64>(
-            "SELECT EXISTS(SELECT 1 FROM kv_store WHERE key = ?1 LIMIT 1)",
+            "SELECT EXISTS(SELECT 1 FROM kv_store WHERE key = ?1)",
         )
         .bind(key)
         .fetch_one(&self.pool)
@@ -508,9 +466,7 @@ impl StorageBackend for SqliteBackend {
             .await
             .map_err(|e| mem_err("stats page_size", e))?;
 
-        let total_size_bytes = (page_count as u128)
-            .saturating_mul(page_size as u128)
-            .min(usize::MAX as u128) as usize;
+        let total_size_bytes = (page_count * page_size) as usize;
 
         Ok(BackendStats {
             total_keys: total_keys.max(0) as usize,

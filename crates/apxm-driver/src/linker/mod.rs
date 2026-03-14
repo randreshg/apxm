@@ -3,13 +3,14 @@
 use std::path::Path;
 
 use apxm_artifact::Artifact;
-use apxm_compiler::Module;
 use apxm_core::error::runtime::RuntimeError;
 use apxm_core::log_info;
 use apxm_core::types::OptimizationLevel;
 use apxm_runtime::{RuntimeConfig, RuntimeExecutionResult};
 
-use crate::{compiler::Compiler, config::ApXmConfig, error::DriverError, runtime::RuntimeExecutor};
+use crate::{
+    cache, compiler::Compiler, config::ApXmConfig, error::DriverError, runtime::RuntimeExecutor,
+};
 
 /// Linker configuration that drives compiler and runtime orchestration.
 #[derive(Debug, Clone)]
@@ -22,6 +23,9 @@ pub struct LinkerConfig {
 
     /// Optimization level for compilation.
     pub opt_level: OptimizationLevel,
+
+    /// When `true`, skip the artifact cache entirely.
+    pub no_cache: bool,
 }
 
 impl LinkerConfig {
@@ -31,6 +35,7 @@ impl LinkerConfig {
             apxm_config,
             runtime_config: RuntimeConfig::default(),
             opt_level: OptimizationLevel::O1,
+            no_cache: false,
         }
     }
 
@@ -43,8 +48,6 @@ impl LinkerConfig {
 
 /// Result returned after linking compilation/runtime steps.
 pub struct LinkResult {
-    /// Compiler module produced by linking.
-    pub module: Option<Module>,
     /// Compiled artifact that can be reused.
     pub artifact: Artifact,
     /// Runtime execution report for this artifact.
@@ -59,8 +62,6 @@ pub struct LinkResult {
 #[derive(Debug, Clone)]
 pub struct LinkMetrics {
     pub compile_time: std::time::Duration,
-    pub artifact_time: std::time::Duration,
-    pub validation_time: std::time::Duration,
     pub runtime_time: std::time::Duration,
 }
 
@@ -68,6 +69,7 @@ pub struct LinkMetrics {
 pub struct Linker {
     compiler: Compiler,
     runtime: RuntimeExecutor,
+    no_cache: bool,
 }
 
 impl Linker {
@@ -75,28 +77,48 @@ impl Linker {
     pub async fn new(config: LinkerConfig) -> Result<Self, DriverError> {
         let compiler = Compiler::with_opt_level(config.opt_level)?;
         let runtime = RuntimeExecutor::new(&config).await?;
+        let no_cache = config.no_cache;
 
-        Ok(Self { compiler, runtime })
-    }
-
-    /// Compile graph file without execution (for validation)
-    ///
-    /// This method compiles the input file to verify graph correctness
-    /// without executing it. Useful for:
-    /// - Pre-validation before execution
-    /// - Graph generation feedback loops
-    /// - IDE/tooling integration
-    ///
-    /// Returns the compiled Module on success, or a CompilerError on failure.
-    pub fn compile_only(&self, input: &Path) -> Result<Module, DriverError> {
-        self.compiler.compile(input)
+        Ok(Self {
+            compiler,
+            runtime,
+            no_cache,
+        })
     }
 
     /// Compile graph input into an executable artifact.
+    ///
+    /// When caching is enabled (the default), the graph JSON is hashed and
+    /// looked up in `~/.cache/apxm/artifacts/`.  On a cache hit the
+    /// compilation step is skipped entirely.
     pub fn compile_graph(&self, input: &Path) -> Result<Artifact, DriverError> {
         let graph = self.compiler.load_graph(input)?;
+
+        // Try the artifact cache first.
+        let graph_json = graph.to_json().unwrap_or_default();
+        let hash = cache::graph_hash(&graph_json).ok();
+
+        if !self.no_cache {
+            if let Some(ref h) = hash {
+                if let Some(cached_bytes) = cache::load_cached(h)? {
+                    log_info!("driver", "cache hit for graph hash {}", h);
+                    let artifact = Artifact::from_bytes(&cached_bytes)
+                        .map_err(|e| DriverError::Runtime(RuntimeError::State(e.to_string())))?;
+                    return Ok(artifact);
+                }
+            }
+        }
+
         let module = self.compiler.compile_graph(&graph)?;
         let artifact_bytes = module.generate_artifact_bytes()?;
+
+        // Store in cache for next time.
+        if !self.no_cache {
+            if let Some(ref h) = hash {
+                let _ = cache::store_cached(h, &artifact_bytes);
+            }
+        }
+
         let artifact = Artifact::from_bytes(&artifact_bytes)
             .map_err(|e| DriverError::Runtime(RuntimeError::State(e.to_string())))?;
 
@@ -112,102 +134,7 @@ impl Linker {
         Ok(artifact)
     }
 
-    /// Compile the user file and execute the generated artifact through the runtime.
-    pub async fn run(&self, input: &Path) -> Result<LinkResult, DriverError> {
-        self.run_impl(input, None).await
-    }
-
-    /// Compile the user file and execute with provided arguments for entry flow parameters.
-    pub async fn run_with_args(
-        &self,
-        input: &Path,
-        args: Vec<String>,
-    ) -> Result<LinkResult, DriverError> {
-        self.run_impl(input, Some(args)).await
-    }
-
-    /// Shared implementation for `run` and `run_with_args`.
-    ///
-    /// When `args` is `None` the runtime uses `execute_artifact_auto` which
-    /// enforces the `@entry` flow requirement without argument validation.
-    /// When `args` is `Some(_)` the runtime validates that the argument count
-    /// matches the entry flow's parameter count before execution.
-    async fn run_impl(
-        &self,
-        input: &Path,
-        args: Option<Vec<String>>,
-    ) -> Result<LinkResult, DriverError> {
-        if let Some(ref a) = args {
-            log_info!(
-                "driver",
-                "Compiling graph {} with {} args",
-                input.display(),
-                a.len()
-            );
-        } else {
-            log_info!("driver", "Compiling graph {}", input.display());
-        }
-
-        #[cfg(feature = "metrics")]
-        let compile_start = std::time::Instant::now();
-        let module = self.compiler.compile(input)?;
-        #[cfg(feature = "metrics")]
-        let compile_time = compile_start.elapsed();
-
-        #[cfg(feature = "metrics")]
-        let artifact_start = std::time::Instant::now();
-        let artifact_bytes = module.generate_artifact_bytes()?;
-        #[cfg(feature = "metrics")]
-        let artifact_time = artifact_start.elapsed();
-
-        let artifact = Artifact::from_bytes(&artifact_bytes)
-            .map_err(|e| DriverError::Runtime(RuntimeError::State(e.to_string())))?;
-
-        // Validate the artifact-level DAG before invoking the runtime so we
-        // fail fast on obvious cycles or malformed dependency graphs instead
-        // of letting the runtime watchdog detect a deadlock later.
-        #[cfg(feature = "metrics")]
-        let validation_start = std::time::Instant::now();
-        let dag = artifact.dag().ok_or_else(|| {
-            DriverError::Runtime(RuntimeError::State("Artifact contains no DAGs".to_string()))
-        })?;
-        if let Err(e) = dag.validate() {
-            return Err(DriverError::Runtime(RuntimeError::State(format!(
-                "Artifact DAG validation failed: {}",
-                e
-            ))));
-        }
-        #[cfg(feature = "metrics")]
-        let validation_time = validation_start.elapsed();
-
-        #[cfg(feature = "metrics")]
-        let runtime_start = std::time::Instant::now();
-        let execution = match args {
-            Some(a) => {
-                self.runtime
-                    .execute_artifact_with_args(artifact.clone(), a)
-                    .await?
-            }
-            None => self.runtime.execute_artifact_auto(artifact.clone()).await?,
-        };
-        #[cfg(feature = "metrics")]
-        let runtime_time = runtime_start.elapsed();
-
-        Ok(LinkResult {
-            module: Some(module),
-            artifact,
-            execution,
-            #[cfg(feature = "metrics")]
-            metrics: LinkMetrics {
-                compile_time,
-                artifact_time,
-                validation_time,
-                runtime_time,
-            },
-        })
-    }
-
-    /// Compile graph input and execute with optional entry arguments.
+    /// Compile graph input and execute with entry arguments.
     pub async fn run_graph(
         &self,
         input: &Path,
@@ -230,36 +157,13 @@ impl Linker {
         let runtime_time = runtime_start.elapsed();
 
         Ok(LinkResult {
-            module: None,
             artifact,
             execution,
             #[cfg(feature = "metrics")]
             metrics: LinkMetrics {
                 compile_time,
-                artifact_time: std::time::Duration::ZERO,
-                validation_time: std::time::Duration::ZERO,
                 runtime_time,
             },
         })
-    }
-
-    /// Get the LLM registry from the runtime
-    pub fn runtime_llm_registry(&self) -> std::sync::Arc<apxm_backends::LLMRegistry> {
-        self.runtime.llm_registry()
-    }
-
-    /// Get list of available runtime capabilities
-    ///
-    /// This is useful for:
-    /// - Validating graph intent before compilation
-    /// - Showing available capabilities to users
-    /// - Passing to LLM for constrained generation
-    ///
-    /// The capability names can be used across the system:
-    /// - In future tooling to constrain graph generation
-    /// - In `run` command to validate generated graphs
-    /// - For displaying help/documentation to users
-    pub fn runtime_capabilities(&self) -> Vec<String> {
-        self.runtime.capability_names()
     }
 }

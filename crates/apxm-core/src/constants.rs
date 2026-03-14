@@ -95,6 +95,11 @@ pub mod graph {
         pub const EVIDENCE: &str = "evidence";
         pub const CODE: &str = "code";
         pub const COUNT: &str = "count";
+        pub const DISCRIMINANT: &str = "discriminant";
+        pub const HANDOFF: &str = "handoff";
+        pub const HANDOFF_FROM: &str = "handoff_from";
+        pub const HANDOFF_TO: &str = "handoff_to";
+        pub const GUARDRAIL_KIND: &str = "guardrail_kind";
     }
 }
 

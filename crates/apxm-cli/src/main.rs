@@ -161,6 +161,17 @@ enum RegisterAction {
     },
 }
 
+#[cfg(feature = "driver")]
+fn parse_opt_level(level: u8) -> apxm_core::types::OptimizationLevel {
+    use apxm_core::types::OptimizationLevel;
+    match level {
+        0 => OptimizationLevel::O0,
+        1 => OptimizationLevel::O1,
+        2 => OptimizationLevel::O2,
+        _ => OptimizationLevel::O3,
+    }
+}
+
 fn parse_header(s: &str) -> Result<(String, String), String> {
     let pos = s
         .find('=')
@@ -327,14 +338,8 @@ fn compile_command(
     opt_level: u8,
 ) -> Result<()> {
     use apxm_core::constants::diagnostics;
-    use apxm_core::types::OptimizationLevel;
 
-    let opt = match opt_level {
-        0 => OptimizationLevel::O0,
-        1 => OptimizationLevel::O1,
-        2 => OptimizationLevel::O2,
-        _ => OptimizationLevel::O3,
-    };
+    let opt = parse_opt_level(opt_level);
 
     let compile_start = std::time::Instant::now();
     let compiler = Compiler::with_opt_level(opt).context("Failed to initialize compiler")?;
@@ -408,15 +413,8 @@ async fn execute_command(
     config: Option<PathBuf>,
     emit_metrics: Option<PathBuf>,
 ) -> Result<()> {
-    use apxm_core::types::OptimizationLevel;
-
     let apxm_config = load_config(config).context("Failed to load configuration")?;
-    let opt = match opt_level {
-        0 => OptimizationLevel::O0,
-        1 => OptimizationLevel::O1,
-        2 => OptimizationLevel::O2,
-        _ => OptimizationLevel::O3,
-    };
+    let opt = parse_opt_level(opt_level);
     let linker_config = LinkerConfig::from_apxm_config(apxm_config).with_opt_level(opt);
     let linker = Linker::new(linker_config)
         .await
@@ -459,8 +457,6 @@ async fn execute_command(
             let link_metrics = &result.metrics;
             metrics_json["link_phases"] = serde_json::json!({
                 "compile_ms": link_metrics.compile_time.as_secs_f64() * 1000.0,
-                "artifact_ms": link_metrics.artifact_time.as_secs_f64() * 1000.0,
-                "validation_ms": link_metrics.validation_time.as_secs_f64() * 1000.0,
                 "runtime_ms": link_metrics.runtime_time.as_secs_f64() * 1000.0
             });
         }
@@ -559,15 +555,13 @@ async fn register_command(action: RegisterAction) -> Result<()> {
             model,
             header,
         } => {
-            let api_key = match api_key {
-                Some(key) => Some(key),
-                None if provider != "ollama" => {
-                    eprint!("Enter API key for {name}: ");
-                    let key = rpassword::read_password()
-                        .map_err(|e| anyhow::anyhow!("Failed to read API key: {e}"))?;
-                    if key.is_empty() { None } else { Some(key) }
-                }
-                None => None,
+            let api_key = if api_key.is_some() || provider == "ollama" {
+                api_key
+            } else {
+                eprint!("Enter API key for {name}: ");
+                let key = rpassword::read_password()
+                    .map_err(|e| anyhow::anyhow!("Failed to read API key: {e}"))?;
+                if key.is_empty() { None } else { Some(key) }
             };
 
             let headers: BTreeMap<String, String> = header.into_iter().collect();
@@ -686,7 +680,7 @@ fn doctor_command(config: Option<PathBuf>) -> Result<()> {
 /// Auto-detect the conda prefix for the `apxm` environment.
 ///
 /// Resolution order:
-/// 1. `CONDA_PREFIX` env var (if it points to an apxm env or contains lib/cmake/mlir)
+/// 1. `CONDA_PREFIX` env var
 /// 2. `conda info --envs --json` output (looks for an env named "apxm")
 /// 3. Common paths: ~/miniforge3/envs/apxm, ~/mambaforge/envs/apxm, ~/miniconda3/envs/apxm
 fn detect_conda_prefix() -> Option<PathBuf> {
@@ -694,13 +688,6 @@ fn detect_conda_prefix() -> Option<PathBuf> {
     if let Ok(prefix) = env::var("CONDA_PREFIX") {
         let p = PathBuf::from(&prefix);
         if p.is_dir() {
-            // Accept if it looks like an apxm env or has MLIR cmake files
-            let name_ok = p.file_name().map(|n| n == "apxm").unwrap_or(false);
-            let mlir_ok = p.join("lib/cmake/mlir").is_dir();
-            if name_ok || mlir_ok {
-                return Some(p);
-            }
-            // Even if it doesn't match our heuristics, honour the explicit env var
             return Some(p);
         }
     }
@@ -761,39 +748,18 @@ fn print_minimal_mlir_status() {
         }
     }
 
-    let has_tblgen = mlir_tblgen.as_ref().map(|p| p.is_file()).unwrap_or(false);
-    let has_mlir_cmake = mlir_cmake.as_ref().map(|p| p.is_dir()).unwrap_or(false);
-    let has_llvm_cmake = llvm_cmake.as_ref().map(|p| p.is_dir()).unwrap_or(false);
+    let checks: &[(&str, bool)] = &[
+        ("mlir-tblgen", mlir_tblgen.as_ref().map(|p| p.is_file()).unwrap_or(false)),
+        ("cmake/mlir", mlir_cmake.as_ref().map(|p| p.is_dir()).unwrap_or(false)),
+        ("cmake/llvm", llvm_cmake.as_ref().map(|p| p.is_dir()).unwrap_or(false)),
+    ];
 
-    print_status_line(
-        "mlir-tblgen",
-        if has_tblgen {
-            Status::Ok
-        } else {
-            Status::Error
-        },
-        if has_tblgen { "found" } else { "missing" },
-    );
-    print_status_line(
-        "cmake/mlir",
-        if has_mlir_cmake {
-            Status::Ok
-        } else {
-            Status::Error
-        },
-        if has_mlir_cmake { "found" } else { "missing" },
-    );
-    print_status_line(
-        "cmake/llvm",
-        if has_llvm_cmake {
-            Status::Ok
-        } else {
-            Status::Error
-        },
-        if has_llvm_cmake { "found" } else { "missing" },
-    );
+    for &(label, found) in checks {
+        let status = if found { Status::Ok } else { Status::Error };
+        print_status_line(label, status, if found { "found" } else { "missing" });
+    }
 
-    if !(has_tblgen && has_mlir_cmake && has_llvm_cmake) {
+    if checks.iter().any(|(_, found)| !found) {
         print_subsection_header("Suggested Fix");
         println!("cargo run -p apxm-cli -- install");
         println!("conda activate apxm");
@@ -802,8 +768,6 @@ fn print_minimal_mlir_status() {
             println!("# Or export directly from: {}", prefix.display());
         }
     }
-
-    let _ = (has_tblgen, has_mlir_cmake, has_llvm_cmake);
 }
 
 fn print_section_header(title: &str) {
