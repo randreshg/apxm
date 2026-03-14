@@ -24,7 +24,7 @@ use std::time::Instant;
 
 use apxm_artifact::Artifact;
 use apxm_compiler::{Context as CompilerContext, Pipeline as CompilerPipeline};
-use apxm_core::types::OptimizationLevel;
+use apxm_core::types::{AIS_OPERATIONS, OptimizationLevel};
 use apxm_graph::ApxmGraph;
 use serde_json::{json, Value};
 
@@ -211,6 +211,20 @@ fn handle_tools_list() -> Result<Value, Value> {
                 "required": []
             }
         }),
+        json!({
+            "name": "apxm_analyze",
+            "description": "Analyze an ApxmGraph to extract parallelism opportunities, critical path, and execution phases. Use this to optimize execution plans — find which steps can run in parallel, identify bottlenecks, and estimate speedup.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "graph_json": {
+                        "type": "string",
+                        "description": "The ApxmGraph as a JSON string"
+                    }
+                },
+                "required": ["graph_json"]
+            }
+        }),
     ];
     Ok(json!({ "tools": tools }))
 }
@@ -231,6 +245,7 @@ fn handle_tools_call(params: Value) -> Result<Value, Value> {
         "apxm_execute" => tool_execute(args),
         "apxm_merge" => tool_merge(args),
         "apxm_get_contract" => tool_get_contract(),
+        "apxm_analyze" => tool_analyze(args),
         _ => Err(format!("unknown tool: {name}")),
     };
 
@@ -275,6 +290,8 @@ fn tool_validate(args: Value) -> Result<String, String> {
 
     // Node-level checks
     let mut node_ids: HashSet<u64> = HashSet::new();
+    let valid_ops: HashSet<String> = AIS_OPERATIONS.iter().map(|s| s.op_type.to_string()).collect();
+
     if let Some(nodes) = nodes {
         for node in nodes {
             let id = node.get("id").and_then(Value::as_u64).unwrap_or(0);
@@ -292,6 +309,25 @@ fn tool_validate(args: Value) -> Result<String, String> {
             }
             if op.is_empty() {
                 errors.push(format!("node '{name}' (id={id}) has empty op"));
+            } else if !valid_ops.contains(op) {
+                errors.push(format!(
+                    "node '{name}' (id={id}) has unknown op '{op}'"
+                ));
+            } else {
+                // Check required attributes
+                let spec = AIS_OPERATIONS.iter().find(|s| s.op_type.to_string() == op);
+                if let Some(spec) = spec {
+                    let attrs = node.get("attributes").and_then(Value::as_object);
+                    for field in spec.fields.iter().filter(|f| f.required) {
+                        let has_attr = attrs.map_or(false, |a| a.contains_key(field.name));
+                        if !has_attr {
+                            errors.push(format!(
+                                "node '{name}' (id={id}, op={op}) missing required attribute '{}'",
+                                field.name
+                            ));
+                        }
+                    }
+                }
             }
         }
     }
@@ -303,16 +339,19 @@ fn tool_validate(args: Value) -> Result<String, String> {
             let to = edge.get("to").and_then(Value::as_u64).unwrap_or(0);
             let dep = edge.get("dependency").and_then(Value::as_str).unwrap_or("Data");
 
+            if from == to {
+                errors.push(format!("edge {from}->{to} is a self-loop"));
+            }
             if !matches!(dep, "Data" | "Control" | "Effect") {
                 errors.push(format!(
                     "edge {from}->{to} has invalid dependency type '{dep}'"
                 ));
             }
             if !node_ids.contains(&from) {
-                errors.push(format!("edge references non-existent from_id {from}"));
+                errors.push(format!("edge references non-existent source node {from}"));
             }
             if !node_ids.contains(&to) {
-                errors.push(format!("edge references non-existent to_id {to}"));
+                errors.push(format!("edge references non-existent target node {to}"));
             }
         }
 
@@ -646,41 +685,57 @@ fn tool_merge(args: Value) -> Result<String, String> {
 // ---------------------------------------------------------------------------
 
 fn tool_get_contract() -> Result<String, String> {
+    use apxm_core::types::OperationCategory;
+
+    fn category_str(cat: OperationCategory) -> &'static str {
+        match cat {
+            OperationCategory::Metadata => "metadata",
+            OperationCategory::Memory => "memory",
+            OperationCategory::Reasoning => "reasoning",
+            OperationCategory::Tools => "tools",
+            OperationCategory::ControlFlow => "control_flow",
+            OperationCategory::Synchronization => "synchronization",
+            OperationCategory::ErrorHandling => "error_handling",
+            OperationCategory::Communication => "communication",
+            OperationCategory::Internal => "internal",
+        }
+    }
+
+    let mut operations = serde_json::Map::new();
+    for spec in AIS_OPERATIONS {
+        let required_attrs: Vec<&str> = spec
+            .fields
+            .iter()
+            .filter(|f| f.required)
+            .map(|f| f.name)
+            .collect();
+
+        let optional_attrs: Vec<Value> = spec
+            .fields
+            .iter()
+            .filter(|f| !f.required)
+            .map(|f| json!({"name": f.name, "description": f.description}))
+            .collect();
+
+        let mut op_json = json!({
+            "description": spec.description,
+            "long_description": spec.long_description,
+            "category": category_str(spec.category),
+            "latency": spec.latency.as_str(),
+            "required_attributes": required_attrs,
+            "optional_attributes": optional_attrs,
+            "produces_output": spec.produces_output,
+        });
+
+        if let Some(example) = spec.example_json {
+            op_json["example"] = Value::String(example.to_string());
+        }
+
+        operations.insert(spec.op_type.to_string(), op_json);
+    }
+
     let result = json!({
-        "operations": {
-            "AGENT": { "required_attributes": [], "description": "Agent metadata declaration (memory, beliefs, goals, capabilities)" },
-            "QMEM": { "required_attributes": ["query"], "description": "Query memory (read from memory system)" },
-            "UMEM": { "required_attributes": ["key", "value"], "description": "Update memory (write to memory system)" },
-            "ASK": { "required_attributes": ["template_str"], "description": "Simple Q&A with LLM (no extended thinking)" },
-            "THINK": { "required_attributes": ["template_str"], "description": "Extended thinking with token budget" },
-            "REASON": { "required_attributes": ["template_str"], "description": "Structured reasoning with beliefs/goals" },
-            "PLAN": { "required_attributes": ["goal"], "description": "Generate a plan using LLM" },
-            "REFLECT": { "required_attributes": ["trace_id"], "description": "Analyze execution trace" },
-            "VERIFY": { "required_attributes": ["condition"], "description": "Fact-check against evidence" },
-            "INV": { "required_attributes": ["capability"], "description": "Invoke a capability (tool/function call)" },
-            "EXC": { "required_attributes": ["code"], "description": "Execute code in sandbox" },
-            "PRINT": { "required_attributes": ["message"], "description": "Print output to stdout" },
-            "JUMP": { "required_attributes": ["label"], "description": "Unconditional jump to label" },
-            "BRANCH_ON_VALUE": { "required_attributes": ["true_label", "false_label"], "description": "Branch based on value comparison" },
-            "LOOP_START": { "required_attributes": ["count"], "description": "Loop start marker" },
-            "LOOP_END": { "required_attributes": [], "description": "Loop end marker" },
-            "RETURN": { "required_attributes": [], "description": "Return from subgraph with result" },
-            "SWITCH": { "required_attributes": ["discriminant", "case_labels"], "description": "Multi-way branch based on string value" },
-            "FLOW_CALL": { "required_attributes": ["agent_name", "flow_name"], "description": "Call a flow on another agent" },
-            "MERGE": { "required_attributes": [], "description": "Merge multiple tokens into one" },
-            "FENCE": { "required_attributes": [], "description": "Memory fence (synchronization barrier)" },
-            "WAIT_ALL": { "required_attributes": [], "description": "Wait for all input tokens to be ready" },
-            "TRY_CATCH": { "required_attributes": ["try_label", "catch_label"], "description": "Try-catch exception handling" },
-            "ERR": { "required_attributes": ["recovery_template"], "description": "Error handler invocation" },
-            "COMMUNICATE": { "required_attributes": ["target", "message"], "description": "Communication between agents" },
-            "UPDATE_GOAL": { "required_attributes": ["goal_id"], "description": "Update agent goals at runtime (set/remove/clear)" },
-            "GUARD": { "required_attributes": ["condition"], "description": "Enforce preconditions before execution continues" },
-            "CLAIM": { "required_attributes": ["queue"], "description": "Atomically claim a task from a shared work queue" },
-            "PAUSE": { "required_attributes": ["message"], "description": "Suspend execution pending human-in-the-loop review" },
-            "RESUME": { "required_attributes": ["checkpoint"], "description": "Resume a suspended execution from a PAUSE checkpoint" },
-            "CONST_STR": { "required_attributes": ["value"], "description": "String constant (compiler internal)" },
-            "YIELD": { "required_attributes": [], "description": "Yield value from switch case region (compiler internal)" },
-        },
+        "operations": Value::Object(operations),
         "dependency_types": ["Data", "Control", "Effect"],
         "parameter_types": ["str", "int", "float", "bool", "json"],
         "graph_schema": {
@@ -689,6 +744,254 @@ fn tool_get_contract() -> Result<String, String> {
         }
     });
     Ok(serde_json::to_string_pretty(&result).unwrap())
+}
+
+// ---------------------------------------------------------------------------
+// Tool: apxm_analyze
+// ---------------------------------------------------------------------------
+
+fn tool_analyze(args: Value) -> Result<String, String> {
+    let graph_json = args
+        .get("graph_json")
+        .and_then(Value::as_str)
+        .ok_or("missing required argument: graph_json")?;
+
+    let graph: ApxmGraph = ApxmGraph::from_json(graph_json)
+        .map_err(|e| format!("invalid graph: {e}"))?;
+
+    // Build adjacency and reverse-adjacency maps
+    let node_ids: HashSet<u64> = graph.nodes.iter().map(|n| n.id).collect();
+    let mut successors: HashMap<u64, Vec<u64>> = HashMap::new();
+    let mut predecessors: HashMap<u64, Vec<u64>> = HashMap::new();
+    let mut in_degree: HashMap<u64, usize> = node_ids.iter().map(|&id| (id, 0)).collect();
+
+    for edge in &graph.edges {
+        successors.entry(edge.from).or_default().push(edge.to);
+        predecessors.entry(edge.to).or_default().push(edge.from);
+        *in_degree.entry(edge.to).or_insert(0) += 1;
+    }
+
+    let entry_nodes: Vec<u64> = in_degree
+        .iter()
+        .filter_map(|(&id, &deg)| if deg == 0 { Some(id) } else { None })
+        .collect();
+
+    let exit_nodes: Vec<u64> = node_ids
+        .iter()
+        .filter(|&&id| successors.get(&id).map_or(true, |s| s.is_empty()))
+        .copied()
+        .collect();
+
+    // Compute execution phases via BFS layering (topological levels)
+    let mut phases: Vec<Vec<u64>> = Vec::new();
+    let mut remaining_in: HashMap<u64, usize> = in_degree.clone();
+    let mut current_layer: Vec<u64> = entry_nodes.clone();
+    current_layer.sort();
+
+    while !current_layer.is_empty() {
+        phases.push(current_layer.clone());
+        let mut next_layer = Vec::new();
+        for &node_id in &current_layer {
+            if let Some(succs) = successors.get(&node_id) {
+                for &succ in succs {
+                    if let Some(deg) = remaining_in.get_mut(&succ) {
+                        *deg = deg.saturating_sub(1);
+                        if *deg == 0 {
+                            next_layer.push(succ);
+                        }
+                    }
+                }
+            }
+        }
+        next_layer.sort();
+        next_layer.dedup();
+        current_layer = next_layer;
+    }
+
+    // Compute critical path via longest-path DAG algorithm
+    // Use latency estimates from OperationSpec
+    let node_latency = |node_id: u64| -> u64 {
+        graph
+            .nodes
+            .iter()
+            .find(|n| n.id == node_id)
+            .and_then(|n| {
+                use apxm_core::types::OperationLatency;
+                for spec in AIS_OPERATIONS {
+                    if spec.op_type == n.op {
+                        return Some(match spec.latency {
+                            OperationLatency::None => 10,
+                            OperationLatency::Low => 100,
+                            OperationLatency::Medium => 1000,
+                            OperationLatency::High => 5000,
+                        });
+                    }
+                }
+                None
+            })
+            .unwrap_or(100)
+    };
+
+    // Compute longest path from each entry to each exit
+    let mut dist: HashMap<u64, u64> = HashMap::new();
+    let mut prev: HashMap<u64, u64> = HashMap::new();
+    // Process nodes in topological order (phase order)
+    for phase in &phases {
+        for &node_id in phase {
+            let latency = node_latency(node_id);
+            let max_pred_dist = predecessors
+                .get(&node_id)
+                .map(|preds| preds.iter().filter_map(|&p| dist.get(&p)).max().copied())
+                .flatten()
+                .unwrap_or(0);
+            let d = max_pred_dist + latency;
+            dist.insert(node_id, d);
+            // Track which predecessor gave the max
+            if let Some(preds) = predecessors.get(&node_id) {
+                if let Some(&best_pred) = preds.iter().max_by_key(|&&p| dist.get(&p).unwrap_or(&0)) {
+                    prev.insert(node_id, best_pred);
+                }
+            }
+        }
+    }
+
+    // Find the node with maximum distance (end of critical path)
+    let critical_end = dist.iter().max_by_key(|&(_, &d)| d).map(|(&id, _)| id);
+    let mut critical_path = Vec::new();
+    if let Some(mut node) = critical_end {
+        critical_path.push(node);
+        while let Some(&p) = prev.get(&node) {
+            critical_path.push(p);
+            node = p;
+        }
+        critical_path.reverse();
+    }
+
+    let critical_path_latency: u64 = critical_path.iter().map(|&id| node_latency(id)).sum();
+    let sequential_latency: u64 = graph.nodes.iter().map(|n| node_latency(n.id)).sum();
+
+    // Build phase estimates
+    let phase_json: Vec<Value> = phases
+        .iter()
+        .enumerate()
+        .map(|(i, layer)| {
+            let max_latency = layer.iter().map(|&id| node_latency(id)).max().unwrap_or(0);
+            let node_details: Vec<Value> = layer
+                .iter()
+                .map(|&id| {
+                    let node = graph.nodes.iter().find(|n| n.id == id);
+                    let op = node.map(|n| n.op.to_string()).unwrap_or_else(|| "?".to_string());
+                    let name = node.map(|n| n.name.as_str()).unwrap_or("?");
+                    json!({"id": id, "name": name, "op": op, "latency_ms": node_latency(id)})
+                })
+                .collect();
+            json!({
+                "phase": i + 1,
+                "parallel": layer.len() > 1,
+                "parallelism_degree": layer.len(),
+                "estimated_ms": max_latency,
+                "nodes": node_details,
+            })
+        })
+        .collect();
+
+    let parallel_latency: u64 = phases
+        .iter()
+        .map(|layer| layer.iter().map(|&id| node_latency(id)).max().unwrap_or(0))
+        .sum();
+
+    let speedup = if parallel_latency > 0 {
+        sequential_latency as f64 / parallel_latency as f64
+    } else {
+        1.0
+    };
+
+    let max_parallelism = phases.iter().map(|p| p.len()).max().unwrap_or(1);
+
+    let result = json!({
+        "graph_name": graph.name,
+        "node_count": graph.nodes.len(),
+        "edge_count": graph.edges.len(),
+        "entry_nodes": entry_nodes,
+        "exit_nodes": exit_nodes,
+        "depth": phases.len(),
+        "max_parallelism": max_parallelism,
+        "execution_phases": phase_json,
+        "critical_path": {
+            "nodes": critical_path,
+            "length": critical_path.len(),
+            "estimated_ms": critical_path_latency,
+        },
+        "speedup": {
+            "sequential_ms": sequential_latency,
+            "parallel_ms": parallel_latency,
+            "estimated_speedup": format!("{:.2}x", speedup),
+        },
+        "suggestions": build_suggestions(&phases, max_parallelism, speedup, &critical_path, &graph),
+    });
+
+    Ok(serde_json::to_string_pretty(&result).unwrap())
+}
+
+fn build_suggestions(
+    phases: &[Vec<u64>],
+    max_parallelism: usize,
+    speedup: f64,
+    critical_path: &[u64],
+    graph: &ApxmGraph,
+) -> Vec<String> {
+    let mut suggestions = Vec::new();
+
+    if max_parallelism > 1 {
+        let parallel_phases: Vec<usize> = phases
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.len() > 1)
+            .map(|(i, _)| i + 1)
+            .collect();
+        suggestions.push(format!(
+            "Phases {:?} can execute in parallel (up to {} concurrent operations)",
+            parallel_phases, max_parallelism
+        ));
+    } else {
+        suggestions.push("Graph is fully sequential — no parallelism opportunities".to_string());
+    }
+
+    if speedup > 1.2 {
+        suggestions.push(format!(
+            "Estimated {:.1}x speedup from parallel execution vs sequential",
+            speedup
+        ));
+    }
+
+    if critical_path.len() >= 3 {
+        // Find bottleneck node on critical path
+        let bottleneck = critical_path.iter().max_by_key(|&&id| {
+            graph.nodes.iter().find(|n| n.id == id).map(|n| {
+                for spec in AIS_OPERATIONS {
+                    if spec.op_type == n.op {
+                        return match spec.latency {
+                            apxm_core::types::OperationLatency::High => 5000u64,
+                            apxm_core::types::OperationLatency::Medium => 1000,
+                            apxm_core::types::OperationLatency::Low => 100,
+                            apxm_core::types::OperationLatency::None => 10,
+                        };
+                    }
+                }
+                100
+            }).unwrap_or(100)
+        });
+        if let Some(&bn) = bottleneck {
+            if let Some(node) = graph.nodes.iter().find(|n| n.id == bn) {
+                suggestions.push(format!(
+                    "Critical path bottleneck: node {} ('{}', op={})",
+                    bn, node.name, node.op
+                ));
+            }
+        }
+    }
+
+    suggestions
 }
 
 // ---------------------------------------------------------------------------
