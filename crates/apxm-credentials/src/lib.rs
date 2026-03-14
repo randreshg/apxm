@@ -143,7 +143,7 @@ impl CredentialStore {
         fs::write(temp.path(), &content)?;
         fs::set_permissions(temp.path(), fs::Permissions::from_mode(FILE_PERMISSIONS))?;
         temp.persist(&self.path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
         Ok(())
     }
 

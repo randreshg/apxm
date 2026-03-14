@@ -6,11 +6,11 @@ publish = false
 description = "APXM credential store - plaintext TOML-based API key management"
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
-thiserror = "2"
-dirs = "5"
+thiserror = "2.0"
+dirs = "5.0"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
-tokio = { version = "1", features = ["macros"] }
-rpassword = "7"
-tempfile = "3"
+tokio = { version = "1.0", features = ["macros"] }
+rpassword = "7.0"
+tempfile = "3.0"

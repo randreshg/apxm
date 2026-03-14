@@ -350,18 +350,17 @@ pub fn detect_llvm_version(prefix: &Path) -> Option<String> {
     };
 
     let llvm_config = prefix.join("bin").join(config_name);
-    if llvm_config.exists() {
-        if let Some(version) = Command::new(&llvm_config)
+    if llvm_config.exists()
+        && let Some(version) = Command::new(&llvm_config)
             .arg("--version")
             .output()
             .ok()
             .filter(|o| o.status.success())
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .and_then(|v| v.trim().split('.').next().map(String::from))
-        {
-            log_debug!("build::llvm", "Detected LLVM version from llvm-config: {}", version);
-            return Some(version);
-        }
+    {
+        log_debug!("build::llvm", "Detected LLVM version from llvm-config: {}", version);
+        return Some(version);
     }
 
     find_llvm_version_from_libraries(prefix)
@@ -421,12 +420,11 @@ pub fn find_versioned_mlir_library(lib_dir: &Path, llvm_version: &str) -> Option
     if let Ok(entries) = fs::read_dir(lib_dir) {
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
-            if path.is_file() {
-                if let Some(name) = path.file_name().and_then(OsStr::to_str) {
-                    if patterns.iter().any(|p| name.starts_with(p.as_str())) {
-                        return Some(path);
-                    }
-                }
+            if path.is_file()
+                && let Some(name) = path.file_name().and_then(OsStr::to_str)
+                && patterns.iter().any(|p| name.starts_with(p.as_str()))
+            {
+                return Some(path);
             }
         }
     }

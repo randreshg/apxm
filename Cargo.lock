@@ -189,7 +189,9 @@ dependencies = [
  "colored",
  "dirs 5.0.1",
  "rpassword",
+ "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing-subscriber",
 ]
